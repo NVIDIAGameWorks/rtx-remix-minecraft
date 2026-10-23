@@ -11,11 +11,6 @@ also part of every mod file name.
 
 ## Unreleased
 
-### Fixed
-
-- `install.bat` started from a PowerShell 7 prompt no longer fails at the
-  first download with "The term 'Get-FileHash' is not recognized".
-
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.
