@@ -41,6 +41,7 @@ BENCHMARK_RTX_CONFIG = """\
 # Temporary runner-owned overrides for measured benchmark processes only.
 rtx.initializer.asyncShaderFinalizing = false
 rtx.shader.enableAsyncCompilation = false
+rtx.dlfg.enable = false
 """
 DEFAULT_BENCHMARK_CAMERA = "simple"
 WORLD_DIR_NAME = "world"
