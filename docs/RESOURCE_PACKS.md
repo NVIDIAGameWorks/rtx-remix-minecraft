@@ -43,13 +43,10 @@ passes an emission fallback of zero (`LabPBRConverter.blitEmissive`), so a
 block's vanilla light level never becomes surface glow on its own. For
 example, without an `_s` for glowstone, the block renders dark.
 
-The textures live in `src/main/resources/assets/` in this repository. Their
-sidecars and the sun and moon textures are covered by the
-[LICENSE](../LICENSE), so copy them and build on them. A glow map for part of a
-texture, such as a torch flame, is a mask drawn to line up with the vanilla
-texture, so a pack that redraws that texture should ship its own `_s` too. The
-explosion particle frames are not covered by that grant yet; their provenance
-is still being confirmed.
+The textures live in `src/main/resources/assets/` in this repository and are
+covered by the [LICENSE](../LICENSE), so copy them and build on them. A glow
+map for part of a texture, such as a torch flame, lines up with the vanilla
+texture, so a pack that redraws that texture should ship its own `_s` too.
 
 ## Channel Reference
 
