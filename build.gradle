@@ -223,6 +223,8 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // Pin the per-frame install cap so tests don't depend on the CPU count
+    systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
 }
 
 def gitBranch = providers.exec { commandLine 'git', 'rev-parse', '--abbrev-ref', 'HEAD' }
