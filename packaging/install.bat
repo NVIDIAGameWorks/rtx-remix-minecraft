@@ -17,5 +17,11 @@ REM   powershell -NoProfile -Command "Get-Help '%~dp0installer.ps1' -Full"
 REM
 REM -ExecutionPolicy Bypass is safe here: we're running a script we shipped
 REM alongside the launcher, not something downloaded at runtime.
+REM
+REM Typed at a PowerShell 7 prompt, this inherits PowerShell 7's PSModulePath,
+REM whose modules shadow Windows PowerShell's own and leave Get-FileHash
+REM unloadable. Clearing it lets Windows PowerShell build its default path.
+setlocal
+set "PSModulePath="
 powershell.exe -NoProfile -NoLogo -ExecutionPolicy Bypass -File "%~dp0installer.ps1" %*
 exit /b %ERRORLEVEL%
