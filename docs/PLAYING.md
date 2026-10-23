@@ -104,9 +104,9 @@ runtime into the game folder before the game window appears, which can look
 like the game has frozen, especially on a hard drive. It happens once per
 version.
 
-Once you are in a world, the renderer compiles shaders. A dark, flat, or
-half-built scene during this preparation is expected. Let it settle before
-judging the picture.
+Once you are in a world, the renderer compiles shaders and draws nothing until
+it finishes. A dark, flat, or half-built scene right after is expected. Let it
+settle before judging the picture.
 
 The baseline PBR textures ship inside the mod JAR, so neither launcher needs
 a separate baseline pack enabled. User packs override the built-in baseline.
