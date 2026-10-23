@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import re
 import subprocess
 import unittest
@@ -55,8 +56,37 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("from 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'", body)
         self.assertIn("from('packaging/licenses')", body)
         self.assertIn("into 'packaging/licenses'", body)
-        self.assertNotIn("resourcepacks", body)
+        # The only resource pack is the zipped art pack; the retired baseline pack must not come back.
+        self.assertRegex(body, r"from\(artPackArchiveTask\) \{\s*into 'resourcepacks'\s*\}")
+        self.assertEqual(body.count("resourcepacks"), 1)
+        self.assertNotIn("LabPBR", body)
         self.assertNotIn("*.jar", body)
+
+    def test_release_art_pack_is_the_pack_development_launches_stage(self):
+        # The installer offers the art pack the archive carries; development launches stage the one tools/config.json
+        # pins. Players and developers must see the same pack.
+        manifest = ElementTree.parse(REPO_ROOT / "packman" / "art-pack.packman.xml").getroot()
+        packages = manifest.findall("./dependency/package")
+        self.assertEqual(len(packages), 1)
+        dependency = manifest.find("./dependency")
+        assert dependency is not None
+        self.assertEqual(dependency.get("linkPath"), "../remix-runtime/art-pack")
+        tools_config = json.loads((REPO_ROOT / "tools" / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(packages[0].get("name"), tools_config["resourcePack"]["package"])
+        self.assertEqual(packages[0].get("version"), tools_config["resourcePack"]["version"])
+
+    def test_release_art_pack_is_a_reproducible_zip_named_for_the_installer(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(r"(?ms)^def artPackArchiveTask = tasks.register\('artPackArchive', Zip\) \{(.+?)^\}", build)
+        assert archive is not None
+        body = archive.group(1)
+        # installer.ps1's ART_PACK_PATTERN finds the pack by this name, in the archive and in the game folder.
+        self.assertIn('archiveFileName.set("rtx-remix-art-pack-${artPackVersion}.zip")', body)
+        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
+        self.assertIn(r"$script:ART_PACK_PATTERN = '^rtx-remix-art-pack-\d+\.\d+\.\d+\.zip$'", installer)
+        self.assertIn("exclude '.packman*'", body)
+        self.assertIn("preserveFileTimestamps = false", body)
+        self.assertIn("reproducibleFileOrder = true", body)
 
     def test_distributable_jar_carries_the_runtime_textures(self):
         # A launcher such as CurseForge installs the JAR alone, with no installer to copy textures beside it, so the

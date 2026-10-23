@@ -37,7 +37,9 @@ Download the release archive from the
 ## Install in three steps
 
 1. Extract the release archive.
-2. Double-click `install.bat` and follow the menu.
+2. Double-click `install.bat` and follow the menu. Say yes when it offers the
+   [RTX art pack](#showcase-world-and-art-pack): it is the look the renderer
+   was made for.
 3. Launch the **NVIDIA RTX Remix for Minecraft** profile from your launcher.
 
 The step-by-step version, with launcher advice and troubleshooting, is in
@@ -91,22 +93,29 @@ button into Remix's own Graphics Settings for the quality tier.
 
 ## Showcase World And Art Pack
 
-Two optional extras go with the mod. The developer launcher in
+Two extras go with the mod. The developer launcher in
 [`tools/`](tools/README.md) downloads both the first time it runs and launches
 into the world with the pack on.
 
-- **The showcase world**, the map the renderer was tuned against, was built for
-  this project by BlockWorks: [website](https://www.blockworks.uk/),
-  [YouTube](https://www.youtube.com/@BlockWorksYT),
-  [X](https://x.com/BlockWorksYT), and
-  [Instagram](https://www.instagram.com/blockworks/).
-- **The RTX art pack**, a texture resource pack, was created by an art team at
-  NVIDIA. Its normal and specular maps follow the
+- **The RTX art pack**, a texture resource pack created by an art team at
+  NVIDIA, is the look the renderer was made for, and the recommended way to
+  play. The release archive carries it as
+  `resourcepacks\rtx-remix-art-pack-<version>.zip`, and the installer offers
+  to install it and turn it on. To add it by hand, copy that file into the
+  game's `resourcepacks` folder and turn it on in Options, Resource Packs.
+  Without it, the baseline textures built into the mod give vanilla's
+  textures simpler materials. Its normal and specular maps follow the
   [LabPBR standard](https://shaderlabs.org/wiki/LabPBR_Material_Standard), so
   other renderers and shader packs that read LabPBR may be able to use it too,
   but it has only been tested with this mod. Its `_sss` subsurface maps are
   this mod's own addition, described in
   [Resource Packs](docs/RESOURCE_PACKS.md).
+- **The showcase world**, the map the renderer was tuned against, was built for
+  this project by BlockWorks: [website](https://www.blockworks.uk/),
+  [YouTube](https://www.youtube.com/@BlockWorksYT),
+  [X](https://x.com/BlockWorksYT), and
+  [Instagram](https://www.instagram.com/blockworks/). The release archive does
+  not carry it.
 
 ## Start Here
 

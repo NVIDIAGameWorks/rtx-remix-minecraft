@@ -317,7 +317,10 @@ runtime textures, with the installer scripts, installer documentation, and
 license notices under `build/release/`, and writes a ZIP with the same layout
 under `build/distributions/`. Use `-Parch=win64` or `-Parch=arm64` for one
 architecture; omitting it includes both. The baseline resource pack is built
-into the mod, so the archive has no `resourcepacks/`.
+into the mod. The archive's `resourcepacks/` holds only the RTX art pack, which
+`artPackArchive` zips from the version pinned in
+`packman/art-pack.packman.xml`; keep that pin equal to `resourcePack.version`
+in `tools/config.json`.
 
 ### Visual Comparisons
 

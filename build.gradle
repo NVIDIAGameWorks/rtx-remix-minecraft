@@ -628,6 +628,44 @@ tasks.register('package') {
     dependsOn 'build', verifyPackageJarTask
 }
 
+// The RTX art pack, which the installer offers. Minecraft loads a zipped pack
+// without unpacking it, so the release archive carries one ZIP under
+// resourcepacks/, named for the version pinned in packman/art-pack.packman.xml.
+def artPackDir = 'remix-runtime/art-pack'
+def artPackManifest = file('packman/art-pack.packman.xml')
+def artPackVersion = new groovy.xml.XmlParser().parse(artPackManifest).dependency.package[0].attribute('version')
+def fetchArtPackTask = tasks.register('fetchArtPack', Exec) {
+    description = 'Pulls the art pack pinned in packman/art-pack.packman.xml'
+    group = 'build setup'
+    inputs.file(artPackManifest)
+    // A relative script path from its own folder, as fetchRuntimeTextures explains.
+    workingDir file('packman')
+    commandLine 'cmd', '/d', '/c', '.\\packman.cmd', 'pull', artPackManifest.absolutePath
+    def packDir = file(artPackDir)
+    doLast {
+        // Minecraft lists a pack only when pack.mcmeta sits at the ZIP's root.
+        if (!new File(packDir, 'pack.mcmeta').isFile()) {
+            def cache = packDir.exists() ? packDir.toPath().toRealPath().toString() : packDir.path
+            throw new GradleException("The art pack at ${cache} has no pack.mcmeta at its root. " +
+                    'Delete that folder and build again, and Packman downloads the package afresh.')
+        }
+    }
+}
+
+def artPackArchiveTask = tasks.register('artPackArchive', Zip) {
+    description = 'Zips the pinned art pack as a resource pack Minecraft loads directly'
+    group = 'build'
+    dependsOn fetchArtPackTask
+    from(artPackDir) {
+        exclude '.packman*'
+    }
+    archiveFileName.set("rtx-remix-art-pack-${artPackVersion}.zip")
+    destinationDirectory.set(layout.buildDirectory.dir('art-pack'))
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
 def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
     description = 'Stages the verified JAR and installer in build/release'
     group = 'build'
@@ -637,6 +675,9 @@ def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
 
     from(packageJarArchive) {
         into 'mods'
+    }
+    from(artPackArchiveTask) {
+        into 'resourcepacks'
     }
     from 'packaging/install.bat', 'packaging/installer.ps1',
             'packaging/migrate_resource_packs.ps1', 'packaging/INSTALLER_REFERENCE.md'

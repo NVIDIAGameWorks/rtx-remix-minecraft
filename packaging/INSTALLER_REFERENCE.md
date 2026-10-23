@@ -34,8 +34,8 @@ Quit closes at once, and a run given `-Mode` never waits.
 
 | Mode | What it does |
 |---|---|
-| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, and Fabric API. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
-| Upgrade | Replaces the mod JAR and Fabric API. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
+| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, Fabric API, and, if you say yes, the RTX art pack. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
+| Upgrade | Replaces the mod JAR, Fabric API, and an installed RTX art pack. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
 | Repair | Reinstalls the packaged files through the same path as Install and Upgrade. If the `.rtx-remix-version` marker matches, it does not re-extract the runtime or conf payload, but a missing `rtx.conf` is restored on launch. Delete the marker and relaunch to force full extraction |
 | Uninstall | Removes the mod files listed in `README.md`, then offers to remove the installer-managed Java, the Prism portable, and the Prism instance, listing only those that exist. With both launchers holding the mod it asks Prism, Microsoft, or Both |
 | Export | Prism only. Zips the Prism instance into an archive another machine can drop into its own Prism `instances\` folder, stripping the paths listed under Privacy below |
@@ -50,7 +50,35 @@ Install, Upgrade, and Repair migrate the retired generated `RtxRemix-LabPBR`
 pack. They identify it by metadata and texture inventory and leave other packs
 alone. In an existing `options.txt`, only `resourcePacks` changes: vanilla,
 Fabric, then user packs in their existing order, without the retired baseline
-entry. They do not create a missing options file.
+entry. They do not create a missing options file for that.
+
+## The RTX Art Pack
+
+The archive carries the RTX art pack as
+`resourcepacks\rtx-remix-art-pack-<version>.zip`, a resource pack Minecraft
+loads without unpacking. Install, Upgrade, and Repair copy it into the game
+folder's `resourcepacks\` under the same name, as their last step.
+
+- **An art pack already installed** is replaced with the archive's without
+  asking, and older versions are removed. Its entry in `resourcePacks` is
+  renamed in place, so a pack you turned off stays off.
+- **No art pack installed:** an interactive run asks first, with yes as the
+  default, and `-ArtPack Install` adds it without asking. An unattended run
+  without `-ArtPack Install` adds nothing and says so. A new art pack is turned
+  on just above Fabric's pack, below your own packs, so they still override
+  it. With no `options.txt` yet, as in a new Prism instance, the installer
+  creates one holding only the game version and the pack list, and the game
+  fills in every other option with its default.
+- **With the Microsoft launcher**, the pack is also on when you play without
+  the mod, because both share one game folder. The prompt says so.
+- **`-ArtPack Skip`** leaves the art pack and its entry alone in any mode.
+- **Uninstall** removes the art pack and its `resourcePacks` entry.
+
+Only files named `rtx-remix-art-pack-<major>.<minor>.<patch>.zip` are the
+installer's; any other pack in `resourcepacks\` is yours and stays untouched.
+A `resourcePacks` line that is not a JSON list is left alone, with a warning.
+A running game holds its packs open, so close Minecraft before running the
+installer; if the pack cannot be replaced, the run warns and still succeeds.
 
 ## JVM Arguments And Prism Memory
 
@@ -109,6 +137,9 @@ launcher afterwards and from waiting for a running Microsoft launcher to close.
 # Fresh install with the usual defaults
 install.bat -Mode Install -Unattended -Launcher Prism
 
+# The same, with the RTX art pack installed and turned on
+install.bat -Mode Install -Unattended -Launcher Prism -ArtPack Install
+
 # Pin the Prism version, which avoids the GitHub "latest" lookup entirely
 install.bat -Mode Install -Unattended -Launcher Prism -PrismVersion 9.1
 
@@ -153,6 +184,7 @@ and the instance could not launch before the run either.
 | `-SkipHashCheck` | switch | Do not verify the SHA-256 of downloads. Troubleshooting only: it turns off the check described under Supply-Chain Safety |
 | `-GitHubToken` | token string | Authenticate GitHub API calls, which raises the rate limit well above the anonymous one. `GITHUB_TOKEN` in the environment is honoured too. Useful where many machines share one outbound address |
 | `-DevServer` | `host` or `host:port` | Add one entry to the instance's saved server list. Omit it and `servers.dat` is not touched. An existing populated `servers.dat` is never merged into |
+| `-ArtPack` | `Install`, `Skip` | Install adds or updates the RTX art pack without asking; Skip leaves it alone. Omit it and an interactive run asks before adding the pack, an unattended one adds nothing, and both update a pack already installed. See The RTX Art Pack |
 | `-Verbose` | switch | Trace-level output. `install.bat` also honours `VERBOSE=1` in the environment |
 
 ## Calling installer.ps1 Directly
