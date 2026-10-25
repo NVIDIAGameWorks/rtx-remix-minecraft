@@ -11,6 +11,14 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- The installer can install into a Prism Launcher it does not detect, such as
+  a portable copy kept anywhere: the launcher question asks for its folder,
+  and later runs remember it. A portable Prism the installer does detect, on
+  the PATH or behind a Start menu shortcut, now gets the instance in its own
+  folder rather than in `%APPDATA%\PrismLauncher`.
+
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.

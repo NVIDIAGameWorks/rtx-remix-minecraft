@@ -26,6 +26,19 @@ without asking: to use the Microsoft launcher, install it and start it once, so
 it creates its profile file, then run the installer again. `-Launcher` names
 one in any mode.
 
+The installer detects its own portable copy of Prism, and a Prism on the PATH,
+in Prism's default install folders, or behind a Start menu shortcut. Without a
+detected Prism, the launcher question also offers **Use a Prism I already
+have**, for a portable copy kept elsewhere or any Prism detection misses. It
+asks for the folder holding `prismlauncher.exe`, or a data folder holding
+`prismlauncher.cfg`. A Prism keeps its data beside `prismlauncher.exe` when
+`portable.txt` marks it portable, and in `%APPDATA%\PrismLauncher\` otherwise.
+Once the RTX Remix Prism instance is set up in that Prism, the installer
+records its data folder in
+`%LOCALAPPDATA%\RtxRemixMinecraft\prism-data-dir.txt` so later runs detect that
+Prism too. A run that is cancelled or fails before then records nothing, and
+removing the RTX Remix Prism instance at uninstall removes the record.
+
 A run chosen from the menu ends by waiting for a key, so the window a
 double-clicked `install.bat` opens stays up to show the result or the error.
 Quit closes at once, and a run given `-Mode` never waits.
@@ -149,7 +162,7 @@ and the instance could not launch before the run either.
 | `-AcknowledgeDataLoss` | switch | Required alongside `-Unattended -Mode Uninstall` |
 | `-OutputPath` | path ending in `.zip` | Target archive for `-Mode Export`. Required in an unattended export |
 | `-PrismVersion` | `latest` (default), or a version such as `9.1` | Pin a Prism Launcher release and skip the GitHub lookup. `9.0` is rejected: its Windows portable asset is broken upstream |
-| `-PrismDataDir` | path | Prism's data directory, the folder holding `instances\` and `prismlauncher.cfg`. Needed when Prism is on the PATH but keeps its data elsewhere. It has to exist already |
+| `-PrismDataDir` | path | Prism's data directory, the folder holding `instances\` and `prismlauncher.cfg`. Takes precedence over detection, including a Prism recorded after an earlier launcher question. Needed when Prism is on the PATH but keeps its data elsewhere, or for a headless run on a Prism detection misses. It has to exist already |
 | `-SkipHashCheck` | switch | Do not verify the SHA-256 of downloads. Troubleshooting only: it turns off the check described under Supply-Chain Safety |
 | `-GitHubToken` | token string | Authenticate GitHub API calls, which raises the rate limit well above the anonymous one. `GITHUB_TOKEN` in the environment is honoured too. Useful where many machines share one outbound address |
 | `-DevServer` | `host` or `host:port` | Add one entry to the instance's saved server list. Omit it and `servers.dat` is not touched. An existing populated `servers.dat` is never merged into |
