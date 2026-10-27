@@ -290,10 +290,13 @@ The task also requires every `packaging/licenses/` file in the JAR.
 
 `releaseArchive` runs `package` and its `verifyPackageJar` check, then stages
 the verified JAR under `build/release/mods/` and the installer scripts,
-documentation, and license notices beside it. It writes that layout as a ZIP
-in `build/distributions/`. The same `-Parch` selection applies; omitting it
-includes both architectures. No separate baseline resource-pack directory is
-needed.
+documentation, and license notices beside it, with the RTX art pack as a ZIP
+under `build/release/resourcepacks/`. It writes that layout as a ZIP in
+`build/distributions/`. The same `-Parch` selection applies; omitting it
+includes both architectures. The baseline resource pack is built into the mod.
+The art pack is pulled through Packman into `remix-runtime/art-pack/` from
+the pin in `packman/art-pack.packman.xml`, which matches the version
+`tools/config.json` stages for development launches.
 
 ## Tooling And CI
 
@@ -482,6 +485,7 @@ removes its stale registration.
 | `UnsatisfiedLinkError` naming `remixbridge` | The bridge did not compile, or it was compiled for the other architecture. Re-run the build and check that `-Parch` matches the staged runtime |
 | Minecraft still uses an old local runtime build | The staged runtime is a copy; run `tools\rtx.bat sdk restage` |
 | The build fails at `fetchRuntimeTextures` | Packman could not pull the runtime textures pinned in `packman/textures.packman.xml`. Check access to Packman's download host |
+| `releaseArchive` fails at `fetchArtPack` | Packman could not pull the art pack pinned in `packman/art-pack.packman.xml`, or the cached copy has no `pack.mcmeta` at its root. Check access to Packman's download host, or delete the folder the message names and build again |
 | The build reports that the runtime textures are missing files | The shared Packman cache holds the package without its textures. Delete the folder the message names and build again; Packman downloads the package afresh |
 | `package` reports mixed sources | Stage both architectures from one kind of source, or package one with `-Parch=` |
 | Empty or partial scene on first launch | Shader compilation. Wait for it to settle before reporting a defect |

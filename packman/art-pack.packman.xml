@@ -1,0 +1,10 @@
+<project toolsVersion="7.6">
+  <!-- The RTX art pack the release archive carries for the installer to offer.
+       Gradle's fetchArtPack pulls it into the remix-runtime/art-pack/ junction,
+       on a path git has never tracked, like the runtime textures beside it.
+       Keep the version equal to resourcePack.version in tools/config.json, the
+       pack development launches stage. -->
+  <dependency name="art-pack" linkPath="../remix-runtime/art-pack">
+    <package name="rtx_remix_minecraft_texture_resourcepack" version="0.58.0" />
+  </dependency>
+</project>

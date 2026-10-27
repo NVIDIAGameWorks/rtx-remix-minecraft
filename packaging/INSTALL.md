@@ -19,6 +19,7 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 2. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Prism Launcher' (this will set up the mod automatically)
+    * Say **yes** to the RTX art pack (recommended): it is the look the renderer was made for
 
 3. **Sign in** to your Microsoft account in Prism Launcher
 
@@ -37,6 +38,7 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 4. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Microsoft Launcher' (this will set up the mod automatically)
+    * Say **yes** to the RTX art pack (recommended): it is the look the renderer was made for
 
 5. Play
     * In Minecraft Launcher, on the 'Minecraft: Java Edition' tab: **choose** 'NVIDIA RTX Remix for Minecraft' from the installation list, and hit 'Play'
@@ -65,6 +67,7 @@ breaks, report it (see below); that is how it gets fixed.
 | `README.md` | This file |
 | `INSTALLER_REFERENCE.md` | The installer modes, every flag, headless and CI use, and what the installer verifies before it downloads anything. |
 | `mods\` | The mod, one JAR |
+| `resourcepacks\` | The RTX art pack, one ZIP the installer offers to install. Minecraft loads it as it is, without unpacking |
 | `migrate_resource_packs.ps1` | Migrates legacy baseline packs and resource-pack ordering |
 | `LICENSE`, `NOTICE` | The project's Apache License 2.0 and its attribution notices |
 | `THIRD_PARTY_NOTICES.md`, `packaging\licenses\` | The third-party components the mod JAR carries, chiefly the RTX Remix runtime, and their license texts |
@@ -92,13 +95,18 @@ launch.
    either way, so your existing game, worlds, and settings are untouched. The
    **Microsoft launcher** is the official one you already use, and the mod then
    shares the same game folder and the same worlds as your normal play.
-5. The installer opens the launcher when it finishes. If it cannot, open it
+5. Say yes when the installer offers the RTX art pack. It is the texture pack
+   the renderer was made with, and you can turn it off later in Options,
+   Resource Packs. With the Microsoft launcher it is also on when you play
+   without the mod, because both share one game folder. Upgrade and Repair
+   bring an installed art pack up to date without asking.
+6. The installer opens the launcher when it finishes. If it cannot, open it
    yourself. A Prism the installer downloaded has no Start menu entry: run
    `prismlauncher.exe` in `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\`,
    the path the installer prints when it finishes. Sign in to your Microsoft
    account if you have not already. In Prism this is Accounts, then Manage
    Accounts, then Add Microsoft.
-6. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
+7. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
    Prism, or the profile of the same name in the Microsoft launcher.
 
 `INSTALLER_REFERENCE.md` covers the rest: the modes, every flag, headless and
@@ -129,8 +137,10 @@ Once you are in a world, the renderer compiles shaders and draws nothing until
 it finishes. A dark, flat, or half-built scene right after is expected. Let it
 settle before judging the picture.
 
-The baseline PBR textures ship inside the mod JAR, so no separate resource
-pack needs enabling. User packs override the built-in baseline.
+The RTX art pack is the look the renderer was made for. Without it, the
+baseline PBR textures inside the mod JAR give vanilla's textures simpler
+materials, and no pack needs turning on for those. Packs you turn on above the
+art pack override it, and every pack overrides the built-in baseline.
 
 ## Check It Worked
 
@@ -158,7 +168,14 @@ Install, Upgrade, and Repair remove an old generated `RtxRemix-LabPBR` pack
 identified by its metadata and texture inventory, leaving other packs alone.
 In an existing `options.txt`, they change only `resourcePacks`: vanilla first,
 Fabric next, then user packs in their existing order, without the retired
-baseline entry. Missing options files are not created.
+baseline entry. Missing options files are not created for that.
+
+An installed RTX art pack, `resourcepacks\rtx-remix-art-pack-<version>.zip`, is
+replaced with the archive's without asking, and its `resourcePacks` entry is
+renamed in place, so it stays on or off as you left it. A new art pack goes in
+only when you say yes, and is turned on just above Fabric's pack, below your
+own packs. That is the one case where the installer creates a missing
+`options.txt`, holding only the game version and the pack list.
 
 The runtime under `remix-sdk\` and the baseline `rtx.conf` belong to the mod
 and are replaced on the first launch after an upgrade, so edits to either do
@@ -199,6 +216,8 @@ The automated uninstall removes these:
 - `.rtx-remix-version`
 - `textures\water_normals_flipbook.dds` and
   `textures\overcast_thunderstorm_bc6u.dds`
+- `resourcepacks\rtx-remix-art-pack-<version>.zip`, the RTX art pack, and its
+  entry in the `resourcePacks:` line of `options.txt`
 - `resourcepacks\RtxRemix-LabPBR\`, if left by an earlier version
 
 Basic uninstall leaves these behind, because they are yours or they are part

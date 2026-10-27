@@ -46,6 +46,10 @@ The first public release, a beta.
   and a Windows installer for Prism Launcher and the Microsoft launcher that
   sets up Java, Fabric, the mod, and tuned JVM arguments, and repairs,
   upgrades, uninstalls, or exports an install.
+- The RTX art pack, created by an art team at NVIDIA, in the release archive
+  under `resourcepacks\`. The installer offers to install it and turn it on,
+  keeps an installed one up to date, and removes it on uninstall;
+  `-ArtPack Install` or `-ArtPack Skip` answers for a scripted run.
 - Developer tools under `tools/` through the `rtx` CLI: launching, benchmarks
   on the pinned demo world, built by [BlockWorks](https://www.blockworks.uk/),
   and the LabPBR art pack, created by an art team at NVIDIA, or on locally

@@ -73,6 +73,13 @@
     Pre-add a server entry to the instance's saved server list. Omit to
     leave servers.dat untouched.
 
+.PARAMETER ArtPack
+    Install | Skip. What Install, Upgrade, and Repair do with the RTX art
+    pack the archive carries. Omit it and an interactive run asks before
+    adding the pack, while an unattended run adds it only when asked. Either
+    way, an art pack already installed is brought up to the packaged version.
+    Install adds or updates it without asking; Skip leaves it alone.
+
 .PARAMETER Verbose
     Show verbose diagnostic output. Also respects VERBOSE=1 env var.
 
@@ -120,7 +127,10 @@ param(
 
     [string]$GitHubToken,
 
-    [string]$DevServer
+    [string]$DevServer,
+
+    [ValidateSet('Install', 'Skip')]
+    [string]$ArtPack
 )
 
 # Do NOT set $ErrorActionPreference = 'Stop' at the top level. Many probes
@@ -276,6 +286,14 @@ $script:SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 # before; an enabled copy above Fabric's mod pack masks the JAR's textures, so
 # install and uninstall both remove it.
 $script:LEGACY_RESOURCE_PACK_PATH = 'resourcepacks\RtxRemix-LabPBR'
+
+# The RTX art pack ships as resourcepacks\rtx-remix-art-pack-<version>.zip
+# beside the installer and is installed under the same name. Only files
+# matching this pattern are the installer's to replace or remove.
+$script:ART_PACK_PATTERN = '^rtx-remix-art-pack-\d+\.\d+\.\d+\.zip$'
+# Minecraft 1.21.1's data version. A new options.txt carries it so the game
+# reads the file as current rather than running every options upgrade on it.
+$script:MC_DATA_VERSION = 3955
 
 # Per-run temp dir so concurrent installer invocations don't corrupt each
 # other's downloads. Populated by Initialize-Session; torn down in finally.
@@ -2459,6 +2477,139 @@ function Install-FabricApi {
     Write-Info "Installed $desired"
 }
 
+# --- RTX art pack ---
+function Get-DistArtPack {
+    # The art pack this archive carries, or $null for an archive without one.
+    $dir = Join-Path $script:SCRIPT_DIR 'resourcepacks'
+    $packs = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $script:ART_PACK_PATTERN })
+    if ($packs.Count -gt 1) { throw "Expected one art pack in $dir, found $($packs.Count): $(($packs | ForEach-Object Name) -join ', ')" }
+    if ($packs.Count -eq 1) { return $packs[0].FullName }
+    return $null
+}
+
+function Get-InstalledArtPacks {
+    param([string]$McDir)
+    return @(Get-ChildItem -LiteralPath (Join-Path $McDir 'resourcepacks') -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $script:ART_PACK_PATTERN })
+}
+
+function Set-ArtPackOption {
+    <#
+      Points options.txt's resourcePacks at the art pack $PackName: the first
+      entry for any art pack becomes it, in place, and later ones are dropped,
+      so a pack the player turned off stays off across versions. An empty
+      $PackName drops every art pack entry. -Enable lists $PackName just above
+      Fabric's pack when no art pack is listed, below the player's own packs
+      so those still win, and creates options.txt when there is none. The file
+      is rewritten only when the list changes.
+    #>
+    param([string]$McDir, [string]$PackName, [switch]$Enable)
+    $path = Join-Path $McDir 'options.txt'
+    $exists = Test-Path -LiteralPath $path -PathType Leaf
+    if (-not $exists -and -not $Enable) { return }
+    $text = if ($exists) { [IO.File]::ReadAllText($path) } else { '' }
+    $match = [regex]::Match($text, '(?m)^resourcePacks:[^\r\n]*')
+    $listed = @()
+    if ($match.Success) {
+        try {
+            foreach ($pack in (ConvertFrom-Json $match.Value.Substring('resourcePacks:'.Length) -ErrorAction Stop)) { $listed += [string]$pack }
+        } catch {
+            Write-Warn "Left $path alone: its resourcePacks line is not a JSON list. Turn the RTX art pack on or off in Options, Resource Packs."
+            return
+        }
+    }
+    $entry = if ($PackName) { "file/$PackName" } else { $null }
+    $packs = New-Object System.Collections.Generic.List[string]
+    $placed = $false
+    foreach ($pack in $listed) {
+        if ($pack.StartsWith('file/') -and $pack.Substring(5) -match $script:ART_PACK_PATTERN) {
+            if ($entry -and -not $placed) { $packs.Add($entry); $placed = $true }
+            continue
+        }
+        $packs.Add($pack)
+    }
+    if ($Enable -and $entry -and -not $placed) {
+        # Fabric adds its own pack above every listed one when the list leaves
+        # it out, which would put the mod's baseline over the art pack.
+        if (-not $packs.Contains('vanilla')) { $packs.Insert(0, 'vanilla') }
+        if (-not $packs.Contains('fabric')) { $packs.Insert($packs.IndexOf('vanilla') + 1, 'fabric') }
+        $packs.Insert($packs.IndexOf('fabric') + 1, $entry)
+    }
+    if ($exists -and ($packs -join "`n") -ceq ($listed -join "`n")) { return }
+    $line = 'resourcePacks:' + (ConvertTo-Json -InputObject @($packs) -Compress)
+    if ($match.Success) {
+        $updated = $text.Remove($match.Index, $match.Length).Insert($match.Index, $line)
+    } elseif ($exists) {
+        $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+        $separator = if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $newline } else { '' }
+        $updated = $text + $separator + $line + $newline
+    } else {
+        # The game fills in every other option with its default.
+        $updated = "version:$($script:MC_DATA_VERSION)`r`n$line`r`n"
+    }
+    if ($updated -ceq $text) { return }
+    $bytes = if ($exists) { [IO.File]::ReadAllBytes($path) } else { @() }
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191
+    Write-FileAtomic -Path $path -Content $updated -Bom:$bom
+}
+
+function Install-ArtPack {
+    <#
+      Installs the RTX art pack the archive carries. An art pack already in
+      resourcepacks\ is replaced with the packaged one without asking and
+      stays on or off as it was. A new one goes in on -ArtPack Install, or
+      on a yes to the prompt in an interactive run, and is turned on.
+      -ArtPack Skip leaves the art pack alone.
+    #>
+    param([string]$McDir, [ValidateSet('Prism','Microsoft')] [string]$Launcher, [string]$Choice, [switch]$Unattended)
+    if ($Choice -eq 'Skip') { Write-Info 'Leaving the RTX art pack as it is (-ArtPack Skip).'; return }
+    $packaged = Get-DistArtPack
+    if (-not $packaged) { Write-Warn "This archive carries no RTX art pack, so none was installed."; return }
+    $name = Split-Path $packaged -Leaf
+    $installed = @(Get-InstalledArtPacks -McDir $McDir)
+    $enable = $false
+    if ($installed.Count -eq 0) {
+        if ($Choice -ne 'Install') {
+            if ($Unattended) {
+                Write-Info 'The RTX art pack is not installed. Pass -ArtPack Install to add it.'
+                return
+            }
+            Write-Host ''
+            Write-Host '  The RTX art pack is the texture pack the renderer was made with. You can'
+            Write-Host '  turn it off any time in Options, Resource Packs.'
+            if ($Launcher -eq 'Microsoft') {
+                Write-Host "  $($script:C_YELLOW)The Microsoft launcher shares one game folder, so the pack is also on$($script:C_RESET)"
+                Write-Host "  $($script:C_YELLOW)when you play without the mod.$($script:C_RESET)"
+            }
+            if (-not (Confirm-YesNo -Prompt 'Install the RTX art pack (recommended)?')) {
+                Write-Info 'Skipped the RTX art pack. Run the installer again to add it later.'
+                return
+            }
+        }
+        $enable = $true
+    }
+    $dir = Join-Path $McDir 'resourcepacks'
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $finalPath = Join-Path $dir $name
+    $stagedPath = "$finalPath.new"
+    try {
+        Copy-Item -LiteralPath $packaged -Destination $stagedPath -Force -ErrorAction Stop
+        Move-Item -LiteralPath $stagedPath -Destination $finalPath -Force -ErrorAction Stop
+    } catch {
+        # A running game holds its enabled packs open. The mod is already in
+        # place, so this is a warning, not a failed install.
+        Remove-Item -LiteralPath $stagedPath -Force -ErrorAction SilentlyContinue
+        Write-Warn "Could not place $name in ${dir}: $($_.Exception.Message) Close Minecraft and run the installer again."
+        return
+    }
+    foreach ($old in $installed) {
+        if ($old.Name -ne $name) { Write-Info "Replacing old art pack: $($old.Name)"; Remove-Item -LiteralPath $old.FullName -Force }
+    }
+    Set-ArtPackOption -McDir $McDir -PackName $name -Enable:$enable
+    if ($enable) { Write-Info "Installed and turned on $name" } else { Write-Info "Installed $name" }
+}
+
 function Get-ServersDatHosts {
     <#
       Parse a Minecraft servers.dat (NBT, big-endian, uncompressed) and
@@ -2699,7 +2850,7 @@ function Invoke-InstallOrUpgrade {
     # Repair / Upgrade / Install all share this code path; differ only in
     # banner copy. Per-step messages let the user trace what's happening
     # regardless of which mode dispatched here.
-    Start-StepCounter -Total 5
+    Start-StepCounter -Total 6
 
     Write-Step 'Checking prerequisites'
     if (-not (Test-NotAdmin)) { return 1 }
@@ -2745,6 +2896,9 @@ function Invoke-InstallOrUpgrade {
 
     Write-Step 'Configuring Fabric API'
     Install-FabricApi -McDir $mcDir -Launcher $launcher
+
+    Write-Step 'Installing the RTX art pack'
+    Install-ArtPack -McDir $mcDir -Launcher $launcher -Choice $ArtPack -Unattended:$Unattended
 
     # A server entry is added only when -DevServer names a host. An existing
     # populated servers.dat is never merged into.
@@ -2963,6 +3117,7 @@ function Invoke-Uninstall {
         Write-Host "    - $($script:C_DIM)<mc>/mods/fabric-api-$($script:FABRIC_API_VERSION).jar$($script:C_RESET) (Microsoft: only our exact version; Prism: all fabric-api-*)"
         Write-Host "    - $($script:C_DIM)<mc>/remix-sdk/, <mc>/rtx.conf, <mc>/.rtx-remix-version$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/textures/water_normals_flipbook.dds, <mc>/textures/overcast_thunderstorm_bc6u.dds$($script:C_RESET)"
+        Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/rtx-remix-art-pack-*.zip$($script:C_RESET) (the RTX art pack, and its entry in options.txt)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RtxRemix-LabPBR/$($script:C_RESET) (if left by an earlier version)"
         Write-Host "  Preserved: $($script:C_DIM)<mc>/rtx-remix/mods/minecraft-logic/$($script:C_RESET) (authored profiles)"
         if (-not (Confirm-YesNo -Prompt 'Proceed?' -DefaultNo)) {
@@ -3064,6 +3219,11 @@ function Remove-ModArtifacts {
             Remove-Item -LiteralPath $path -Recurse -Force
         }
     }
+    foreach ($pack in (Get-InstalledArtPacks -McDir $McDir)) {
+        Write-Info "Removing $($pack.Name)"
+        Remove-Item -LiteralPath $pack.FullName -Force
+    }
+    Set-ArtPackOption -McDir $McDir -PackName ''
 }
 
 function Remove-ManagedJdk {

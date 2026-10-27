@@ -376,7 +376,8 @@ even though the Gradle wrapper and native compiler entry points are batch script
 
 Runtime payloads live in `remix-runtime/{win64|arm64}/`, outside `build/` so
 Gradle `clean` cannot traverse Packman junctions into the shared package cache.
-The runtime textures' junction, `remix-runtime/textures/`, sits beside them.
+The runtime textures' and art pack's junctions, `remix-runtime/textures/` and
+`remix-runtime/art-pack/`, sit beside them.
 Treat these junctions as read-only, and keep every Packman link under
 `remix-runtime/`, which git has never tracked: a checkout of a commit that
 tracks files under a junction writes and deletes them in the shared cache. Staging and packaging combine the selected
