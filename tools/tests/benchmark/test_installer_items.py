@@ -282,6 +282,9 @@ def test_all_three_start_ticked(run: Run):
     assert chosen(output) == (True, True, True)
     [menu] = menus(output)
     assert menu[0] == f"Title: {TITLE}"
+    # Every menu before this one teaches Enter to accept, so Enter here installs what is ticked rather than unticking
+    # the mod.
+    assert menu[1] == "Selected: Continue"
     assert items(menu) == [
         "Item: [x] RTX Remix Renderer | the mod | disabled=False",
         "Item: [x] RTX Remix Materials | texture pack | disabled=False",

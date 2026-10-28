@@ -63,11 +63,11 @@ Install, Upgrade, and Repair install three items, and each can be left out:
 | RTX Remix Showcase World | The demo world, `saves\RTX-Remix-Showcase-World-<version>.zip` | `-World` |
 
 Once the launcher is settled, an interactive run shows them as a checklist,
-all three ticked. Enter ticks or unticks the highlighted item, Continue installs
-the ticked ones and needs at least one, and Esc cancels without changing
-anything. A flag set to `Skip` starts its item unticked. An item the archive
-does not carry, as in an older archive, shows `not in this download`, starts
-unticked, and cannot be ticked.
+all three ticked and the highlight on Continue, so Enter installs them. Enter
+on an item ticks or unticks it, Continue installs the ticked ones and needs at
+least one, and Esc cancels without changing anything. A flag set to `Skip`
+starts its item unticked. An item the archive does not carry, as in an older
+archive, shows `not in this download`, starts unticked, and cannot be ticked.
 
 An unattended run has no checklist. It installs the mod unless given
 `-Mod Skip`, and the pack and the world only when given `-ArtPack Install` or

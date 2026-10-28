@@ -41,9 +41,9 @@ and the installer that sets them up.
 ## Install in four steps
 
 1. Extract the installer bundle.
-2. Double-click `install.bat` and follow the menu. Pick a launcher, and keep
+2. Double-click `install.bat` and follow the menu. Pick a launcher, keep
    RTX Remix Renderer, RTX Remix Materials, and RTX Remix Showcase World
-   ticked.
+   ticked, and press Enter on Continue.
 3. Sign in, and launch the **NVIDIA RTX Remix for Minecraft** profile from
    your launcher.
 4. Open Singleplayer and choose **NVIDIA RTX Demo**.

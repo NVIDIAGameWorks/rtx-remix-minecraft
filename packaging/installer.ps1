@@ -1548,8 +1548,9 @@ function Select-InstallItems {
       An unattended run takes Get-InstallItemPresets as they are. An
       interactive run starts from them, and Enter on an item ticks or
       unticks it until the player picks Continue, which needs at least one
-      ticked item. An item the download does not carry is unticked and
-      cannot be ticked. Esc throws 'Cancelled by user.'
+      ticked item. The cursor starts on Continue, because every menu before
+      this one teaches Enter to accept. An item the download does not carry
+      is unticked and cannot be ticked. Esc throws 'Cancelled by user.'
     #>
     param(
         [ValidateSet('Prism', 'Microsoft')] [string]$Launcher,
@@ -1574,7 +1575,7 @@ function Select-InstallItems {
         $entry | Add-Member -NotePropertyName Carried -NotePropertyValue $carried
         if (-not $carried) { $ticked.($entry.Value) = $false }
     }
-    $selected = $null
+    $selected = 'Continue'
     while ($true) {
         $menuItems = @(foreach ($entry in $entries) {
             $box = if ($ticked.($entry.Value)) { '[x]' } else { '[ ]' }

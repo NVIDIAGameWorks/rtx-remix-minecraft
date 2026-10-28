@@ -20,7 +20,7 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 2. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Prism Launcher' (this will set up the mod automatically)
-    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then choose 'Continue'
+    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then press Enter on 'Continue'
 
 3. **Sign in** to your Microsoft account in Prism Launcher
 
@@ -40,7 +40,7 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 4. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Microsoft Launcher' (this will set up the mod automatically)
-    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then choose 'Continue'
+    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then press Enter on 'Continue'
     * *Note: this launcher shares one game folder with your normal Minecraft, so 'RTX Remix Materials' also changes how your normal game looks. Untick it to keep your normal look.*
 
 5. Play
@@ -102,14 +102,15 @@ launch.
    shares the same game folder and the same worlds as your normal play.
 5. Keep all three items ticked in the list that follows: RTX Remix Renderer,
    the mod; RTX Remix Materials, the texture pack the renderer was made with;
-   and RTX Remix Showcase World, the world it was tuned against. Enter ticks or
-   unticks the highlighted item, and Continue installs the ticked ones. The
-   pack goes in turned on, and you can turn it off later in Options, Resource
-   Packs. With the Microsoft launcher it is also on when you play without the
-   mod, because both share one game folder, and the list says so beside it;
-   untick it to leave your normal game's look alone. The world goes into
-   `saves\NVIDIA RTX Demo`. A world already there under that name is kept as
-   it is, and the installer says so.
+   and RTX Remix Showcase World, the world it was tuned against. The highlight
+   starts on Continue: press Enter on it to install the ticked items. Enter on
+   an item ticks or unticks it instead. The pack goes in turned on, and you
+   can turn it off later in Options, Resource Packs. With the Microsoft
+   launcher it is also on when you play without the mod, because both share
+   one game folder, and the list says so beside it; untick it to leave your
+   normal game's look alone. The world goes into `saves\NVIDIA RTX Demo`. A
+   world already there under that name is kept as it is, and the installer
+   says so.
 6. The installer opens the launcher when it finishes. If it cannot, open it
    yourself. A Prism the installer downloaded has no Start menu entry: run
    `prismlauncher.exe` in `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\`,
