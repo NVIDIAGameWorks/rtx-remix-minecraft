@@ -136,7 +136,7 @@ reproduced in this repository.
 ## Runtime dependencies that are NOT distributed with this project
 
 The following are required at runtime but are not contained in this
-repository or its release artifacts. The release archive's installer
+repository or its release artifacts. The installer in the installer bundle
 downloads the ones marked below from their publishers at install time, with
 their own licenses; it does not redistribute them.
 

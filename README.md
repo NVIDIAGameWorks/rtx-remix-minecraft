@@ -178,9 +178,10 @@ for the full guidelines.
 This project is licensed under the Apache License, Version 2.0 (`Apache-2.0`).
 See the [LICENSE](LICENSE) file. Attribution notices are in [NOTICE](NOTICE),
 and third-party software distributed with this project is documented in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Release archives also carry
-the RTX Remix runtime, whose NVIDIA components are covered by their own license
-terms; THIRD_PARTY_NOTICES.md lists them.
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The mod JAR and the
+installer bundle on the Releases page also carry the RTX Remix runtime, whose
+NVIDIA components are covered by their own license terms;
+THIRD_PARTY_NOTICES.md lists them.
 
 NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR
 MICROSOFT. Minecraft is a trademark of Mojang Synergies AB.

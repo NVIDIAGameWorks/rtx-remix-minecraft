@@ -170,7 +170,8 @@ enabled. For a direct comparison, type `/rtx off`, look around, then `/rtx on`.
 
 ## Updating
 
-Download the new archive from
+Download the new installer bundle,
+`rtx-remix-renderer-<version>-installer.zip`, from
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest>,
 extract it, and run `install.bat` again. It
 preselects Upgrade and replaces the mod and its supporting files in the
