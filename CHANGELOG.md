@@ -11,6 +11,13 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- Vanilla beacons light their surroundings. The block glows at its light
+  level whether or not it is active, and an active beam glows by itself and
+  lights the area around it and the volumetrics in each segment's
+  stained-glass colour. The Beacon row in Block Lights scales both.
+
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.

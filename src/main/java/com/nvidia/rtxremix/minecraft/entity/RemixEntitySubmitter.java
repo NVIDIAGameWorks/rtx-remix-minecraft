@@ -2596,7 +2596,7 @@ public class RemixEntitySubmitter {
 
         switch (key.surfaceMode()) {
             case OPAQUE -> { }
-            case CUTOUT -> opaque.alphaTestType(4)
+            case CUTOUT, EMISSIVE_CUTOUT -> opaque.alphaTestType(4)
                     .alphaReferenceValue(cutoutAlphaReferenceValue(key.textureId()));
             case TRANSLUCENT -> opaque.blendEnabled(true)
                     .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA);
@@ -2630,6 +2630,7 @@ public class RemixEntitySubmitter {
                 .albedoTexture(textures.albedo.getHandle()).filterMode(0);
         if (textures.normal != null) materialBuilder.normalTexture(textures.normal.getHandle());
         RemixTexture emissive = key.surfaceMode() == RenderLayerUtils.SurfaceMode.EMISSIVE
+                || key.surfaceMode() == RenderLayerUtils.SurfaceMode.EMISSIVE_CUTOUT
                 ? textures.albedo : textures.emissive;
         if (emissive != null) {
             materialBuilder.emissiveTexture(emissive.getHandle())
@@ -2653,7 +2654,8 @@ public class RemixEntitySubmitter {
                                           RenderLayerUtils.SurfaceMode surfaceMode) {
         return hasSssMask
                 && surfaceMode != RenderLayerUtils.SurfaceMode.TRANSLUCENT
-                && surfaceMode != RenderLayerUtils.SurfaceMode.EMISSIVE;
+                && surfaceMode != RenderLayerUtils.SurfaceMode.EMISSIVE
+                && surfaceMode != RenderLayerUtils.SurfaceMode.EMISSIVE_CUTOUT;
     }
 
     static boolean shouldUseDiffusionProfile(RenderLayerUtils.SurfaceMode surfaceMode) {

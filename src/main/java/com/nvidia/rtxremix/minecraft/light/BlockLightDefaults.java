@@ -37,6 +37,8 @@ final class BlockLightDefaults {
     /** Pre-scale emitter radius of a torch's flame, shared with the light reach calibration. */
     static final float TORCH_RADIUS = 0.2f;
     private static final float AMETHYST_INTENSITY_SCALE = 2.0f;
+    /** Half the width of the beacon's inner core block, which the glass shell encloses. */
+    private static final float BEACON_CORE_RADIUS = 0.3f;
     static final LightEntry.ColorOverride TORCH_COLOR = LightEntry.ColorOverride.of(1.0f, 0.35f, 0.1f);
     private static final LightEntry.ColorOverride CAMPFIRE_COLOR = LightEntry.ColorOverride.of(1.0f, 0.1f, 0.05f);
     private static final LightEntry.ColorOverride SOUL_COLOR = LightEntry.ColorOverride.of(0.05f, 0.2f, 1.0f);
@@ -91,6 +93,11 @@ final class BlockLightDefaults {
                 CAMPFIRE_AUTHORED_INTENSITY_MULTIPLIER);
         add(rules, "conduit", exact(Blocks.CONDUIT),
                 (id, state, pos, centroid) -> List.of(sphere(id, 0, state, pos, 0.5f, 0.5f, 0.5f, 0.1875f, CONDUIT_COLOR, null)));
+        // The core inside the glass, lit whether or not the beacon is active, as
+        // vanilla's light level is. LightManager lights an active beam from the
+        // top face up, so the two never light the block twice.
+        add(rules, "beacon", exact(Blocks.BEACON),
+                (id, state, pos, centroid) -> List.of(sphere(id, 0, state, pos, 0.5f, 0.5f, 0.5f, BEACON_CORE_RADIUS, null, null)));
         add(rules, "light", state -> state.isOf(Blocks.LIGHT) && state.get(Properties.LEVEL_15) > 0,
                 (id, state, pos, centroid) -> List.of(sphere(id, 0, state, pos, 0.5f, 0.5f, 0.5f, 0.2f, LightEntry.ColorOverride.of(1, 1, 1), null)));
         add(rules, "candles", state -> candles.contains(state.getBlock()) && state.get(CandleBlock.LIT),

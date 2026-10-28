@@ -215,6 +215,11 @@ hidden shadow model, and other players share one hook. `HeldLightState` is the
 one decision on whether a held item's lit element is burning: the local
 player's Toggle Held Lights key puts out everything in their own hands, and by
 default an open flame goes out for any holder whose eyes are under water.
+A vanilla beacon's core is the built-in `beacon` rule, while `LightManager`
+lights an active beam with one cylinder per beam segment, in its colour, from
+`LoadedVanillaBeacons`, which a mixin keeps in step with the client world. The
+beam lights are rebuilt only when a segment or the Beacon multiplier changes,
+and, like the Copper Beacon's, never culled (`VanillaBeaconBeam`).
 
 Terrain block lights are per-frame draws, not retained instances: every frame
 `ChunkManager.draw` submits each surviving `TerrainLight` (the `RemixLight`
@@ -317,6 +322,8 @@ diluting the sampler's candidate pool.
 - The placed Copper Beacon is not a `BlockLightDefaults` rule: its block entity
   owns a dynamic articulated light, and a static rule would light it twice
   (`LightManager`, `CopperBeaconBlockEntityRenderer`).
+- A vanilla beacon's beam lights start at its top face, because the `beacon`
+  rule already lights the block (`VanillaBeaconBeam`, `BlockLightDefaults`).
 - Whether a held item's lit element burns is decided once, in `HeldLightState`;
   the flame, the smoke, the hand light, and the held beam all consult it
   (`HeldItemEffectsRenderer`, `LightManager`).

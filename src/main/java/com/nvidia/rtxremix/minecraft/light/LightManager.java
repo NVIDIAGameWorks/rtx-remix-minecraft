@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.light;
 
 import com.nvidia.rtxremix.Float3D;
 import com.nvidia.rtxremix.LightInfo;
+import com.nvidia.rtxremix.LightInfoCylinderEXT;
 import com.nvidia.rtxremix.LightInfoDistantEXT;
 import com.nvidia.rtxremix.LightInfoDiskEXT;
 import com.nvidia.rtxremix.LightInfoLightShaping;
@@ -25,6 +26,7 @@ import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BeaconBlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.DimensionEffects;
@@ -39,6 +41,7 @@ import net.minecraft.item.DyeItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.Arm;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.AffineTransformation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -55,6 +58,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,7 +68,8 @@ import java.util.Set;
  *
  * <p>Static block lights are owned by {@code TerrainState.SectionEntry} and
  * managed by {@code ChunkManager}. This class handles entity lights, articulated
- * Copper Beacon block-entity lights, and the directional sky light (sun/moon).
+ * Copper Beacon block-entity lights, the beams of vanilla beacons, and the
+ * directional sky light (sun/moon).
  *
  * <p>Entity lights are rebuilt every frame rather than cached against a block
  * state, which is what lets a display-entity beacon rotate smoothly; see
@@ -80,6 +85,8 @@ public class LightManager {
     private static final float HELD_LIGHT_SIDE_OFFSET = 0.38f;
     private static final float HELD_LIGHT_HEIGHT_OFFSET = 0.88f;
     private static final BlockPos ITEM_LIGHT_RULE_POS = BlockPos.ORIGIN;
+    /** The built-in rule lighting a vanilla beacon's core, whose user multiplier scales its beam too. */
+    private static final Identifier BEACON_RULE_ID = BlockLightRuleIds.builtIn("beacon");
     private static final float[] ITEM_LIGHT_RULE_CENTROID = {0.5f, 0.5f, 0.5f};
     /** Floor for a display beacon's emitter radius, so a tiny scale cannot collapse it to a point. */
     private static final float MIN_DISPLAY_BEACON_RADIUS = 0.01f;
@@ -116,6 +123,10 @@ public class LightManager {
     private final Map<CopperBeaconBlockEntity, RemixLight> placedBeaconLights =
             new IdentityHashMap<>();
     private final Set<CopperBeaconBlockEntity> seenPlacedBeacons =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<BeaconBlockEntity, VanillaBeamLights> vanillaBeamLights =
+            new IdentityHashMap<>();
+    private final Set<BeaconBlockEntity> seenVanillaBeacons =
             Collections.newSetFromMap(new IdentityHashMap<>());
     /** Entities that claimed a light this frame; see {@link #ownsLightThisFrame}. */
     private final IntOpenHashSet lightOwnerIds = new IntOpenHashSet();
@@ -205,6 +216,7 @@ public class LightManager {
 
         seenEntityKeys.clear();
         seenPlacedBeacons.clear();
+        seenVanillaBeacons.clear();
         lightOwnerIds.clear();
         float frameDtSeconds = entityLightFrameDtSeconds();
         boolean localFirstPersonRigUpdated = false;
@@ -239,6 +251,16 @@ public class LightManager {
             }
         }
 
+        Iterator<BeaconBlockEntity> vanillaBeacons = LoadedVanillaBeacons.iterator();
+        while (vanillaBeacons.hasNext()) {
+            BeaconBlockEntity beacon = vanillaBeacons.next();
+            if (beacon.isRemoved() || beacon.getWorld() != world) {
+                vanillaBeacons.remove();
+            } else {
+                ensureVanillaBeamLights(beacon);
+            }
+        }
+
         if (!localFirstPersonRigUpdated) {
             heldLightPlacement.clear();
             shadowModelPlacement.clear();
@@ -267,6 +289,15 @@ public class LightManager {
                     light.destroy();
                 }
                 beaconIterator.remove();
+            }
+        }
+
+        var vanillaBeamIterator = vanillaBeamLights.entrySet().iterator();
+        while (vanillaBeamIterator.hasNext()) {
+            var entry = vanillaBeamIterator.next();
+            if (!seenVanillaBeacons.contains(entry.getKey())) {
+                entry.getValue().destroy();
+                vanillaBeamIterator.remove();
             }
         }
     }
@@ -362,6 +393,71 @@ public class LightManager {
         RemixLight light = new RemixLight(info, null);
         RemixLightStore.get().create(light);
         placedBeaconLights.put(beacon, light);
+    }
+
+    /**
+     * Lights the beam of an active vanilla beacon: one cylinder per stretch of
+     * {@link VanillaBeaconBeam#spans}, in that segment's colour.
+     *
+     * <p>A beam only changes when a block in its path or the beacon's
+     * brightness setting does, so its lights are built once and rebuilt on a
+     * change rather than updated every frame. Like the Copper Beacon's they
+     * are never culled, because the beam is a landmark seen from far off.
+     */
+    private void ensureVanillaBeamLights(BeaconBlockEntity beacon) {
+        List<BeaconBlockEntity.BeamSegment> segments = beacon.getBeamSegments();
+        if (segments.isEmpty()) {
+            return;
+        }
+        seenVanillaBeacons.add(beacon);
+        float radiance = BlockLightIntensityControls.apply(BEACON_RULE_ID, VanillaBeaconBeam.RADIANCE);
+        VanillaBeamLights existing = vanillaBeamLights.get(beacon);
+        if (existing != null && existing.matches(segments, radiance)) {
+            return;
+        }
+        if (existing != null) {
+            existing.destroy();
+            vanillaBeamLights.remove(beacon);
+        }
+
+        int[] heights = new int[segments.size()];
+        int[] colors = new int[segments.size()];
+        for (int i = 0; i < heights.length; i++) {
+            heights[i] = segments.get(i).getHeight();
+            colors[i] = segments.get(i).getColor();
+        }
+        BlockPos pos = beacon.getPos();
+        float channelScale = radiance / 255.0f;
+        List<RemixLight> lights = new ArrayList<>();
+        try {
+            for (VanillaBeaconBeam.Span span : VanillaBeaconBeam.spans(heights, colors)) {
+                int color = span.color();
+                LightInfo info = LightInfo.builder()
+                        .radiance(
+                                ((color >>> 16) & 0xFF) * channelScale,
+                                ((color >>> 8) & 0xFF) * channelScale,
+                                (color & 0xFF) * channelScale)
+                        .cylinderExt(LightInfoCylinderEXT.builder()
+                                .position(
+                                        pos.getX() + 0.5f,
+                                        pos.getY() + (span.bottom() + span.top()) * 0.5f,
+                                        pos.getZ() + 0.5f)
+                                .radius(VanillaBeaconBeam.RADIUS)
+                                .axis(0.0f, 1.0f, 0.0f)
+                                .axisLength(span.top() - span.bottom())
+                                .volumetricRadianceScale(VanillaBeaconBeam.VOLUMETRIC_SCALE)
+                                .build())
+                        .build();
+                RemixLight light = new RemixLight(info, null);
+                RemixLightStore.get().create(light);
+                lights.add(light);
+            }
+        } catch (RemixException e) {
+            lights.forEach(RemixLight::destroy);
+            LOGGER.error("Failed to light the beacon beam at {}: {}", pos, e.getMessage());
+            return;
+        }
+        vanillaBeamLights.put(beacon, new VanillaBeamLights(heights, colors, radiance, lights));
     }
 
     /**
@@ -1003,6 +1099,37 @@ public class LightManager {
         }
     }
 
+    /** The lights along one vanilla beacon's beam and the beam they were built for. */
+    private record VanillaBeamLights(int[] heights, int[] colors, float radiance, List<RemixLight> lights) {
+
+        boolean matches(List<BeaconBlockEntity.BeamSegment> segments, float currentRadiance) {
+            if (radiance != currentRadiance || segments.size() != heights.length) {
+                return false;
+            }
+            for (int i = 0; i < heights.length; i++) {
+                BeaconBlockEntity.BeamSegment segment = segments.get(i);
+                if (segment.getHeight() != heights[i] || segment.getColor() != colors[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void draw(RemixAPI api) throws RemixException {
+            for (RemixLight light : lights) {
+                light.draw(api);
+            }
+        }
+
+        void destroy() {
+            for (RemixLight light : lights) {
+                if (!light.isDeleted()) {
+                    light.destroy();
+                }
+            }
+        }
+    }
+
     private record EntityLightKey(int entityId, Kind kind) {
         private static EntityLightKey item(int entityId) {
             return new EntityLightKey(entityId, Kind.ITEM);
@@ -1203,14 +1330,20 @@ public class LightManager {
                 light.draw(api);
             for (RemixLight light : placedBeaconLights.values())
                 light.draw(api);
+            for (VanillaBeamLights beam : vanillaBeamLights.values())
+                beam.draw(api);
         } catch (RemixException e) {
             LOGGER.error("Failed to draw lights: {}", e.getMessage());
         }
     }
 
     public int getLightCount() {
+        int vanillaBeamLightCount = 0;
+        for (VanillaBeamLights beam : vanillaBeamLights.values())
+            vanillaBeamLightCount += beam.lights().size();
         return entityLights.size()
                 + placedBeaconLights.size()
+                + vanillaBeamLightCount
                 + (sunLight != null ? 1 : 0)
                 + (moonLight != null ? 1 : 0);
     }
@@ -1223,6 +1356,10 @@ public class LightManager {
             if (!light.isDeleted()) light.destroy();
         placedBeaconLights.clear();
         seenPlacedBeacons.clear();
+        for (VanillaBeamLights beam : vanillaBeamLights.values())
+            beam.destroy();
+        vanillaBeamLights.clear();
+        seenVanillaBeacons.clear();
         lightOwnerIds.clear();
         heldLightPlacement.clear();
         shadowModelPlacement.clear();

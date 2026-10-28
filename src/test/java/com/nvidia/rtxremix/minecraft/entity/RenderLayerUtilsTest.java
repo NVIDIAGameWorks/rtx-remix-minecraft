@@ -23,18 +23,21 @@ class RenderLayerUtilsTest {
 
     @ParameterizedTest
     @CsvSource({
-            "false, false, true, false, true, CUTOUT",
-            "false, false, true, false, false, TRANSLUCENT",
-            "true, false, true, false, true, EMISSIVE",
-            "false, true, false, false, false, EMISSIVE",
-            "false, false, false, true, false, OPAQUE"
+            "false, false, false, true, false, true, CUTOUT",
+            "false, false, false, true, false, false, TRANSLUCENT",
+            "true, false, false, true, false, true, EMISSIVE",
+            "false, false, true, false, false, false, EMISSIVE",
+            "false, false, false, false, true, false, OPAQUE",
+            // The beacon beam's translucent glow blends; its opaque core stays solid.
+            "false, true, false, true, false, false, EMISSIVE",
+            "false, true, false, false, false, false, EMISSIVE_CUTOUT"
     })
     void surfaceModeFollowsProgramAndTransparencyPrecedence(
-            boolean emissiveProgram, boolean additiveTransparency,
+            boolean emissiveProgram, boolean beaconBeamProgram, boolean additiveTransparency,
             boolean translucentTransparency, boolean solidProgram,
             boolean textProgram, RenderLayerUtils.SurfaceMode expected) {
         assertEquals(expected, RenderLayerUtils.classifySurfaceMode(
-                emissiveProgram, additiveTransparency, translucentTransparency,
+                emissiveProgram, beaconBeamProgram, additiveTransparency, translucentTransparency,
                 solidProgram, textProgram));
     }
 

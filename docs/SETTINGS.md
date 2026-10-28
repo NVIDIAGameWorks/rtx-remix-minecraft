@@ -38,7 +38,8 @@ Clouds still follow Minecraft's own cloud option: Off removes them regardless
 of the selected style, while Fast and Fancy draw the same geometry here.
 
 **Block Lights** opens a table of multipliers for normal light brightness,
-grouping related block lights into a row; the far left is Off. The Copper
+grouping related block lights into a row; the far left is Off. The Beacon row
+scales a vanilla beacon's beam as well as its core. The Copper
 Beacon is separate: right-click a placed beacon for its own controls. Lanterns
 and sea pickles glow through their surfaces rather than casting separate
 lights, so **Block Glow Intensity** under Materials controls them. Emitting

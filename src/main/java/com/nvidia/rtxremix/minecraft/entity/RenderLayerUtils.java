@@ -35,6 +35,13 @@ final class RenderLayerUtils {
         TRANSLUCENT,
         EMISSIVE,
         /**
+         * Alpha-tested and self-lit: an unblended surface that glows. Seen
+         * through refracting glass, a blended emitter drops out wherever the ray
+         * past it reaches only sky; an emitter that must stay solid, such as the
+         * beacon beam's core, takes this instead.
+         */
+        EMISSIVE_CUTOUT,
+        /**
          * Clear glass on the block atlas: blended, through the refracting material
          * terrain gives placed clear glass. No render phase encodes it, since vanilla
          * draws clear glass as a cutout; {@code RemixEntitySubmitter.atlasSurfaceMode}
@@ -174,6 +181,12 @@ final class RenderLayerUtils {
      * has no material for. Its texels are either fully opaque grey or fully
      * transparent, so alpha blending them over the surface is the closest surface
      * behaviour and it is classified as translucent.
+     *
+     * <p>The beacon beam is light, not a lit surface: vanilla draws it unlit at
+     * full brightness. Its translucent glow stays a blended emitter, while its
+     * opaque core keeps the alpha-tested surface it had and glows as
+     * {@link SurfaceMode#EMISSIVE_CUTOUT}, so the core still occludes what is
+     * behind it where the beam runs through glass.
      */
     static SurfaceMode surfaceMode(RenderLayer layer) {
         if (!(layer instanceof RenderLayer.MultiPhase multiPhase)) {
@@ -184,6 +197,7 @@ final class RenderLayerUtils {
         return classifySurfaceMode(
                 phases.program == RenderPhase.EYES_PROGRAM
                         || phases.program == RenderPhase.ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM,
+                phases.program == RenderPhase.BEACON_BEAM_PROGRAM,
                 phases.transparency == RenderPhase.ADDITIVE_TRANSPARENCY,
                 phases.transparency == RenderPhase.TRANSLUCENT_TRANSPARENCY
                         || phases.transparency == RenderPhase.CRUMBLING_TRANSPARENCY,
@@ -198,9 +212,13 @@ final class RenderLayerUtils {
      * not. Cutout keeps those quads out of the blended path, so text and maps are opaque
      * hits that cast shadows and appear in reflections instead of ghosted decals.
      */
-    static SurfaceMode classifySurfaceMode(boolean emissiveProgram, boolean additiveTransparency,
+    static SurfaceMode classifySurfaceMode(boolean emissiveProgram, boolean beaconBeamProgram,
+                                           boolean additiveTransparency,
                                            boolean translucentTransparency, boolean solidProgram,
                                            boolean textProgram) {
+        if (beaconBeamProgram) {
+            return translucentTransparency ? SurfaceMode.EMISSIVE : SurfaceMode.EMISSIVE_CUTOUT;
+        }
         if (emissiveProgram || additiveTransparency) {
             return SurfaceMode.EMISSIVE;
         }
