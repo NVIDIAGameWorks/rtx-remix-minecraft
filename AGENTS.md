@@ -76,9 +76,13 @@ the mod-owned `remix-sdk/`, `rtx.conf`, and the shipped runtime textures in
 without the release installer is complete. With a matching marker and runtime
 present, launch restores a missing `rtx.conf`, a missing runtime texture, and
 any missing shipped files under `rtx-remix/` without replacing existing files. The `rtx-remix/` payload
-is author-owned: existing files, including edited confs, are never overwritten,
-even during full extraction. Deleting a shipped conf restores its default on
-the next launch. A present conf that fails to acquire still prevents renderer
+is author-owned: an existing file is replaced only when its content is a
+version of that file that has shipped, so an untouched old default takes the
+current one and edited confs are never overwritten, even during full
+extraction. `src/main/resources/rtx-remix-shipped-payload.sha256` records
+every shipped version; a payload change appends its line and never removes
+one, and `ShippedPayloadHistoryTest` fails with the missing line. Deleting a
+shipped conf restores its default on the next launch. A present conf that fails to acquire still prevents renderer
 initialization; the error identifies the file.
 
 Baseline LabPBR textures live in `src/main/resources/assets/` and load through

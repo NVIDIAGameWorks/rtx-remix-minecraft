@@ -270,7 +270,7 @@ directory for an installed client. Portable Prism keeps the former at
 | `rtx.conf` | mod | Replaced on full extraction; with a matching marker and runtime present, copied only if missing | Restored on the next launch |
 | `.rtx-remix-version` | mod | Marker recording the extracted version and architecture | Forces full re-extraction of the runtime and `rtx.conf`, preserving existing files under `rtx-remix/` |
 | `remix-sdk.old-*/` | mod | Left behind when the previous runtime was locked at upgrade time | Safe, and cleaned up opportunistically |
-| `rtx-remix/mods/minecraft-logic/` | map or profile author | Missing shipped files are added on launch even with a matching marker; existing files, including edited confs, are never overwritten | A deleted shipped conf returns to its default on the next launch |
+| `rtx-remix/mods/minecraft-logic/` | map or profile author | Missing shipped files are added on launch even with a matching marker; a file still holding an earlier shipped default takes the current one; edited confs are never overwritten | A deleted shipped conf returns to its default on the next launch |
 | `textures/` | mod | The shipped runtime DDS textures, read by name and replaced on full extraction; other files there are left alone | Restored on the next launch even with a matching marker |
 | `config/rtxremix.json` | settings screen | Written when a settings screen closes, and deleted when nothing differs from the defaults | Resets every setting |
 | `camera-paths/<world-key>/` | you | Your recordings | Loses them, so keep this one |

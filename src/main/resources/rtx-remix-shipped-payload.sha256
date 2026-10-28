@@ -1,0 +1,27 @@
+# Every version of each rtx-remix/ payload file that has shipped, one line per
+# version: the SHA-256 of the file with CRLF line endings folded to LF, two
+# spaces, and the file's path under the JAR's native/ root.
+#
+# NativeExtractor replaces a live payload file only when its hash appears here
+# for that path, which proves the file is an untouched earlier default rather
+# than someone's edit. Append a line whenever a payload file changes and never
+# remove one: an install can still hold any version that ever shipped.
+# NativeExtractorTest fails with the line to append when the current payload
+# is missing from this list.
+
+# 0.1.0
+ca3e2f855a249f678ab0f6670e346c55084da9df4d3534ad4496575aeda459df  rtx-remix/mods/minecraft-logic/confs/biomes/plains.conf
+4a7a90b1f2191ec267f1475d3c925c641854b0bf45d1f938b88f6141b37c621a  rtx-remix/mods/minecraft-logic/confs/time/dawn.conf
+5267c814a6396b823ac7ae5739518fee027d3dc911ad3fffcc94a1d5d45f88ba  rtx-remix/mods/minecraft-logic/confs/time/day.conf
+ce4cd0c036ecade4a24efb71aa86bd20359c23c7264940349144b7d0cb274368  rtx-remix/mods/minecraft-logic/confs/time/dusk.conf
+4086401d0c87061e590ff7632ff4830661491f2f1605a02ce34de4e0fdd51f4d  rtx-remix/mods/minecraft-logic/confs/time/night.conf
+510aafd4922131cad43a8a707d20f8f483d12de330be4d8450c09dea5bb8bb54  rtx-remix/mods/minecraft-logic/confs/view_distance.conf
+a6f4ab6dec3f0226bf51cd54656ef29831f34f8362fb80ef30de75abc60cec06  rtx-remix/mods/minecraft-logic/confs/volumetrics/settling.conf
+7e24dab633d83a952fa66fcc33e87b4727b59af8eed8587484c272029a4c68bc  rtx-remix/mods/minecraft-logic/confs/water.conf
+0760e6291bbee483b8eec2a74c6fb16ece0c3613957db8d98612abe18075cb7d  rtx-remix/mods/minecraft-logic/confs/weather/rain.conf
+c4a32e583a03db01fe3e651242bcdd3958276514f0658ea536105bbe3151c0d1  rtx-remix/mods/minecraft-logic/confs/weather/thunder.conf
+a9c38cdc9ba1883ef294ac6815e3665880aa91e9fc10cc081a87ce622dc13e12  rtx-remix/mods/minecraft-logic/confs/zones/cave.conf
+7d00349b65d248c0d08ac0a5c9a425f94fe10a41b349b446fc36d052010b7a31  rtx-remix/mods/minecraft-logic/README.md
+
+# Unreleased
+278dab8e812a08ce34557e84299d281c833e7a31a17b32ce96be9dace4f3868a  rtx-remix/mods/minecraft-logic/README.md

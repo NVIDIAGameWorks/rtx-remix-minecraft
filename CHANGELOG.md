@@ -11,6 +11,13 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- An upgrade now delivers changed lighting profile defaults to existing
+  installs. A shipped profile under `rtx-remix/mods/minecraft-logic/` that
+  still holds an earlier release's default is updated on the next launch;
+  profiles you edited are kept as before.
+
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.

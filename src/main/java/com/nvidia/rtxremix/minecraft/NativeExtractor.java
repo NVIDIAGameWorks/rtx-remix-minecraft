@@ -89,15 +89,14 @@ public final class NativeExtractor {
      * uses only Fabric Loader APIs.
      *
      * <p>Non-SDK directories other than {@code textures/}, such as the
-     * {@code rtx-remix/} gameplay conf payload, are copied into the game
-     * directory but never over a file that already exists. The mod version
-     * string embeds a build timestamp and git hash, so every new build makes
-     * the marker stale;
-     * overwriting would mean each new build silently reverted an
-     * author's tuned profiles. New files still land, so profiles added by a
-     * release reach existing installs. The cost is that an edit to a shipped
-     * profile is not pushed to a player who already has that file; deleting
-     * the file restores its shipped default on the next launch.
+     * {@code rtx-remix/} gameplay conf payload, are author-owned: players and
+     * map authors edit them in place. A file there is written when it is
+     * missing or still holds an earlier shipped default, as
+     * {@link ShippedPayloadHistory} recognises it, and is otherwise left
+     * alone. The mod version string embeds a build timestamp and git hash, so
+     * every new build makes the marker stale; overwriting edited files would
+     * mean each new build silently reverted an author's tuned profiles.
+     * Deleting an edited file restores its shipped default on the next launch.
      *
      * <p>The SDK and {@code rtx.conf} are first built in
      * {@code remix-sdk.staging/} and {@code rtx.conf.staging}, then moved over
@@ -115,7 +114,8 @@ public final class NativeExtractor {
      *
      * <p>A current marker skips the SDK copy only while {@code remix-sdk/d3d9.dll}
      * is present. Missing author-owned files, {@code rtx.conf}, and runtime
-     * textures are restored on every launch without overwriting existing files.
+     * textures are restored on every launch without overwriting existing files,
+     * apart from author-owned files that still hold an earlier shipped default.
      * Recovering a small conf must not drag the whole SDK payload with it.
      *
      * <p>The version marker is written only after the copy and both staged
@@ -138,6 +138,7 @@ public final class NativeExtractor {
                     FabricLoader.getInstance().getGameDir(),
                     container.getMetadata().getVersion().getFriendlyString(),
                     detectPlatformSdkDir(System.getProperty("os.arch")),
+                    ShippedPayloadHistory.loadBundled(),
                     RETIRED_SDK_CLEANUP);
         } catch (Exception e) {
             LOGGER.error("Native extraction failed; the mod may not function correctly. "
@@ -146,11 +147,12 @@ public final class NativeExtractor {
     }
 
     /**
-     * As {@link #extractIfNeeded()}, deleting a retired {@code remix-sdk/}
+     * As {@link #extractIfNeeded()}, recognising earlier shipped defaults
+     * through {@code history} and deleting a retired {@code remix-sdk/}
      * through {@code retiredSdkCleanup}.
      */
     static void extractIfNeeded(Path nativeRoot, Path gameDir, String modVersion, String archDir,
-                                Executor retiredSdkCleanup) throws IOException {
+                                ShippedPayloadHistory history, Executor retiredSdkCleanup) throws IOException {
         String expectedMarker = buildMarker(modVersion, archDir);
         Path versionFile = gameDir.resolve(VERSION_MARKER);
         Path remixSdkDir = gameDir.resolve("remix-sdk");
@@ -174,8 +176,8 @@ public final class NativeExtractor {
                                 RTX_CONF);
                     }
                     extractTextures(nativeRoot, gameDir, true, fileCount, totalBytes);
-                    extractAuthorPayload(nativeRoot, gameDir, fileCount, totalBytes, keptCount);
-                    LOGGER.info("Native runtime {} already extracted; restored {} missing payload file(s)",
+                    extractAuthorPayload(nativeRoot, gameDir, history, fileCount, totalBytes, keptCount);
+                    LOGGER.info("Native runtime {} already extracted; restored or updated {} payload file(s)",
                             expectedMarker, fileCount.get());
                     return;
                 }
@@ -237,7 +239,7 @@ public final class NativeExtractor {
             }
         }
         extractTextures(nativeRoot, gameDir, false, fileCount, totalBytes);
-        extractAuthorPayload(nativeRoot, gameDir, fileCount, totalBytes, keptCount);
+        extractAuthorPayload(nativeRoot, gameDir, history, fileCount, totalBytes, keptCount);
 
         // Commit: swap staging into place. If either move fails we abort
         // without writing the marker, so next run re-extracts.
@@ -256,17 +258,18 @@ public final class NativeExtractor {
                 expectedMarker,
                 gameDir.toAbsolutePath(),
                 keptCount.get() > 0
-                        ? " (kept " + keptCount.get() + " existing file(s); delete one to restore its shipped default)"
+                        ? " (kept " + keptCount.get() + " edited file(s); delete one to restore its shipped default)"
                         : "");
     }
 
-    private static void extractAuthorPayload(Path nativeRoot, Path gameDir, AtomicInteger fileCount,
-                                             AtomicLong totalBytes, AtomicInteger keptCount) throws IOException {
+    private static void extractAuthorPayload(Path nativeRoot, Path gameDir, ShippedPayloadHistory history,
+                                             AtomicInteger fileCount, AtomicLong totalBytes,
+                                             AtomicInteger keptCount) throws IOException {
         try (var topStream = Files.list(nativeRoot)) {
             for (Path entry : (Iterable<Path>) topStream::iterator) {
                 String name = entry.getFileName().toString();
                 if (Files.isDirectory(entry) && !name.startsWith("remix-sdk-") && !TEXTURES_DIR.equals(name)) {
-                    extractTree(entry, gameDir.resolve(name), fileCount, totalBytes, keptCount);
+                    extractAuthorTree(entry, gameDir.resolve(name), name, history, fileCount, totalBytes, keptCount);
                 }
             }
         }
@@ -332,52 +335,88 @@ public final class NativeExtractor {
         return true;
     }
 
-    static void extractTree(Path src, Path dst, AtomicInteger fileCount, AtomicLong totalBytes) throws IOException {
-        extractTree(src, dst, fileCount, totalBytes, null);
-    }
-
     /**
-     * Copies the {@code src} tree onto {@code dst}.
-     *
-     * <p>When {@code keptCount} is null every file is written, which is what
-     * the SDK staging directory wants: the mod owns it outright. When
-     * {@code keptCount} is non-null, a file that already exists at the target
-     * is left untouched and counted instead. That mode is for payloads the
-     * player or a lighting author is expected to edit in place, where losing
-     * their work to a version bump is far worse than shipping a stale default.
-     * New files still arrive normally, so added profiles reach existing
-     * installs; only edits to files that are already there are preserved.</p>
+     * Copies the {@code src} tree onto {@code dst}, replacing every existing
+     * file. The SDK staging directory wants exactly this: the mod owns it outright.
      */
-    static void extractTree(Path src, Path dst, AtomicInteger fileCount, AtomicLong totalBytes,
-                            AtomicInteger keptCount) throws IOException {
+    static void extractTree(Path src, Path dst, AtomicInteger fileCount, AtomicLong totalBytes) throws IOException {
         Files.createDirectories(dst);
         Files.walkFileTree(src, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                Path rel = src.relativize(dir);
-                if (!rel.toString().isEmpty()) {
-                    Files.createDirectories(dst.resolve(rel.toString()));
-                }
+                createTargetDirectory(src, dst, dir);
                 return FileVisitResult.CONTINUE;
             }
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Path rel = src.relativize(file);
-                Path target = dst.resolve(rel.toString());
-                if (keptCount != null && Files.exists(target)) {
-                    keptCount.incrementAndGet();
-                    return FileVisitResult.CONTINUE;
-                }
-                Files.createDirectories(target.getParent());
-                try (InputStream in = Files.newInputStream(file)) {
-                    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
-                }
-                fileCount.incrementAndGet();
-                totalBytes.addAndGet(attrs.size());
+                copyFile(file, dst.resolve(src.relativize(file).toString()), attrs, fileCount, totalBytes);
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    /**
+     * Copies the author-owned {@code src} tree onto {@code dst}, preserving edits.
+     *
+     * <p>Players and lighting authors edit this payload in place, and losing
+     * their work to a version bump is far worse than shipping a stale default.
+     * A missing file is written, so added profiles reach existing installs and
+     * a deleted file returns to its shipped default. An existing file is
+     * replaced only when its content is a version of that file that
+     * {@code history} records as shipped, which proves nobody edited it.
+     * Anything else is left untouched and counted in {@code keptCount}.
+     *
+     * @param historyRoot the name {@code src} has under the JAR's {@code native/}
+     *                    root, which prefixes the paths {@code history} records
+     */
+    static void extractAuthorTree(Path src, Path dst, String historyRoot, ShippedPayloadHistory history,
+                                  AtomicInteger fileCount, AtomicLong totalBytes,
+                                  AtomicInteger keptCount) throws IOException {
+        Files.createDirectories(dst);
+        Files.walkFileTree(src, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                createTargetDirectory(src, dst, dir);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                String rel = src.relativize(file).toString().replace('\\', '/');
+                Path target = dst.resolve(rel);
+                if (Files.exists(target)) {
+                    String liveHash = ShippedPayloadHistory.contentHash(target);
+                    if (liveHash.equals(ShippedPayloadHistory.contentHash(file))) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    if (!history.shipped(historyRoot + "/" + rel, liveHash)) {
+                        keptCount.incrementAndGet();
+                        return FileVisitResult.CONTINUE;
+                    }
+                    LOGGER.info("Updating unedited {} to its current shipped default", target);
+                }
+                copyFile(file, target, attrs, fileCount, totalBytes);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    private static void createTargetDirectory(Path src, Path dst, Path dir) throws IOException {
+        Path rel = src.relativize(dir);
+        if (!rel.toString().isEmpty()) {
+            Files.createDirectories(dst.resolve(rel.toString()));
+        }
+    }
+
+    private static void copyFile(Path file, Path target, BasicFileAttributes attrs,
+                                 AtomicInteger fileCount, AtomicLong totalBytes) throws IOException {
+        Files.createDirectories(target.getParent());
+        try (InputStream in = Files.newInputStream(file)) {
+            Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+        fileCount.incrementAndGet();
+        totalBytes.addAndGet(attrs.size());
     }
 
     private static void deleteRecursively(Path root) throws IOException {

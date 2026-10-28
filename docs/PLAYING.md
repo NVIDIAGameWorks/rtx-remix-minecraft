@@ -245,12 +245,13 @@ following:
 Download the new release archive, extract it, and run `install.bat` again. It
 preselects Upgrade, which updates the launcher that already has the mod; choose
 Install to use the other launcher. Your worlds, settings, and any lighting
-profiles you have edited are kept, and profiles added by the new release are
-placed beside them.
+profiles you have edited are kept, profiles you never changed take the new
+release's defaults, and profiles added by the new release are placed beside
+them.
 To restore a shipped profile's default, delete that profile file and relaunch.
 Missing shipped files under `rtx-remix\` and a missing `rtx.conf` return on
-the next launch even when `.rtx-remix-version` matches. Existing profiles,
-including edited files, are never overwritten. Deleting `remix-sdk\` or its
+the next launch even when `.rtx-remix-version` matches. Edited profiles are
+never overwritten. Deleting `remix-sdk\` or its
 `d3d9.dll` also triggers recovery on the next launch. Deleting
 `.rtx-remix-version` forces full re-extraction of the runtime and `rtx.conf`,
 but still preserves existing profiles.
