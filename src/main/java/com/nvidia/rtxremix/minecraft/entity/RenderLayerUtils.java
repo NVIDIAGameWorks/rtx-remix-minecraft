@@ -99,6 +99,14 @@ final class RenderLayerUtils {
     private static Optional<Identifier> extractTexture(RenderLayer layer) {
         if (layer instanceof RenderLayer.MultiPhase multiPhase) {
             RenderLayer.MultiPhaseParameters phases = multiPhase.getPhases();
+            // The end portal and gateway programs combine two textures in screen space
+            // and their vertices carry position only; they draw with a baked texture.
+            if (phases.program == RenderPhase.END_PORTAL_PROGRAM) {
+                return EndPortalSurface.PORTAL_TEXTURE;
+            }
+            if (phases.program == RenderPhase.END_GATEWAY_PROGRAM) {
+                return EndPortalSurface.GATEWAY_TEXTURE;
+            }
             RenderPhase.TextureBase textureBase = phases.texture;
 
             if (textureBase instanceof RenderPhase.Texture texture) {

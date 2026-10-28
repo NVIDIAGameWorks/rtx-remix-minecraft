@@ -56,6 +56,14 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * on it.
      */
     private boolean transientGeometry;
+    /**
+     * Repeat period, in blocks, of texture coordinates projected from position, or 0
+     * to keep the coordinates the renderer sent. Vanilla projects the end portal
+     * surface's texture in screen space and sends none; see
+     * {@link #projectTexcoords}.
+     */
+    private int projectedTileBlocks;
+    private int projectedOriginX, projectedOriginY, projectedOriginZ;
 
     // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC) ----
     private int vertexCount = 0;
@@ -204,6 +212,22 @@ public class RemixCapturingConsumer implements VertexConsumer {
         this.textureId = textureId;
         this.topology = topology;
         this.transientGeometry = transientGeometry;
+        this.projectedTileBlocks = 0;
+    }
+
+    /**
+     * Replaces each quad's texture coordinates with its position projected onto the
+     * quad's own axis plane, offset by the block the geometry belongs to and wrapped
+     * every {@code tileBlocks} blocks, so neighbouring blocks continue one texture
+     * instead of each repeating it. Positions are block-local in a block-entity capture,
+     * which is what {@code originX..Z} complete. Stays in force until the next
+     * {@link #reinit}.
+     */
+    void projectTexcoords(int tileBlocks, int originX, int originY, int originZ) {
+        this.projectedTileBlocks = tileBlocks;
+        this.projectedOriginX = originX;
+        this.projectedOriginY = originY;
+        this.projectedOriginZ = originZ;
     }
 
     // ---- Bone detection ----
@@ -395,6 +419,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
             applyGeneratedStripNormalIfReady(i);
         } else {
             applyGeneratedQuadNormalIfReady(i);
+            applyProjectedTexcoordsIfReady(i);
             applyQuadTexcoordBoundsIfReady(i);
             closeQuadIfReady(i);
         }
@@ -564,6 +589,48 @@ public class RemixCapturingConsumer implements VertexConsumer {
                 nz[i] = fnz;
             }
         }
+    }
+
+    /**
+     * Projects the quad ending at {@code lastVertexIndex} when {@link #projectTexcoords}
+     * asked for it. The quad's plane is the axis along which its four vertices spread
+     * least; the other two axes become U and V, in X, Z, Y order of preference.
+     */
+    private void applyProjectedTexcoordsIfReady(int lastVertexIndex) {
+        if (projectedTileBlocks == 0 || (lastVertexIndex & 3) != 3) return;
+
+        int start = lastVertexIndex - 3;
+        float spreadX = spread(px, start);
+        float spreadY = spread(py, start);
+        float spreadZ = spread(pz, start);
+        int tile = projectedTileBlocks;
+        for (int i = start; i <= lastVertexIndex; i++) {
+            if (spreadY <= spreadX && spreadY <= spreadZ) {
+                tu[i] = projectedCoordinate(projectedOriginX, px[i], tile);
+                tv[i] = projectedCoordinate(projectedOriginZ, pz[i], tile);
+            } else if (spreadX <= spreadZ) {
+                tu[i] = projectedCoordinate(projectedOriginZ, pz[i], tile);
+                tv[i] = projectedCoordinate(projectedOriginY, py[i], tile);
+            } else {
+                tu[i] = projectedCoordinate(projectedOriginX, px[i], tile);
+                tv[i] = projectedCoordinate(projectedOriginY, py[i], tile);
+            }
+        }
+    }
+
+    private static float spread(float[] axis, int start) {
+        float min = Math.min(Math.min(axis[start], axis[start + 1]), Math.min(axis[start + 2], axis[start + 3]));
+        float max = Math.max(Math.max(axis[start], axis[start + 1]), Math.max(axis[start + 2], axis[start + 3]));
+        return max - min;
+    }
+
+    /**
+     * One axis of a projected texture coordinate: the block's place within the tile plus
+     * the local position, in tiles. Only the origin is wrapped, so a quad's coordinates
+     * stay continuous across its own extent.
+     */
+    static float projectedCoordinate(int origin, float local, int tileBlocks) {
+        return (Math.floorMod(origin, tileBlocks) + local) / tileBlocks;
     }
 
     /**

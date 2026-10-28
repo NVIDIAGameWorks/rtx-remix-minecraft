@@ -8,6 +8,7 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,6 +51,9 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
     /** Reusable result buffer, only safe when caller consumes before next beginEntity(). */
     private final List<CapturedLayer> resultBuffer = new ArrayList<>();
 
+    /** The block the captured geometry is local to; see {@link #setBlockOrigin}. */
+    private int originX, originY, originZ;
+
     // ---- Per-capture lifecycle ----
 
     /**
@@ -64,6 +68,18 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
             activeLayers[i] = null;
         }
         activeCount = 0;
+    }
+
+    /**
+     * Sets the block whose local space the next captures are in. Only surfaces whose
+     * texture coordinates are projected from position read it, so neighbouring end
+     * portal blocks continue one texture; a capture that never sets it projects as if
+     * at the origin.
+     */
+    public void setBlockOrigin(BlockPos pos) {
+        originX = pos.getX();
+        originY = pos.getY();
+        originZ = pos.getZ();
     }
 
     /**
@@ -124,6 +140,9 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
             consumer.reinit(textureId, true, topology, transientGeometry);
         } else {
             consumer = new RemixCapturingConsumer(textureId, true, topology, transientGeometry);
+        }
+        if (EndPortalSurface.isSurfaceTexture(textureId)) {
+            consumer.projectTexcoords(EndPortalSurface.TILE_BLOCKS, originX, originY, originZ);
         }
         consumer.setLayerIndex(activeCount);
         if (activeCount == activeLayers.length) {

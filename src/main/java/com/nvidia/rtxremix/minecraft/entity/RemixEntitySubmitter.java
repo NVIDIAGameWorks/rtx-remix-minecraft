@@ -585,6 +585,7 @@ public class RemixEntitySubmitter {
      */
     private final Set<Identifier> resourceMissing = new HashSet<>();
     private LabPBRConverter.VariantCache labPBRVariants;
+    private final EndPortalSurface endPortalSurfaces = new EndPortalSurface();
 
     // A captured layer with no material is dropped silently, which is
     // indistinguishable from an entity that simply is not there. Most gaps are
@@ -2126,6 +2127,8 @@ public class RemixEntitySubmitter {
             if (textures == null) {
                 textures = RenderLayerUtils.UNTEXTURED_LAYER_ID.equals(textureId)
                         ? createUntexturedTextureSet()
+                        : EndPortalSurface.isSurfaceTexture(textureId)
+                        ? createEndPortalTextureSet(textureId)
                         : isAtlasTexture(textureId)
                         ? tryCreateAtlasTextureSet(textureId)
                         : tryCreateTextureSet(textureId);
@@ -2159,6 +2162,41 @@ public class RemixEntitySubmitter {
             textures.destroy();
             return null;
         }
+        return textures;
+    }
+
+    /**
+     * Texture set for the end portal and gateway surfaces, from the tile
+     * {@link EndPortalSurface} bakes. Vanilla draws those surfaces unlit, so the tile
+     * is their emission as well as their albedo, under the layer's ordinary mode: the
+     * tile is opaque throughout, which the cutout alpha test passes untouched. Returns
+     * null while the bake runs, so the caller retries next frame.
+     */
+    private EntityTextureSet createEndPortalTextureSet(Identifier textureId) {
+        var client = MinecraftClient.getInstance();
+        if (client == null) return null;
+        byte[] pixels;
+        try {
+            pixels = endPortalSurfaces.poll(textureId, client.getResourceManager());
+        } catch (IllegalStateException e) {
+            failedTextures.add(textureId);
+            throw e;
+        }
+        if (pixels == null) return null;
+
+        EntityTextureSet textures = new EntityTextureSet();
+        try {
+            populateTextureSet(textures, textureId.toString(), pixels,
+                    EndPortalSurface.TILE_SIZE, EndPortalSurface.TILE_SIZE, null, null, null);
+        } catch (RuntimeException e) {
+            textures.destroy();
+            throw e;
+        }
+        if (textures.albedo == null) {
+            textures.destroy();
+            return null;
+        }
+        textures.emissive = textures.albedo;
         return textures;
     }
 
@@ -2633,7 +2671,8 @@ public class RemixEntitySubmitter {
                 ? textures.albedo : textures.emissive;
         if (emissive != null) {
             materialBuilder.emissiveTexture(emissive.getHandle())
-                    .emissiveIntensity(EMISSIVE_INTENSITY);
+                    .emissiveIntensity(EndPortalSurface.isSurfaceTexture(key.textureId())
+                            ? EndPortalSurface.EMISSIVE_INTENSITY : EMISSIVE_INTENSITY);
         }
 
         MaterialInfo info = materialBuilder.opaqueExt(opaque.build()).build();
@@ -2817,6 +2856,7 @@ public class RemixEntitySubmitter {
         missingMaterialSince.clear();
         warnedMissingMaterials.clear();
         labPBRVariants = null;
+        endPortalSurfaces.clear();
     }
 
     public void clear() {
