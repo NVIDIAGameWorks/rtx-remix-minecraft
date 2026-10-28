@@ -205,6 +205,9 @@ final class RemixRenderContext implements RenderContext {
             float nx = fn.x(), ny = fn.y(), nz = fn.z();
 
             int capturedColor = colors[0];
+            // As Indigo decides: a material can opt its quads out of the block tint.
+            int capturedColorIndex = materialVal != null && materialVal.disableColorIndex()
+                    ? -1 : colorIndexVal;
 
             Identifier spriteId = null;
             float su0 = 0, sv0 = 0, su1 = 1, sv1 = 1;
@@ -220,6 +223,7 @@ final class RemixRenderContext implements RenderContext {
                 capturedPos, capturedUv,
                 nx, ny, nz,
                 capturedColor,
+                capturedColorIndex,
                 spriteId,
                 su0, sv0, su1, sv1,
                 "solid",
