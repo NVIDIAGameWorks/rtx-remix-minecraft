@@ -3070,6 +3070,11 @@ function Invoke-InstallOrUpgrade {
     # regardless of which mode dispatched here. The total counts the items
     # the flags ask for until the checklist settles them.
     $presets = Get-InstallItemPresets -Unattended:$Unattended -ModChoice $Mod -ArtPackChoice $ArtPack -WorldChoice $World
+    # An unattended run has no checklist, so its flags are the whole selection.
+    if ($Unattended -and -not ($presets.Mod -or $presets.ArtPack -or $presets.World)) {
+        Write-Err 'Nothing to install: -Mod Skip needs -ArtPack Install or -World Install.'
+        return 2
+    }
     Start-StepCounter -Total (Get-InstallStepCount -Items $presets)
 
     Write-Step 'Checking prerequisites'

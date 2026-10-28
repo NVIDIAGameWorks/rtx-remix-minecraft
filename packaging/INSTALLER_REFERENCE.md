@@ -73,7 +73,9 @@ An unattended run has no checklist. It installs the mod unless given
 `-Mod Skip`, and the pack and the world only when given `-ArtPack Install` or
 `-World Install`, so a script written for an earlier archive installs what it
 did before. An unattended Upgrade therefore leaves an installed pack at its
-old version unless it is given `-ArtPack Install`.
+old version unless it is given `-ArtPack Install`. `-Mod Skip` without either
+of those leaves nothing to install: the run changes nothing and exits with
+code `2`.
 
 With the mod unticked, nothing sets up a launcher, so the pack and the world go
 into the game folder an earlier install made for the launcher you pick: the
@@ -220,9 +222,11 @@ fails with exit code `1`.
 
 Exit codes: `0` success, `1` the operation failed, `2` the arguments were
 invalid. A `2` covers `-Unattended` without `-Mode`, an unattended uninstall
-without `-AcknowledgeDataLoss`, an unattended export without `-OutputPath`, and
-`-Mode Export` on the Microsoft launcher. Running with no `-Mode` when standard
-input is redirected is also a `2`: the menu needs a real terminal.
+without `-AcknowledgeDataLoss`, an unattended export without `-OutputPath`, an
+unattended Install, Upgrade, or Repair with `-Mod Skip` and neither
+`-ArtPack Install` nor `-World Install`, and `-Mode Export` on the Microsoft
+launcher. Running with no `-Mode` when standard input is redirected is also a
+`2`: the menu needs a real terminal.
 
 An unattended run keeps existing JVM arguments that differ from the recommended
 set, unless an installer wrote them, rather than overwriting them silently, and

@@ -529,6 +529,28 @@ def test_a_run_where_every_item_installs_says_it_is_complete(run: Run, prism: Pa
     assert len({len(line) for line in box}) == 1, box
 
 
+@pytest.mark.parametrize("skips", [{}, {"art_pack": "Skip", "world": "Skip"}])
+@pytest.mark.parametrize("has_instance", [False, True])
+def test_an_unattended_run_with_nothing_to_install_is_an_argument_error(
+    run: Run, prism: Path, user_dir: Path, skips: dict[str, str], has_instance: bool
+):
+    # Without -ArtPack Install or -World Install, -Mod Skip leaves an unattended run nothing to do, whether or not an
+    # earlier install made the game folder.
+    if has_instance:
+        instance(prism)
+    before = files(prism)
+
+    result = run("Run", unattended=True, mod="Skip", **skips)
+
+    assert returned(result.stdout) == [2]
+    assert "Nothing to install: -Mod Skip needs -ArtPack Install or -World Install." in result.stderr
+    assert "Install RTX Remix Renderer first" not in result.stderr
+    assert not steps(result.stdout)
+    assert COMPLETE not in result.stdout
+    assert files(prism) == before
+    assert files(user_dir) == ["Local", "Roaming"]
+
+
 def test_an_item_missing_from_the_bundle_only_warns(run: Run, dist: Path, prism: Path):
     (dist / "saves" / WORLD_ZIP).unlink()
     mc_dir = instance(prism)
