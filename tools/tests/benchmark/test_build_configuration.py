@@ -56,37 +56,129 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("from 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'", body)
         self.assertIn("from('packaging/licenses')", body)
         self.assertIn("into 'packaging/licenses'", body)
-        # The only resource pack is the zipped art pack; the retired baseline pack must not come back.
-        self.assertRegex(body, r"from\(artPackArchiveTask\) \{\s*into 'resourcepacks'\s*\}")
+        # The only resource pack is the zipped Materials pack; the retired baseline pack must not come back.
+        self.assertRegex(body, r"from\(materialsArchiveTask\) \{\s*into 'resourcepacks'\s*\}")
         self.assertEqual(body.count("resourcepacks"), 1)
         self.assertNotIn("LabPBR", body)
         self.assertNotIn("*.jar", body)
 
-    def test_release_art_pack_is_the_pack_development_launches_stage(self):
-        # The installer offers the art pack the archive carries; development launches stage the one tools/config.json
-        # pins. Players and developers must see the same pack.
-        manifest = ElementTree.parse(REPO_ROOT / "packman" / "art-pack.packman.xml").getroot()
-        packages = manifest.findall("./dependency/package")
-        self.assertEqual(len(packages), 1)
-        dependency = manifest.find("./dependency")
-        assert dependency is not None
-        self.assertEqual(dependency.get("linkPath"), "../remix-runtime/art-pack")
-        tools_config = json.loads((REPO_ROOT / "tools" / "config.json").read_text(encoding="utf-8"))
-        self.assertEqual(packages[0].get("name"), tools_config["resourcePack"]["package"])
-        self.assertEqual(packages[0].get("version"), tools_config["resourcePack"]["version"])
-
-    def test_release_art_pack_is_a_reproducible_zip_named_for_the_installer(self):
+    def test_release_content_pins_come_from_tools_config(self):
+        # The installer offers the pack and world the release carries; development launches stage the ones
+        # tools/config.json pins. Players and developers must see the same content, so there is one pin file.
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        archive = re.search(r"(?ms)^def artPackArchiveTask = tasks.register\('artPackArchive', Zip\) \{(.+?)^\}", build)
+        self.assertIn("new groovy.json.JsonSlurper().parse(releaseContentConfigFile)", build)
+        self.assertIn("def releaseContentConfigFile = file('tools/config.json')", build)
+        for key in ("resourcePack.package", "resourcePack.version", "world.name", "world.version"):
+            self.assertIn(f"releaseContentConfig.{key}", build)
+        self.assertFalse((REPO_ROOT / "packman" / "art-pack.packman.xml").exists())
+        self.assertNotIn("art-pack.packman.xml", build)
+
+    def test_release_content_pins_match_the_names_the_installer_looks_for(self):
+        # A pin the installer's file name patterns do not match would build a zip the installer silently ignores,
+        # so fetchReleaseContent refuses it. The pins in the repository must pass that check.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        materials = re.search(r"materialsVersion ==~ /([^/]+)/", build)
+        world = re.search(r"worldVersion ==~ /([^/]+)/", build)
+        assert materials is not None and world is not None
+        tools_config = json.loads((REPO_ROOT / "tools" / "config.json").read_text(encoding="utf-8"))
+        self.assertRegex(tools_config["resourcePack"]["version"], f"^(?:{materials.group(1)})$")
+        self.assertRegex(tools_config["world"]["version"], f"^(?:{world.group(1)})$")
+
+    def test_release_content_zips_are_reproducible_and_named_for_the_installer(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        for task, name in (
+            ("materialsArchive", "RTX-Remix-Materials-${materialsVersion}.zip"),
+            ("worldArchive", "RTX-Remix-Showcase-World-${worldVersion}.zip"),
+        ):
+            with self.subTest(task=task):
+                archive = re.search(rf"(?ms)^def {task}Task = tasks.register\('{task}', Zip\) \{{(.+?)^\}}", build)
+                self.assertIsNotNone(archive, f"{task} must be a Zip task")
+                assert archive is not None
+                body = archive.group(1)
+                # installer.ps1 finds each zip by this name, in the bundle and in the game folder.
+                self.assertIn(f'archiveFileName.set("{name}")', body)
+                self.assertIn("destinationDirectory.set(layout.buildDirectory.dir('release-content'))", body)
+                self.assertIn("dependsOn fetchReleaseContentTask", body)
+                self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
+                self.assertIn("preserveFileTimestamps = false", body)
+                self.assertIn("reproducibleFileOrder = true", body)
+
+    def test_materials_zip_is_a_pack_minecraft_lists(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(
+            r"(?ms)^def materialsArchiveTask = tasks.register\('materialsArchive', Zip\) \{(.+?)^\}", build
+        )
         assert archive is not None
         body = archive.group(1)
-        # installer.ps1's ART_PACK_PATTERN finds the pack by this name, in the archive and in the game folder.
-        self.assertIn('archiveFileName.set("rtx-remix-art-pack-${artPackVersion}.zip")', body)
-        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
-        self.assertIn(r"$script:ART_PACK_PATTERN = '^rtx-remix-art-pack-\d+\.\d+\.\d+\.zip$'", installer)
         self.assertIn("exclude '.packman*'", body)
-        self.assertIn("preserveFileTimestamps = false", body)
-        self.assertIn("reproducibleFileOrder = true", body)
+        # The pack's own pack.mcmeta is replaced by the one materialsPackMeta writes.
+        self.assertIn("exclude 'pack.mcmeta'", body)
+        self.assertIn("from(materialsPackMetaTask)", body)
+        # Six stray exports in the source pack that the release leaves out.
+        for channel in ("AO", "C", "H", "M", "N", "R"):
+            self.assertIn(f"exclude 'assets/minecraft/textures/block/item_frame_{channel}.png'", body)
+        self.assertEqual(body.count("item_frame_"), 6)
+        self.assertIn("from('packaging/content/materials/pack.png')", body)
+        self.assertIn("from('packaging/content/materials/README.txt')", body)
+        self.assertIn("filter(ReplaceTokens, tokens: [VERSION: materialsVersion])", body)
+        self.assertIn("from('packaging/content/LICENSE-CC-BY-4.0.txt')", body)
+        self.assertIn("rename { 'LICENSE.txt' }", body)
+        meta = re.search(r"(?ms)^def materialsPackMetaTask = tasks.register\('materialsPackMeta'\) \{(.+?)^\}", build)
+        assert meta is not None
+        # Minecraft shows the description in its pack list; pack_format stays as the pack's authors set it.
+        self.assertIn("def materialsDescription = 'LabPBR textures by NVIDIA for RTX Remix'", build)
+        self.assertIn("meta.pack.description = materialsDescription", meta.group(1))
+        self.assertNotIn("pack_format", meta.group(1))
+
+    def test_world_zip_keeps_only_the_world_a_player_needs(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(r"(?ms)^def worldArchiveTask = tasks.register\('worldArchive', Zip\) \{(.+?)^\}", build)
+        self.assertIsNotNone(archive)
+        assert archive is not None
+        body = archive.group(1)
+        world = re.search(r'(?ms)from\("\$\{worldDir\}/world"\) \{(.+?)^    \}', body)
+        self.assertIsNotNone(world, "the world must come from the Packman package's world/ folder")
+        assert world is not None
+        included = re.search(r"include (.+)", world.group(1))
+        assert included is not None
+        patterns = re.findall(r"'([^']+)'", included.group(1))
+        # No session.lock, playerdata, advancements, stats, datapacks, level.dat_old or Paper's files: a launcher
+        # opens the world fresh, as a player's first visit would.
+        self.assertEqual(len(patterns), 8)
+        self.assertEqual(
+            set(patterns),
+            {"DIM-1/**", "DIM1/**", "data/**", "entities/**", "poi/**", "region/**", "icon.png", "level.dat"},
+        )
+        self.assertIn("into 'NVIDIA RTX Demo'", world.group(1))
+        # The README and license sit beside level.dat in the world folder, not at the zip's root.
+        for source in ("packaging/content/world/README.txt", "packaging/content/LICENSE-CC-BY-4.0.txt"):
+            beside = re.search(rf"(?ms)from\('{re.escape(source)}'\) \{{(.+?)^    \}}", body)
+            self.assertIsNotNone(beside, source)
+            assert beside is not None
+            self.assertIn("into 'NVIDIA RTX Demo'", beside.group(1))
+        self.assertIn("filter(ReplaceTokens, tokens: [VERSION: worldVersion])", body)
+        self.assertIn("rename { 'LICENSE.txt' }", body)
+
+    def test_release_content_links_live_under_remix_runtime(self):
+        # A checkout of a commit that tracks files under a Packman junction writes and deletes them in the shared
+        # package cache, so the pack's and world's links stay where git has never tracked a file.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        self.assertIn("def artPackDir = 'remix-runtime/art-pack'", build)
+        self.assertIn("def worldDir = 'remix-runtime/world'", build)
+        fetch = re.search(
+            r"(?ms)^def fetchReleaseContentTask = tasks.register\('fetchReleaseContent'\) \{(.+?)^\}", build
+        )
+        self.assertIsNotNone(fetch)
+        assert fetch is not None
+        body = fetch.group(1)
+        # The generated manifest links each dependency at one of those two paths and nowhere else.
+        self.assertEqual(re.findall(r"link: (\w+)", body), ["artPackDir", "worldDir"])
+        self.assertIn("linkPath: file(pin.link).absolutePath.replace('\\\\', '/')", body)
+        self.assertIn("pkg: releaseContentConfig.resourcePack.package", body)
+        self.assertIn('pkg: "rtx_remix_minecraft_world_${releaseContentConfig.world.name}"', body)
+        self.assertIn("'pull', temporaryManifest.absolutePath", body)
+        self.assertIn("inputs.file(releaseContentConfigFile)", body)
+        self.assertIn("/remix-runtime/", (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
 
     def test_distributable_jar_carries_the_runtime_textures(self):
         # A launcher such as CurseForge installs the JAR alone, with no installer to copy textures beside it, so the
