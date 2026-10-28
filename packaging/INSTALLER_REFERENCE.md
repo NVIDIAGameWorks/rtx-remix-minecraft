@@ -115,8 +115,9 @@ Only files named `RTX-Remix-Materials-<major>.<minor>.<patch>.zip` are the
 installer's; any other pack in `resourcepacks\` is yours and stays untouched.
 A `resourcePacks` line that is not a JSON list is left alone, with a warning.
 A running game holds its packs open, so close Minecraft before running the
-installer. If the new pack cannot be placed, or an older one cannot be
-removed, the step warns and fails.
+installer. Moving the copied pack into place is tried for about three seconds,
+since antivirus software may still be scanning it. If the new pack cannot be
+placed, or an older one cannot be removed, the step warns and fails.
 
 ### RTX Remix Showcase World
 
@@ -131,6 +132,11 @@ folder. The installer unpacks it into the game folder's
   again with the world ticked.
 - **A zip that cannot be unpacked**, because it is damaged or the drive is
   full, leaves nothing of the world in `saves\`, and the step warns and fails.
+- **A world that cannot be moved into place** after unpacking is tried for
+  about three seconds, since Windows renames no folder while antivirus software
+  or the search indexer holds a new file in it. If it still cannot move,
+  nothing of the world is left in `saves\`, and the step warns that the files
+  were still being scanned and fails. Run the installer again.
 - **Uninstall** keeps the world, as it keeps every world, and says where it
   is. Removing the RTX Remix Prism instance, alone or with Scorched earth,
   deletes it with the instance's other worlds.

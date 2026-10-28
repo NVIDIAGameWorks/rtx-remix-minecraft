@@ -272,6 +272,7 @@ if you are wiping it anyway.
 | `Install RTX Remix Renderer first` | RTX Remix Renderer was unticked, and the launcher has no RTX Remix game folder for the pack and the world to go into. Run the installer again with the mod ticked |
 | The RTX Remix Materials step says `Could not place` or `Could not remove the older` | Minecraft holds its resource packs open while it runs. Close it and run the installer again |
 | `Could not unpack the RTX Remix Showcase World` | Nothing of the world was left in `saves\`. Check the free space on that drive, or download the installer bundle again if the zip is damaged |
+| `Could not move the RTX Remix Showcase World` | Windows or antivirus software was still scanning the unpacked files. Nothing of the world was left in `saves\`. Run the installer again |
 
 Problems inside the game rather than inside the installer, such as a black
 screen or a flat-looking world, are covered by the player guide at

@@ -2607,6 +2607,31 @@ function Install-FabricApi {
     Write-Info "Installed $desired"
 }
 
+function Invoke-MoveWithRetry {
+    <#
+      Runs $Move, which moves files the installer has just written into
+      place, and tries again for about three seconds while it fails with an
+      I/O or access error. Antivirus software and the search indexer open
+      newly written files for a moment, and Windows renames no folder with a
+      file open inside it. Once -Creates exists, a failure is not retried:
+      something else is already there, and waiting cannot change that. The
+      last failure is rethrown.
+    #>
+    param([Parameter(Mandatory)] [scriptblock]$Move, [string]$Creates)
+    $tries = 10
+    for ($try = 1; ; $try++) {
+        try {
+            & $Move
+            return
+        } catch {
+            $cause = $_.Exception.GetBaseException()
+            $held = $cause -is [System.IO.IOException] -or $cause -is [System.UnauthorizedAccessException]
+            if (-not $held -or $try -ge $tries -or ($Creates -and (Test-Path -LiteralPath $Creates))) { throw }
+            Start-Sleep -Milliseconds 300
+        }
+    }
+}
+
 # --- RTX Remix Materials pack ---
 function Get-DistArtPack {
     # The Materials pack this download carries, or $null for a download without one.
@@ -2710,7 +2735,7 @@ function Install-ArtPack {
     try {
         if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
         Copy-Item -LiteralPath $packaged -Destination $stagedPath -Force -ErrorAction Stop
-        Move-Item -LiteralPath $stagedPath -Destination $finalPath -Force -ErrorAction Stop
+        Invoke-MoveWithRetry -Move { Move-Item -LiteralPath $stagedPath -Destination $finalPath -Force -ErrorAction Stop }
     } catch {
         # A running game holds its enabled packs open. Warn and go on, so the
         # rest of the run still completes.
@@ -2784,23 +2809,35 @@ function Install-ShowcaseWorld {
     # the same drive, so the world moves into place whole or not at all.
     $stage = Join-Path $saves ".rtx-remix-world-$([guid]::NewGuid().ToString('N'))"
     try {
-        # Expand-Archive is slow on a world this size under Windows
-        # PowerShell 5.1, and draws a progress bar.
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-        [IO.Compression.ZipFile]::ExtractToDirectory($packaged, $stage)
+        try {
+            # Expand-Archive is slow on a world this size under Windows
+            # PowerShell 5.1, and draws a progress bar.
+            Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+            [IO.Compression.ZipFile]::ExtractToDirectory($packaged, $stage)
+        } catch {
+            # A damaged zip, or a full drive. A Windows error message ends in a
+            # line break.
+            Write-Warn "Could not unpack the RTX Remix Showcase World into ${saves}: $($_.Exception.GetBaseException().Message.Trim()) Check the free space on that drive, or download the installer again."
+            return 'Failed'
+        }
         $world = Join-Path $stage $script:WORLD_FOLDER_NAME
         if (-not (Test-Path -LiteralPath (Join-Path $world 'level.dat') -PathType Leaf)) {
             Write-Warn "$(Split-Path $packaged -Leaf) holds no $($script:WORLD_FOLDER_NAME)\level.dat, so the RTX Remix Showcase World was not installed."
             return 'Failed'
         }
-        # Should a world of that name appear meanwhile, this fails rather than
-        # moving the new copy inside it, as Move-Item would.
-        [IO.Directory]::Move($world, $target)
-    } catch {
-        # A damaged zip, or a full drive. A Windows error message ends in a
-        # line break.
-        Write-Warn "Could not unpack the RTX Remix Showcase World into ${saves}: $($_.Exception.GetBaseException().Message.Trim()) Check the free space on that drive, or download the installer again."
-        return 'Failed'
+        try {
+            # Should a world of that name appear meanwhile, this fails rather than
+            # moving the new copy inside it, as Move-Item would.
+            Invoke-MoveWithRetry -Creates $target -Move { [IO.Directory]::Move($world, $target) }
+        } catch {
+            $reason = $_.Exception.GetBaseException().Message.Trim()
+            if (Test-Path -LiteralPath $target) {
+                Write-Warn "Could not move the RTX Remix Showcase World into ${saves}: $reason Something else created $target meanwhile, and it was left as it is."
+            } else {
+                Write-Warn "Could not move the RTX Remix Showcase World into ${saves}: $reason Windows or antivirus software is still scanning the new files. Run the installer again."
+            }
+            return 'Failed'
+        }
     } finally {
         if (Test-Path -LiteralPath $stage) {
             try {

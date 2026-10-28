@@ -26,11 +26,13 @@ PACK_BYTES = b"PK\x05\x06" + bytes(18)
 # Loads the installer's constants and functions without its entry point, as test_installer_prism_jvm.py does, points
 # it at -Dist as the folder it was extracted to, and runs one step: Install as Install, Upgrade, and Repair run it once
 # the player ticks the pack, or Uninstall as Remove-ModArtifacts runs it. A ticked pack is never asked about, so any
-# yes/no prompt fails the run. -Hold keeps a file open without sharing, as a running game holds its enabled packs. The
-# last line is what the step returned, as JSON.
+# yes/no prompt fails the run. -Hold keeps a file open without sharing, as a running game holds its enabled packs.
+# -ScanWaits holds the copied pack open, as antivirus software scanning a new file does, from the step's first try at
+# moving it into place until the step has waited that many times between tries. Start-Sleep only records each wait, so
+# retries cost no time; the line before the last lists them. The last line is what the step returned, as JSON.
 HARNESS = r"""
 param([string]$Installer, [string]$Loaded, [string]$Dist, [string]$McDir, [string]$Launcher, [string]$Hold,
-      [string]$Action)
+      [string]$Action, [int]$ScanWaits)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
 $entryPoint = $ast.EndBlock.Statements[-1]
 if ($entryPoint -isnot [System.Management.Automation.Language.TryStatementAst]) {
@@ -45,6 +47,25 @@ function Confirm-YesNo {
     param([string]$Prompt, [switch]$DefaultNo)
     throw "Asked: $Prompt"
 }
+$script:waits = @()
+$script:scan = $null
+function Start-Sleep {
+    param([int]$Milliseconds)
+    $script:waits += $Milliseconds
+    if ($script:scan -and $script:waits.Count -ge $ScanWaits) { $script:scan.Dispose(); $script:scan = $null }
+}
+if ($ScanWaits) {
+    $script:moveWithRetry = ${function:Invoke-MoveWithRetry}
+    function Invoke-MoveWithRetry {
+        $staged = Get-ChildItem -LiteralPath (Join-Path $McDir 'resourcepacks') -File -Filter '*.new'
+        $script:scan = [IO.File]::Open($staged.FullName, 'Open', 'Read', 'None')
+        try {
+            & $script:moveWithRetry @args
+        } finally {
+            if ($script:scan) { $script:scan.Dispose(); $script:scan = $null }
+        }
+    }
+}
 $held = if ($Hold) { [IO.File]::Open($Hold, 'Open', 'Read', 'None') } else { $null }
 try {
     $returned = @(switch ($Action) {
@@ -55,9 +76,11 @@ try {
 } finally {
     if ($held) { $held.Dispose() }
 }
+Write-Host ('Waited: ' + (ConvertTo-Json -InputObject @($script:waits) -Compress))
 Write-Host ('Returned: ' + (ConvertTo-Json -InputObject $returned -Compress))
 """
 RETURNED = "Returned: "
+WAITED = "Waited: "
 
 Run = Callable[..., str]
 
@@ -70,6 +93,13 @@ def returned(output: str) -> list[str]:
     lines = [line for line in output.splitlines() if line.startswith(RETURNED)]
     assert len(lines) == 1, output
     return json.loads(lines[0][len(RETURNED) :])
+
+
+def waits(output: str) -> list[int]:
+    """How long, in milliseconds, the step waited each time between tries."""
+    lines = [line for line in output.splitlines() if line.startswith(WAITED)]
+    assert len(lines) == 1, output
+    return json.loads(lines[0][len(WAITED) :])
 
 
 @pytest.fixture
@@ -92,7 +122,9 @@ def run(tmp_path: Path, dist: Path, mc_dir: Path) -> Run:
     harness = tmp_path / "harness.ps1"
     harness.write_text(HARNESS, encoding="ascii")
 
-    def invoke(action: str = "Install", *, launcher: str = "Prism", hold: Path | None = None) -> str:
+    def invoke(
+        action: str = "Install", *, launcher: str = "Prism", hold: Path | None = None, scan_waits: int = 0
+    ) -> str:
         command = [
             "powershell",
             "-NoProfile",
@@ -116,6 +148,8 @@ def run(tmp_path: Path, dist: Path, mc_dir: Path) -> Run:
         ]
         if hold:
             command += ["-Hold", str(hold)]
+        if scan_waits:
+            command += ["-ScanWaits", str(scan_waits)]
         result = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
         assert result.returncode == 0, result.stdout + result.stderr
         assert not result.stderr
@@ -204,6 +238,8 @@ def test_a_pack_the_game_holds_open_fails_and_changes_nothing(run: Run, mc_dir: 
 
     assert returned(output) == ["Failed"]
     assert "Close Minecraft" in output
+    # It tried for about three seconds, in case the hold was a scan's.
+    assert waits(output) == [300] * 9
     # Nothing half-copied is left beside the pack.
     assert installed(mc_dir) == [PACK]
     assert (mc_dir / "resourcepacks" / PACK).read_bytes() == b"old"
@@ -225,6 +261,16 @@ def test_an_upgrade_while_the_game_holds_the_older_pack_fails_and_leaves_options
     assert options(mc_dir) == before
     assert installed(mc_dir) == sorted([OLD_PACK, PACK])
     assert (mc_dir / "resourcepacks" / OLD_PACK).read_bytes() == b"old"
+
+
+def test_a_new_pack_held_open_for_a_moment_is_moved_on_a_later_try(run: Run, mc_dir: Path):
+    # Antivirus software and the search indexer open files just written, which blocks moving one for a moment.
+    output = run(scan_waits=2)
+
+    assert returned(output) == ["Installed"]
+    assert len(waits(output)) == 2
+    assert installed(mc_dir) == [PACK]
+    assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
 
 
 def test_a_bundle_without_a_pack_warns_and_changes_nothing(run: Run, dist: Path, mc_dir: Path):

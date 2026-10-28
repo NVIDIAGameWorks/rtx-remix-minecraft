@@ -30,11 +30,13 @@ WORLD_FILES = {f"{WORLD}/level.dat": b"level", f"{WORLD}/region/r.0.0.mca": b"re
 # it at -Dist as the folder it was extracted to, and runs one step: Install as Install, Upgrade, and Repair run it once
 # the player ticks the world, or Uninstall as Remove-ModArtifacts runs it. A ticked world is never asked about, so any
 # yes/no prompt fails the run. -Appear creates that folder after the step found none there and before its own copy
-# moves into place, as another program could: the step loads the zip library only once it has looked. The last line is
-# what the step returned, as JSON.
+# moves into place, as another program could: the step loads the zip library only once it has looked. -ScanWaits holds
+# the unpacked level.dat open, as antivirus software scanning a new file does, from the step's first try at moving the
+# world into place until the step has waited that many times between tries. Start-Sleep only records each wait, so
+# retries cost no time; the line before the last lists them. The last line is what the step returned, as JSON.
 HARNESS = r"""
 param([string]$Installer, [string]$Loaded, [string]$Dist, [string]$McDir, [string]$Launcher, [string]$Appear,
-      [string]$Action)
+      [string]$Action, [int]$ScanWaits)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
 $entryPoint = $ast.EndBlock.Statements[-1]
 if ($entryPoint -isnot [System.Management.Automation.Language.TryStatementAst]) {
@@ -56,14 +58,36 @@ if ($Appear) {
         [IO.File]::WriteAllText((Join-Path $Appear 'level.dat'), 'theirs')
     }
 }
+$script:waits = @()
+$script:scan = $null
+function Start-Sleep {
+    param([int]$Milliseconds)
+    $script:waits += $Milliseconds
+    if ($script:scan -and $script:waits.Count -ge $ScanWaits) { $script:scan.Dispose(); $script:scan = $null }
+}
+if ($ScanWaits) {
+    $script:moveWithRetry = ${function:Invoke-MoveWithRetry}
+    function Invoke-MoveWithRetry {
+        $stage = Get-ChildItem -LiteralPath (Join-Path $McDir 'saves') -Directory -Filter '.rtx-remix-world-*'
+        $level = Join-Path $stage.FullName "$($script:WORLD_FOLDER_NAME)\level.dat"
+        $script:scan = [IO.File]::Open($level, 'Open', 'Read', 'None')
+        try {
+            & $script:moveWithRetry @args
+        } finally {
+            if ($script:scan) { $script:scan.Dispose(); $script:scan = $null }
+        }
+    }
+}
 $returned = @(switch ($Action) {
     'Install' { Install-ShowcaseWorld -McDir $McDir }
     'Uninstall' { Remove-ModArtifacts -McDir $McDir -Launcher $Launcher }
     default { throw "Unknown action: $Action" }
 })
+Write-Host ('Waited: ' + (ConvertTo-Json -InputObject @($script:waits) -Compress))
 Write-Host ('Returned: ' + (ConvertTo-Json -InputObject $returned -Compress))
 """
 RETURNED = "Returned: "
+WAITED = "Waited: "
 
 Run = Callable[..., str]
 
@@ -72,6 +96,13 @@ def returned(output: str) -> list[str]:
     lines = [line for line in output.splitlines() if line.startswith(RETURNED)]
     assert len(lines) == 1, output
     return json.loads(lines[0][len(RETURNED) :])
+
+
+def waits(output: str) -> list[int]:
+    """How long, in milliseconds, the step waited each time between tries."""
+    lines = [line for line in output.splitlines() if line.startswith(WAITED)]
+    assert len(lines) == 1, output
+    return json.loads(lines[0][len(WAITED) :])
 
 
 def write_zip(path: Path, entries: dict[str, bytes]) -> None:
@@ -118,7 +149,9 @@ def run(tmp_path: Path, dist: Path, mc_dir: Path) -> Run:
     harness = tmp_path / "harness.ps1"
     harness.write_text(HARNESS, encoding="ascii")
 
-    def invoke(action: str = "Install", *, launcher: str = "Prism", appear: Path | None = None) -> str:
+    def invoke(
+        action: str = "Install", *, launcher: str = "Prism", appear: Path | None = None, scan_waits: int = 0
+    ) -> str:
         command = [
             "powershell",
             "-NoProfile",
@@ -142,6 +175,8 @@ def run(tmp_path: Path, dist: Path, mc_dir: Path) -> Run:
         ]
         if appear:
             command += ["-Appear", str(appear)]
+        if scan_waits:
+            command += ["-ScanWaits", str(scan_waits)]
         result = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
         assert result.returncode == 0, result.stdout + result.stderr
         assert not result.stderr
@@ -188,6 +223,8 @@ def test_a_broken_zip_leaves_no_partial_world(run: Run, dist: Path, mc_dir: Path
 
     assert returned(output) == ["Failed"]
     assert "download the installer again" in output
+    assert "antivirus" not in output
+    assert waits(output) == []
     assert not (mc_dir / "saves" / WORLD).exists()
     assert saves(mc_dir) == [players_world.name]
 
@@ -222,11 +259,41 @@ def test_a_zip_without_the_world_folder_is_refused(run: Run, dist: Path, mc_dir:
 def test_a_world_that_appears_meanwhile_is_not_merged_into(run: Run, mc_dir: Path):
     world = mc_dir / "saves" / WORLD
 
-    assert returned(run(appear=world)) == ["Failed"]
+    output = run(appear=world)
 
+    assert returned(output) == ["Failed"]
+    # Trying again cannot help once the folder exists, and the unpacking went fine.
+    assert waits(output) == []
+    assert "free space" not in output
+    assert "download the installer again" not in output
     # The world that appeared is untouched, with nothing moved inside it.
     assert files(world) == {"level.dat": b"theirs"}
     assert saves(mc_dir) == [WORLD]
+
+
+def test_a_world_held_open_for_a_moment_is_moved_on_a_later_try(run: Run, mc_dir: Path):
+    # Antivirus software and the search indexer open files just written, and Windows renames no folder with a file
+    # open inside it.
+    output = run(scan_waits=2)
+
+    assert returned(output) == ["Installed"]
+    assert len(waits(output)) == 2
+    assert files(mc_dir / "saves" / WORLD) == {"level.dat": b"level", "region/r.0.0.mca": b"region"}
+    assert saves(mc_dir) == [WORLD]
+
+
+def test_a_world_held_open_throughout_fails_with_advice_for_the_hold(run: Run, mc_dir: Path, players_world: Path):
+    output = run(scan_waits=99)
+
+    assert returned(output) == ["Failed"]
+    # About three seconds of tries, about 300 ms apart.
+    assert waits(output) == [300] * 9
+    assert "antivirus software is still scanning the new files. Run the installer again." in output
+    # The world unpacked, so neither disk space nor the download is the cause.
+    assert "free space" not in output
+    assert "download the installer again" not in output
+    assert not (mc_dir / "saves" / WORLD).exists()
+    assert saves(mc_dir) == [players_world.name]
 
 
 def test_a_bundle_without_a_world_reports_missing(run: Run, dist: Path, mc_dir: Path):
