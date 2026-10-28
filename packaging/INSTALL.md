@@ -89,9 +89,12 @@ launch.
    machine, the installer uses Prism without asking. **Prism Launcher** is the
    recommended choice: the installer uses the Prism you already have, or
    downloads a portable copy if you have none, and creates a separate instance
-   either way, so your existing game, worlds, and settings are untouched. The
-   **Microsoft launcher** is the official one you already use, and the mod then
-   shares the same game folder and the same worlds as your normal play.
+   either way, so your existing game, worlds, and settings are untouched. If
+   the installer does not find your Prism, such as a portable copy, choose
+   **Use a Prism I already have** and enter the folder holding
+   `prismlauncher.exe`; later runs remember it. The **Microsoft launcher** is
+   the official one you already use, and the mod then shares the same game
+   folder and the same worlds as your normal play.
 5. The installer opens the launcher when it finishes. If it cannot, open it
    yourself. A Prism the installer downloaded has no Start menu entry: run
    `prismlauncher.exe` in `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\`,
@@ -186,7 +189,8 @@ Everything is under the game folder, which is:
   `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\instances\NVIDIA RTX Remix for Minecraft\.minecraft\`
 - Prism, when you already had it: the same
   `instances\NVIDIA RTX Remix for Minecraft\.minecraft\` path under your own
-  Prism data folder, usually `%APPDATA%\PrismLauncher\`
+  Prism data folder, usually `%APPDATA%\PrismLauncher\`, or the folder of a
+  portable copy
 - Microsoft launcher: `%APPDATA%\.minecraft\`
 
 The automated uninstall removes these:
@@ -226,6 +230,7 @@ if you are wiping it anyway.
 |---|---|
 | `Do not run the installer as Administrator.` | Close the elevated window and start `install.bat` normally. The install writes to per-user folders that do not resolve for an elevated shell |
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start it once, then re-run `install.bat`, which detects it |
+| The installer does not find your Prism Launcher, such as a portable copy | At the launcher question, choose Use a Prism I already have and enter the folder holding `prismlauncher.exe`. Later runs remember that Prism. A headless run takes `-PrismDataDir` instead |
 | The Prism download fails | Check the firewall and retry. The installer asks GitHub for the newest Prism release, and a shared network address can hit GitHub's anonymous rate limit. If GitHub reports a rate limit, wait before retrying |
 | `Download failed after 3 attempts from` followed by an Adoptium URL and the error details | The Adoptium API at `api.adoptium.net` has to be reachable. Check the firewall and re-run |
 | `Failed to extract JDK 21 archive:` followed by the error details | Check free disk space and the permissions on your temporary folder, then re-run the installer to download and extract a fresh archive |

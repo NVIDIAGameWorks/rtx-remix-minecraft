@@ -50,7 +50,9 @@ difference is where the game lives.
 uses your existing Prism, or downloads its own portable copy if you have none,
 and creates a separate instance for the mod, so your existing game, worlds, and
 settings are untouched. Worlds you create in that instance are separate from
-the worlds in your normal launcher.
+the worlds in your normal launcher. If the installer does not find your Prism,
+such as a portable copy, choose **Use a Prism I already have** and enter the
+folder holding `prismlauncher.exe`; later runs remember it.
 
 **The Microsoft launcher** is the official launcher you already use. The
 installer adds a profile to it, and the mod shares the same game folder and the
@@ -193,6 +195,7 @@ has the details.
 | `/rtx status` reports `Renderer Initialized: false` | Look for `Failed to initialize RTX Remix renderer` in `logs\latest.log` and read the error that follows. If it names a conf file, check that file; an existing file that fails to load is not automatically replaced. Include the logs when reporting the failure. |
 | On a laptop: the game runs but looks like ordinary Minecraft, or is extremely slow | The display is being driven by the built-in graphics chip. In Windows Settings, Display, Graphics, add `javaw.exe` and set it to High performance, then relaunch. |
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start Prism once, then re-run `install.bat`, which detects it. |
+| The installer does not find your Prism Launcher, such as a portable copy | At the launcher question, choose Use a Prism I already have and enter the folder holding `prismlauncher.exe`. Later runs remember that Prism. |
 | Very choppy at a high render distance | Lower Minecraft's render distance, or pick a lower tier in Options, RTX Remix Settings, RTX Remix Graphics Settings. |
 | The game will not start at all | Launch the **NVIDIA RTX Remix for Minecraft** profile rather than a plain Minecraft one, and confirm the launcher is set to Java 21. |
 | A crash, a black screen, or wrong rendering with other mods installed | Remove the other mods and try again. Mods that change rendering or chunk loading are the likely conflict. If one mod turns out to be the cause, say which in your report. |
@@ -203,7 +206,8 @@ If none of that helps, the log is the next thing to look at. It is at
 - Prism, when the installer downloaded a portable copy:
   `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\instances\NVIDIA RTX Remix for Minecraft\.minecraft\logs\latest.log`
 - Prism, when you already had it: under your own Prism data folder, usually
-  `%APPDATA%\PrismLauncher\instances\NVIDIA RTX Remix for Minecraft\.minecraft\logs\latest.log`
+  `%APPDATA%\PrismLauncher\instances\NVIDIA RTX Remix for Minecraft\.minecraft\logs\latest.log`,
+  or the same path under the folder of a portable copy
 - Microsoft launcher: `%APPDATA%\.minecraft\logs\latest.log`
 
 Paste either path into the File Explorer address bar to open the folder.
