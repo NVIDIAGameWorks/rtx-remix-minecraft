@@ -399,13 +399,15 @@ commit message you want to end up with.
 
 ## Releases
 
-A maintainer releases by raising `mod_version` in `gradle.properties`, merging
-that, and running the [`release`](.github/workflows/release.yml) workflow from
-the Actions tab. It builds the four release files with `stageReleaseAssets` on
-a GitHub-hosted runner and, run from `main`, creates a draft release
-`v<mod_version>` holding them. It stops if that release or tag already
-exists. With **create_draft** turned off, or from another branch, it builds
-the files without drafting, as a trial run.
+A maintainer releases by raising `mod_version` in `gradle.properties` and
+`$script:APP_VERSION` in `packaging/installer.ps1` to the same version, which
+`test_version_consistency.py` checks, merging that, and running the
+[`release`](.github/workflows/release.yml) workflow from the Actions tab. It
+builds the four release files with `stageReleaseAssets` on a GitHub-hosted
+runner and, run from `main`, creates a draft release `v<mod_version>` holding
+them. It stops if that release or tag already exists. With **create_draft**
+turned off, or from another branch, it builds the files without drafting, as a
+trial run.
 
 A draft has no tag yet. A person writes the release notes from the squashed
 commits since the last release tag and pastes them into the draft, installs
