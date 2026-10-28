@@ -117,6 +117,18 @@ class BuildConfigurationTests(unittest.TestCase):
         assert materials is not None
         self.assertEqual(materials.group(1), r"\d+\.\d+\.\d+")
 
+    def test_the_installer_looks_for_the_world_zip_the_build_names(self):
+        # installer.ps1 unpacks only a world zip with this name, so it must match worldArchive's
+        # RTX-Remix-Showcase-World-${worldVersion}.zip for every version fetchReleaseContent accepts, v or no v.
+        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8").splitlines()
+        self.assertIn(r"$script:WORLD_ZIP_PATTERN = '^RTX-Remix-Showcase-World-v?\d+\.\d+\.\d+\.zip$'", installer)
+        # It installs the save from the folder worldArchive puts it in, under the same name.
+        self.assertIn("$script:WORLD_FOLDER_NAME = 'NVIDIA RTX Demo'", installer)
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        world = re.search(r"worldVersion ==~ /([^/]+)/", build)
+        assert world is not None
+        self.assertEqual(world.group(1), r"v?\d+\.\d+\.\d+")
+
     def test_materials_zip_is_a_pack_minecraft_lists(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         archive = re.search(

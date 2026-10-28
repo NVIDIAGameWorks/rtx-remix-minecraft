@@ -293,6 +293,12 @@ $script:ART_PACK_PATTERN = '^RTX-Remix-Materials-\d+\.\d+\.\d+\.zip$'
 # Minecraft 1.21.1's data version. A new options.txt carries it so the game
 # reads the file as current rather than running every options upgrade on it.
 $script:MC_DATA_VERSION = 3955
+# The RTX Remix Showcase World ships as
+# saves\RTX-Remix-Showcase-World-<version>.zip beside the installer, and the
+# zip's one top-level folder is the save, which keeps its name in saves\ and
+# in Minecraft's world list. build.gradle's worldArchive names both.
+$script:WORLD_ZIP_PATTERN = '^RTX-Remix-Showcase-World-v?\d+\.\d+\.\d+\.zip$'
+$script:WORLD_FOLDER_NAME = 'NVIDIA RTX Demo'
 
 # Per-run temp dir so concurrent installer invocations don't corrupt each
 # other's downloads. Populated by Initialize-Session; torn down in finally.
@@ -2609,6 +2615,80 @@ function Install-ArtPack {
     return 'Updated'
 }
 
+# --- RTX Remix Showcase World ---
+function Get-DistWorld {
+    # The Showcase World zip this download carries, or $null for a download without one.
+    $dir = Join-Path $script:SCRIPT_DIR 'saves'
+    $zips = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $script:WORLD_ZIP_PATTERN })
+    if ($zips.Count -gt 1) { throw "Expected one RTX Remix Showcase World zip in $dir, found $($zips.Count): $(($zips | ForEach-Object Name) -join ', ')" }
+    if ($zips.Count -eq 1) { return $zips[0].FullName }
+    return $null
+}
+
+function Install-ShowcaseWorld {
+    <#
+      Unpacks the RTX Remix Showcase World the download carries into saves\.
+      It runs only when the player ticked the world, so it never asks. A
+      world already in saves\ under its name is never replaced: it may hold
+      the player's progress. Returns one of:
+        Installed  the world was unpacked into saves\
+        Kept       saves\ already holds the world; it was left as it was
+        Missing    the download carries no world
+        Failed     the world could not be unpacked; nothing of it is left
+                   in saves\
+    #>
+    param([string]$McDir)
+    try {
+        $packaged = Get-DistWorld
+    } catch {
+        Write-Warn "The RTX Remix Showcase World was not installed: $($_.Exception.Message)"
+        return 'Failed'
+    }
+    if (-not $packaged) {
+        Write-Warn 'This download carries no RTX Remix Showcase World, so none was installed.'
+        return 'Missing'
+    }
+    $saves = Join-Path $McDir 'saves'
+    $target = Join-Path $saves $script:WORLD_FOLDER_NAME
+    if (Test-Path -LiteralPath $target) {
+        Write-Info "Kept the $($script:WORLD_FOLDER_NAME) world already in ${saves}. For a fresh copy, rename or delete that folder and run the installer again."
+        return 'Kept'
+    }
+    # The zip unpacks into a folder of its own beside the world's place, on
+    # the same drive, so the world moves into place whole or not at all.
+    $stage = Join-Path $saves ".rtx-remix-world-$([guid]::NewGuid().ToString('N'))"
+    try {
+        # Expand-Archive is slow on a world this size under Windows
+        # PowerShell 5.1, and draws a progress bar.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+        [IO.Compression.ZipFile]::ExtractToDirectory($packaged, $stage)
+        $world = Join-Path $stage $script:WORLD_FOLDER_NAME
+        if (-not (Test-Path -LiteralPath (Join-Path $world 'level.dat') -PathType Leaf)) {
+            Write-Warn "$(Split-Path $packaged -Leaf) holds no $($script:WORLD_FOLDER_NAME)\level.dat, so the RTX Remix Showcase World was not installed."
+            return 'Failed'
+        }
+        # Should a world of that name appear meanwhile, this fails rather than
+        # moving the new copy inside it, as Move-Item would.
+        [IO.Directory]::Move($world, $target)
+    } catch {
+        # A damaged zip, or a full drive. A Windows error message ends in a
+        # line break.
+        Write-Warn "Could not unpack the RTX Remix Showcase World into ${saves}: $($_.Exception.GetBaseException().Message.Trim()) Check the free space on that drive, or download the installer again."
+        return 'Failed'
+    } finally {
+        if (Test-Path -LiteralPath $stage) {
+            try {
+                Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Warn "Could not remove the unpacking folder ${stage}: $($_.Exception.Message) Delete it yourself."
+            }
+        }
+    }
+    Write-Info "Installed the RTX Remix Showcase World as $target"
+    return 'Installed'
+}
+
 function Get-ServersDatHosts {
     <#
       Parse a Minecraft servers.dat (NBT, big-endian, uncompressed) and
@@ -3119,7 +3199,9 @@ function Invoke-Uninstall {
         Write-Host "    - $($script:C_DIM)<mc>/textures/water_normals_flipbook.dds, <mc>/textures/overcast_thunderstorm_bc6u.dds$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RTX-Remix-Materials-*.zip$($script:C_RESET) (RTX Remix Materials, and its entry in options.txt)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RtxRemix-LabPBR/$($script:C_RESET) (if left by an earlier version)"
-        Write-Host "  Preserved: $($script:C_DIM)<mc>/rtx-remix/mods/minecraft-logic/$($script:C_RESET) (authored profiles)"
+        Write-Host '  Preserved:'
+        Write-Host "    - $($script:C_DIM)<mc>/rtx-remix/mods/minecraft-logic/$($script:C_RESET) (authored profiles)"
+        Write-Host "    - $($script:C_DIM)<mc>/saves/$($script:WORLD_FOLDER_NAME)/$($script:C_RESET) (RTX Remix Showcase World)"
         if (-not (Confirm-YesNo -Prompt 'Proceed?' -DefaultNo)) {
             Write-Info 'Cancelled.'
             return 0
@@ -3224,6 +3306,11 @@ function Remove-ModArtifacts {
         Remove-Item -LiteralPath $pack.FullName -Force
     }
     Set-ArtPackOption -McDir $McDir -PackName ''
+    # The world may hold the player's progress, so it stays.
+    $saves = Join-Path $McDir 'saves'
+    if (Test-Path -LiteralPath (Join-Path $saves $script:WORLD_FOLDER_NAME)) {
+        Write-Info "Kept the $($script:WORLD_FOLDER_NAME) world in ${saves}. Delete that folder yourself if you no longer want it."
+    }
 }
 
 function Remove-ManagedJdk {
