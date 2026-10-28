@@ -64,7 +64,8 @@ Microsoft account.
 1. Extract the whole archive to a folder. Running the installer from inside the
    zip file does not work.
 2. Double-click `install.bat`. Do not right-click and run it as administrator.
-   The installer writes to your own user folders and refuses to run elevated.
+   The installer writes to your own user folders, so it refuses to run as
+   administrator under another account.
 3. The installer opens a menu and preselects the right action for what is
    already on your machine: Install, Upgrade, or Repair. Press Enter to accept
    it. Answer the launcher question described above. Upgrade and Repair keep
