@@ -50,6 +50,30 @@ def _uses(lines):
     return [match for line in lines if (match := PIN.match(line))]
 
 
+RUN = re.compile(r"^(?P<indent>\s*)(?:-\s+)?run:\s*(?P<rest>.*)$")
+
+
+def _run_bodies(lines):
+    """Each step's `run:` script: the inline value, or the block scalar's lines indented past the `run:` key."""
+    bodies = []
+    for i, line in enumerate(lines):
+        match = RUN.match(line)
+        if not match:
+            continue
+        rest = match["rest"]
+        if not re.match(r"^[|>][-+]?\s*(?:#.*)?$", rest):
+            bodies.append(rest)
+            continue
+        key = len(line) - len(line.lstrip(" -"))
+        block = []
+        for following in lines[i + 1 :]:
+            if following.strip() and len(following) - len(following.lstrip()) <= key:
+                break
+            block.append(following)
+        bodies.append("\n".join(block))
+    return bodies
+
+
 class ReleaseWorkflowTests(unittest.TestCase):
     def test_runs_only_from_the_button(self):
         triggers = [line for line in _top_level_block(_lines(RELEASE), "on") if re.match(r"^  \S", line)]
@@ -98,6 +122,33 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(1, len(checkouts))
         self.assertEqual(1, text.count("persist-credentials: false"))
         self.assertEqual([], [line for line in _job("draft") if "actions/checkout@" in line])
+
+    def test_no_run_script_expands_an_expression(self):
+        # Actions pastes a ${{ }} expression into the script text before the shell reads it, so a value with quotes
+        # or a newline becomes code. Values reach a script through env: instead.
+        bodies = _run_bodies(_lines(RELEASE))
+
+        self.assertEqual(4, len(bodies), bodies)
+        self.assertEqual([], [body for body in bodies if "${{" in body])
+
+    def test_the_run_script_scan_reads_inline_and_block_scripts(self):
+        sample = [
+            "    steps:",
+            "      - name: Block",
+            "        run: |",
+            "          echo one",
+            "",
+            '          echo "${{ github.ref }}"',
+            "      - run: 'echo ${{ inputs.x }}'",
+            "      - name: After",
+            "        env:",
+            "          A: ${{ github.token }}",
+        ]
+
+        self.assertEqual(
+            ['          echo one\n\n          echo "${{ github.ref }}"', "'echo ${{ inputs.x }}'"],
+            _run_bodies(sample),
+        )
 
     def test_only_one_release_runs_at_a_time(self):
         self.assertIn("concurrency: release", _lines(RELEASE))
