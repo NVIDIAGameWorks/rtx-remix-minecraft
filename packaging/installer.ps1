@@ -394,17 +394,64 @@ function New-SessionTempPath {
 }
 
 # --- Prerequisite checks ---
-function Test-NotAdmin {
-    # Per-user paths resolve incorrectly under elevation (%APPDATA% points
-    # at SYSTEM's profile). Refuse to run.
-    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Err 'Do not run the installer as Administrator.'
-        Write-Err 'Run it from a normal (non-elevated) command prompt so per-user paths resolve correctly.'
-        return $false
+function Test-Elevated {
+    # Whether this process holds administrator rights: run as administrator,
+    # or any program with User Account Control off or in the built-in
+    # Administrator account.
+    $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-DesktopUserSid {
+    # The SID of the account signed in to this Windows session: the owner of
+    # the session's explorer.exe. $null when no Explorer runs in the session
+    # or Windows does not say who owns it.
+    $sessionId = (Get-Process -Id $PID).SessionId
+    try {
+        $shell = Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe' AND SessionId = $sessionId" -ErrorAction Stop |
+            Select-Object -First 1
+        if ($shell) {
+            $owner = Invoke-CimMethod -InputObject $shell -MethodName GetOwnerSid -ErrorAction Stop
+            if ($owner.ReturnValue -eq 0) { return $owner.Sid }
+        }
+    } catch {
+        Write-Trace "Could not tell who owns this session's Explorer: $($_.Exception.Message)"
     }
-    return $true
+    return $null
+}
+
+function Test-ElevationAllowed {
+    <#
+      Administrator rights alone are harmless: the per-user folders the
+      installer writes to (%APPDATA%, %LOCALAPPDATA%, the launchers' data)
+      belong to the account it runs as, not to its rights. Some PCs give
+      every program those rights without asking, with User Account Control
+      off, in the built-in Administrator account, or when install.bat starts
+      from a program that is elevated itself, and the installer then still
+      runs as the account signed in to the desktop. It refuses administrator
+      rights as another account, such as an administrator's password typed
+      at a standard user's prompt, whose folders it would install into; and,
+      to be safe, administrator rights when it cannot tell whose desktop it
+      is on.
+    #>
+    if (-not (Test-Elevated)) { return $true }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $desktopSid = Get-DesktopUserSid
+    if ($desktopSid -eq $identity.User.Value) {
+        Write-Trace "Running with administrator rights as $($identity.Name), the account signed in to this desktop."
+        return $true
+    }
+    if ($desktopSid) {
+        $desktopName = try { ([Security.Principal.SecurityIdentifier]$desktopSid).Translate([Security.Principal.NTAccount]).Value } catch { $null }
+        $signedIn = if ($desktopName) { "$desktopName, the account signed in to this desktop" } else { 'the account signed in to this desktop' }
+        Write-Err "The installer is running as $($identity.Name), not as $signedIn."
+        Write-Err "It would install into that account's folders. Close this window and start install.bat by double-clicking it."
+    } else {
+        Write-Err 'The installer is running as administrator and cannot tell which account is signed in to this desktop.'
+        Write-Err 'Close this window and start install.bat by double-clicking it. If Windows starts every program as administrator, run this in Command Prompt instead:'
+        Write-Err "  runas /trustlevel:0x20000 `"$(Join-Path $script:SCRIPT_DIR 'install.bat')`""
+    }
+    return $false
 }
 
 function Test-InteractiveHost {
@@ -2702,7 +2749,7 @@ function Invoke-InstallOrUpgrade {
     Start-StepCounter -Total 5
 
     Write-Step 'Checking prerequisites'
-    if (-not (Test-NotAdmin)) { return 1 }
+    if (-not (Test-ElevationAllowed)) { return 1 }
     $state = Get-LauncherState
     # Fetch the richer state too; lets Select-Launcher do the "auto-pick
     # the launcher with an existing install" bias on Upgrade/Repair.
