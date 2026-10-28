@@ -73,6 +73,28 @@
     Pre-add a server entry to the instance's saved server list. Omit to
     leave servers.dat untouched.
 
+.PARAMETER Mod
+    Install | Skip. Whether Install, Upgrade, and Repair install RTX Remix
+    Renderer, the mod, with the Java, launcher setup, and Fabric API it needs.
+    Install is the default. Skip installs only the pack or the world, into
+    the game folder an earlier install made: the RTX Remix Prism instance,
+    or the Microsoft launcher's .minecraft. An interactive run starts its
+    checklist with the mod ticked unless this is Skip.
+
+.PARAMETER ArtPack
+    Install | Skip. Whether Install, Upgrade, and Repair install the RTX
+    Remix Materials pack the download carries, or bring an installed one up
+    to its version. An unattended run installs it only with Install. An
+    interactive run starts its checklist with the pack ticked unless this
+    is Skip.
+
+.PARAMETER World
+    Install | Skip. Whether Install, Upgrade, and Repair unpack the RTX
+    Remix Showcase World the download carries into the game's saves folder.
+    A world already there is kept as it is. An unattended run installs it
+    only with Install. An interactive run starts its checklist with the
+    world ticked unless this is Skip.
+
 .PARAMETER Verbose
     Show verbose diagnostic output. Also respects VERBOSE=1 env var.
 
@@ -83,6 +105,11 @@
 .EXAMPLE
     .\installer.ps1 -Mode Install -Unattended -Launcher Prism
     Headless install using Prism. For CI / automated deployment.
+
+.EXAMPLE
+    .\installer.ps1 -Mode Install -Unattended -Launcher Prism -ArtPack Install -World Install
+    Headless install of the mod, the RTX Remix Materials pack, and the RTX
+    Remix Showcase World.
 
 .EXAMPLE
     .\installer.ps1 -Mode Export -Unattended -OutputPath D:\artifacts\mc.zip
@@ -120,7 +147,16 @@ param(
 
     [string]$GitHubToken,
 
-    [string]$DevServer
+    [string]$DevServer,
+
+    [ValidateSet('Install', 'Skip')]
+    [string]$Mod,
+
+    [ValidateSet('Install', 'Skip')]
+    [string]$ArtPack,
+
+    [ValidateSet('Install', 'Skip')]
+    [string]$World
 )
 
 # Do NOT set $ErrorActionPreference = 'Stop' at the top level. Many probes
@@ -276,6 +312,21 @@ $script:SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 # before; an enabled copy above Fabric's mod pack masks the JAR's textures, so
 # install and uninstall both remove it.
 $script:LEGACY_RESOURCE_PACK_PATH = 'resourcepacks\RtxRemix-LabPBR'
+
+# The RTX Remix Materials pack ships as
+# resourcepacks\RTX-Remix-Materials-<version>.zip beside the installer and is
+# installed under the same name. Only files matching this pattern are the
+# installer's to replace or remove. build.gradle's materialsArchive names it.
+$script:ART_PACK_PATTERN = '^RTX-Remix-Materials-\d+\.\d+\.\d+\.zip$'
+# Minecraft 1.21.1's data version. A new options.txt carries it so the game
+# reads the file as current rather than running every options upgrade on it.
+$script:MC_DATA_VERSION = 3955
+# The RTX Remix Showcase World ships as
+# saves\RTX-Remix-Showcase-World-<version>.zip beside the installer, and the
+# zip's one top-level folder is the save, which keeps its name in saves\ and
+# in Minecraft's world list. build.gradle's worldArchive names both.
+$script:WORLD_ZIP_PATTERN = '^RTX-Remix-Showcase-World-v?\d+\.\d+\.\d+\.zip$'
+$script:WORLD_FOLDER_NAME = 'NVIDIA RTX Demo'
 
 # Per-run temp dir so concurrent installer invocations don't corrupt each
 # other's downloads. Populated by Initialize-Session; torn down in finally.
@@ -857,6 +908,17 @@ function Get-McDirForLauncher {
     return Join-Path $env:APPDATA '.minecraft'
 }
 
+function Get-ContentOnlyMcDir {
+    # The game folder a run without the mod puts the pack and the world in:
+    # the RTX Remix Prism instance's, or the Microsoft launcher's .minecraft.
+    # $null when it does not exist, because only the mod's steps make it.
+    param([ValidateSet('Prism', 'Microsoft')] [string]$Launcher, [string]$PrismDataDir)
+    if ($Launcher -eq 'Prism' -and -not $PrismDataDir) { return $null }
+    $mcDir = Get-McDirForLauncher -Launcher $Launcher -PrismDataDir $PrismDataDir
+    if (Test-Path -LiteralPath $mcDir -PathType Container) { return $mcDir }
+    return $null
+}
+
 function Get-InstalledModVersion {
     param([string]$McDir)
     if (-not (Test-Path -LiteralPath $McDir)) { return $null }
@@ -927,19 +989,25 @@ function Invoke-Menu {
         [string]$Footer = '  up/down navigate | Enter select | Q quit',
         # Repainted from the top-left of the window above the menu on every
         # frame, so it can never scroll away.
-        [scriptblock]$Header
+        [scriptblock]$Header,
+        # The Value of the item the cursor starts on, when that item is
+        # enabled; otherwise the first enabled item.
+        [string]$Selected
     )
     if (-not $Header) {
         [Console]::Write("$ESC[?1049h")
-        try { return Invoke-Menu -Title $Title -Items $Items -Footer $Footer -Header {} }
+        try { return Invoke-Menu -Title $Title -Items $Items -Footer $Footer -Header {} -Selected $Selected }
         finally { [Console]::Write("$ESC[?1049l") }
     }
-    # Start at the first non-disabled item.
-    $idx = 0
+    # Start at the -Selected item, else the first non-disabled one.
+    $idx = -1
     for ($i = 0; $i -lt $Items.Count; $i++) {
         $d = $Items[$i].PSObject.Properties['Disabled'] -and $Items[$i].Disabled
-        if (-not $d) { $idx = $i; break }
+        if ($d) { continue }
+        if ($idx -lt 0) { $idx = $i }
+        if ($Selected -and "$($Items[$i].Value)" -eq $Selected) { $idx = $i; break }
     }
+    if ($idx -lt 0) { $idx = 0 }
     while ($true) {
         [Console]::Write("$ESC[H")
         # Clip the header so header + menu fit the window. A frame taller
@@ -1442,6 +1510,86 @@ function Select-LauncherForUninstall {
     )
     if (-not $choice) { throw 'Cancelled by user.' }
     return $choice
+}
+
+function Get-InstallItemPresets {
+    <#
+      What Install, Upgrade, and Repair install before the player changes
+      anything, from -Mod, -ArtPack, and -World: [pscustomobject]@{ Mod;
+      ArtPack; World } of booleans. An unattended run installs the mod
+      unless told to Skip it, and the pack and the world only when told to
+      Install them. An interactive run's checklist starts with every item
+      ticked that is not Skip.
+    #>
+    param([switch]$Unattended, [string]$ModChoice, [string]$ArtPackChoice, [string]$WorldChoice)
+    if ($Unattended) {
+        return [pscustomobject]@{ Mod = $ModChoice -ne 'Skip'; ArtPack = $ArtPackChoice -eq 'Install'; World = $WorldChoice -eq 'Install' }
+    }
+    return [pscustomobject]@{ Mod = $ModChoice -ne 'Skip'; ArtPack = $ArtPackChoice -ne 'Skip'; World = $WorldChoice -ne 'Skip' }
+}
+
+function Get-InstallStepCount {
+    # Checking prerequisites and selecting the launcher, then the mod's three
+    # steps (preparing the launcher, its files, Fabric API) and one each for
+    # the pack and the world.
+    param([pscustomobject]$Items)
+    $count = 2
+    if ($Items.Mod) { $count += 3 }
+    if ($Items.ArtPack) { $count++ }
+    if ($Items.World) { $count++ }
+    return $count
+}
+
+function Select-InstallItems {
+    <#
+      The checklist of what Install, Upgrade, and Repair install: RTX Remix
+      Renderer (the mod), RTX Remix Materials, and the RTX Remix Showcase
+      World. Returns [pscustomobject]@{ Mod; ArtPack; World } of booleans.
+      An unattended run takes Get-InstallItemPresets as they are. An
+      interactive run starts from them, and Enter on an item ticks or
+      unticks it until the player picks Continue, which needs at least one
+      ticked item. The cursor starts on Continue, because every menu before
+      this one teaches Enter to accept. An item the download does not carry
+      is unticked and cannot be ticked. Esc throws 'Cancelled by user.'
+    #>
+    param(
+        [ValidateSet('Prism', 'Microsoft')] [string]$Launcher,
+        [switch]$Unattended,
+        [string]$ModChoice,
+        [string]$ArtPackChoice,
+        [string]$WorldChoice
+    )
+    $ticked = Get-InstallItemPresets -Unattended:$Unattended -ModChoice $ModChoice -ArtPackChoice $ArtPackChoice -WorldChoice $WorldChoice
+    if ($Unattended) { return $ticked }
+    $entries = @(
+        [pscustomobject]@{ Value = 'Mod';     Label = 'RTX Remix Renderer';       Hint = 'the mod';        Find = { Get-DistModJar } }
+        [pscustomobject]@{ Value = 'ArtPack'; Label = 'RTX Remix Materials';      Hint = 'texture pack';   Find = { Get-DistArtPack } }
+        [pscustomobject]@{ Value = 'World';   Label = 'RTX Remix Showcase World'; Hint = 'the demo world'; Find = { Get-DistWorld } }
+    )
+    # The Microsoft launcher's game folder is the player's everyday one.
+    if ($Launcher -eq 'Microsoft') { $entries[1].Hint += '; also changes the look of your normal Minecraft' }
+    foreach ($entry in $entries) {
+        # A download that holds two of an item still offers it; its step
+        # then says what is wrong.
+        $carried = try { [bool](& $entry.Find) } catch { $true }
+        $entry | Add-Member -NotePropertyName Carried -NotePropertyValue $carried
+        if (-not $carried) { $ticked.($entry.Value) = $false }
+    }
+    $selected = 'Continue'
+    while ($true) {
+        $menuItems = @(foreach ($entry in $entries) {
+            $box = if ($ticked.($entry.Value)) { '[x]' } else { '[ ]' }
+            $hint = if ($entry.Carried) { $entry.Hint } else { 'not in this download' }
+            [pscustomobject]@{ Label = "$box $($entry.Label)"; Hint = $hint; Value = $entry.Value; Disabled = -not $entry.Carried }
+        })
+        $anyTicked = $ticked.Mod -or $ticked.ArtPack -or $ticked.World
+        $menuItems += [pscustomobject]@{ Label = 'Continue'; Hint = 'install the ticked items'; Value = 'Continue'; Disabled = -not $anyTicked }
+        $choice = Invoke-Menu -Title '  Choose what to install. Enter ticks or unticks an item.' -Items $menuItems -Selected $selected
+        if (-not $choice) { throw 'Cancelled by user.' }
+        if ($choice -eq 'Continue') { return $ticked }
+        $ticked.$choice = -not $ticked.$choice
+        $selected = $choice
+    }
 }
 
 function Install-PrismPortable {
@@ -2459,6 +2607,254 @@ function Install-FabricApi {
     Write-Info "Installed $desired"
 }
 
+function Invoke-MoveWithRetry {
+    <#
+      Runs $Move, which moves files the installer has just written into
+      place, and tries again for about three seconds while it fails with an
+      I/O or access error. Antivirus software and the search indexer open
+      newly written files for a moment, and Windows renames no folder with a
+      file open inside it. Once -Creates exists, a failure is not retried:
+      something else is already there, and waiting cannot change that. The
+      last failure is rethrown.
+    #>
+    param([Parameter(Mandatory)] [scriptblock]$Move, [string]$Creates)
+    $tries = 10
+    for ($try = 1; ; $try++) {
+        try {
+            & $Move
+            return
+        } catch {
+            $cause = $_.Exception.GetBaseException()
+            $held = $cause -is [System.IO.IOException] -or $cause -is [System.UnauthorizedAccessException]
+            if (-not $held -or $try -ge $tries -or ($Creates -and (Test-Path -LiteralPath $Creates))) { throw }
+            Start-Sleep -Milliseconds 300
+        }
+    }
+}
+
+# --- RTX Remix Materials pack ---
+function Get-DistArtPack {
+    # The Materials pack this download carries, or $null for a download without one.
+    $dir = Join-Path $script:SCRIPT_DIR 'resourcepacks'
+    $packs = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $script:ART_PACK_PATTERN })
+    if ($packs.Count -gt 1) { throw "Expected one RTX Remix Materials pack in $dir, found $($packs.Count): $(($packs | ForEach-Object Name) -join ', ')" }
+    if ($packs.Count -eq 1) { return $packs[0].FullName }
+    return $null
+}
+
+function Get-InstalledArtPacks {
+    param([string]$McDir)
+    return @(Get-ChildItem -LiteralPath (Join-Path $McDir 'resourcepacks') -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $script:ART_PACK_PATTERN })
+}
+
+function Set-ArtPackOption {
+    <#
+      Points options.txt's resourcePacks at the art pack $PackName: the first
+      entry for any art pack becomes it, in place, and later ones are dropped,
+      so a pack the player turned off stays off across versions. An empty
+      $PackName drops every art pack entry. -Enable lists $PackName just above
+      Fabric's pack when no art pack is listed, below the player's own packs
+      so those still win, and creates options.txt when there is none. The file
+      is rewritten only when the list changes. Returns whether $PackName is
+      on afterwards, or $null for a resourcePacks line it could not read.
+    #>
+    param([string]$McDir, [string]$PackName, [switch]$Enable)
+    $path = Join-Path $McDir 'options.txt'
+    $exists = Test-Path -LiteralPath $path -PathType Leaf
+    if (-not $exists -and -not $Enable) { return $false }
+    $text = if ($exists) { [IO.File]::ReadAllText($path) } else { '' }
+    $match = [regex]::Match($text, '(?m)^resourcePacks:[^\r\n]*')
+    $listed = @()
+    if ($match.Success) {
+        try {
+            foreach ($pack in (ConvertFrom-Json $match.Value.Substring('resourcePacks:'.Length) -ErrorAction Stop)) { $listed += [string]$pack }
+        } catch {
+            Write-Warn "Left $path alone: its resourcePacks line is not a JSON list. Turn RTX Remix Materials on or off in Options, Resource Packs."
+            return $null
+        }
+    }
+    $entry = if ($PackName) { "file/$PackName" } else { $null }
+    $packs = New-Object System.Collections.Generic.List[string]
+    $placed = $false
+    foreach ($pack in $listed) {
+        if ($pack.StartsWith('file/') -and $pack.Substring(5) -match $script:ART_PACK_PATTERN) {
+            if ($entry -and -not $placed) { $packs.Add($entry); $placed = $true }
+            continue
+        }
+        $packs.Add($pack)
+    }
+    if ($Enable -and $entry -and -not $placed) {
+        # Fabric adds its own pack above every listed one when the list leaves
+        # it out, which would put the mod's baseline over the art pack.
+        if (-not $packs.Contains('vanilla')) { $packs.Insert(0, 'vanilla') }
+        if (-not $packs.Contains('fabric')) { $packs.Insert($packs.IndexOf('vanilla') + 1, 'fabric') }
+        $packs.Insert($packs.IndexOf('fabric') + 1, $entry)
+        $placed = $true
+    }
+    if ($exists -and ($packs -join "`n") -ceq ($listed -join "`n")) { return $placed }
+    $line = 'resourcePacks:' + (ConvertTo-Json -InputObject @($packs) -Compress)
+    if ($match.Success) {
+        $updated = $text.Remove($match.Index, $match.Length).Insert($match.Index, $line)
+    } elseif ($exists) {
+        $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+        $separator = if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $newline } else { '' }
+        $updated = $text + $separator + $line + $newline
+    } else {
+        # The game fills in every other option with its default.
+        $updated = "version:$($script:MC_DATA_VERSION)`r`n$line`r`n"
+    }
+    if ($updated -ceq $text) { return $placed }
+    $bytes = if ($exists) { [IO.File]::ReadAllBytes($path) } else { @() }
+    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191
+    Write-FileAtomic -Path $path -Content $updated -Bom:$bom
+    return $placed
+}
+
+function Install-ArtPack {
+    <#
+      Installs the RTX Remix Materials pack the download carries. It runs
+      only when the player ticked the pack, so it never asks. Returns one of:
+        Installed  no pack was in resourcepacks\; this one is, turned on
+        Updated    an installed pack was replaced in place, and stays on or
+                   off as it was
+        Missing    the download carries no pack
+        Failed     the pack could not be copied, or an older one removed,
+                   as while the game holds it
+    #>
+    param([string]$McDir)
+    $packaged = Get-DistArtPack
+    if (-not $packaged) {
+        Write-Warn 'This download carries no RTX Remix Materials pack, so none was installed.'
+        return 'Missing'
+    }
+    $name = Split-Path $packaged -Leaf
+    $installed = @(Get-InstalledArtPacks -McDir $McDir)
+    $enable = $installed.Count -eq 0
+    $dir = Join-Path $McDir 'resourcepacks'
+    $finalPath = Join-Path $dir $name
+    $stagedPath = "$finalPath.new"
+    try {
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+        Copy-Item -LiteralPath $packaged -Destination $stagedPath -Force -ErrorAction Stop
+        Invoke-MoveWithRetry -Move { Move-Item -LiteralPath $stagedPath -Destination $finalPath -Force -ErrorAction Stop }
+    } catch {
+        # A running game holds its enabled packs open. Warn and go on, so the
+        # rest of the run still completes.
+        Remove-Item -LiteralPath $stagedPath -Force -ErrorAction SilentlyContinue
+        Write-Warn "Could not place $name in ${dir}: $($_.Exception.Message) Close Minecraft and run the installer again."
+        return 'Failed'
+    }
+    foreach ($old in $installed) {
+        if ($old.Name -eq $name) { continue }
+        Write-Info "Replacing the older RTX Remix Materials pack $($old.Name)"
+        try {
+            Remove-Item -LiteralPath $old.FullName -Force -ErrorAction Stop
+        } catch {
+            # An upgrade while the game runs: it holds the older pack, the one
+            # it has on. options.txt keeps naming that file, which still
+            # exists, and the next run replaces it, since both packs match.
+            Write-Warn "Could not remove the older $($old.Name) from ${dir}: $($_.Exception.Message) Close Minecraft and run the installer again."
+            return 'Failed'
+        }
+    }
+    $on = Set-ArtPackOption -McDir $McDir -PackName $name -Enable:$enable
+    if ($enable) {
+        Write-Info "Installed and turned on $name"
+        return 'Installed'
+    }
+    Write-Info "Installed $name"
+    if ($on -eq $false) { Write-Info 'RTX Remix Materials stays off, as you left it. Turn it on in Options, Resource Packs.' }
+    return 'Updated'
+}
+
+# --- RTX Remix Showcase World ---
+function Get-DistWorld {
+    # The Showcase World zip this download carries, or $null for a download without one.
+    $dir = Join-Path $script:SCRIPT_DIR 'saves'
+    $zips = @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $script:WORLD_ZIP_PATTERN })
+    if ($zips.Count -gt 1) { throw "Expected one RTX Remix Showcase World zip in $dir, found $($zips.Count): $(($zips | ForEach-Object Name) -join ', ')" }
+    if ($zips.Count -eq 1) { return $zips[0].FullName }
+    return $null
+}
+
+function Install-ShowcaseWorld {
+    <#
+      Unpacks the RTX Remix Showcase World the download carries into saves\.
+      It runs only when the player ticked the world, so it never asks. A
+      world already in saves\ under its name is never replaced: it may hold
+      the player's progress. Returns one of:
+        Installed  the world was unpacked into saves\
+        Kept       saves\ already holds the world; it was left as it was
+        Missing    the download carries no world
+        Failed     the world could not be unpacked; nothing of it is left
+                   in saves\
+    #>
+    param([string]$McDir)
+    try {
+        $packaged = Get-DistWorld
+    } catch {
+        Write-Warn "The RTX Remix Showcase World was not installed: $($_.Exception.Message)"
+        return 'Failed'
+    }
+    if (-not $packaged) {
+        Write-Warn 'This download carries no RTX Remix Showcase World, so none was installed.'
+        return 'Missing'
+    }
+    $saves = Join-Path $McDir 'saves'
+    $target = Join-Path $saves $script:WORLD_FOLDER_NAME
+    if (Test-Path -LiteralPath $target) {
+        Write-Info "Kept the $($script:WORLD_FOLDER_NAME) world already in ${saves}. For a fresh copy, rename or delete that folder and run the installer again."
+        return 'Kept'
+    }
+    # The zip unpacks into a folder of its own beside the world's place, on
+    # the same drive, so the world moves into place whole or not at all.
+    $stage = Join-Path $saves ".rtx-remix-world-$([guid]::NewGuid().ToString('N'))"
+    try {
+        try {
+            # Expand-Archive is slow on a world this size under Windows
+            # PowerShell 5.1, and draws a progress bar.
+            Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+            [IO.Compression.ZipFile]::ExtractToDirectory($packaged, $stage)
+        } catch {
+            # A damaged zip, or a full drive. A Windows error message ends in a
+            # line break.
+            Write-Warn "Could not unpack the RTX Remix Showcase World into ${saves}: $($_.Exception.GetBaseException().Message.Trim()) Check the free space on that drive, or download the installer again."
+            return 'Failed'
+        }
+        $world = Join-Path $stage $script:WORLD_FOLDER_NAME
+        if (-not (Test-Path -LiteralPath (Join-Path $world 'level.dat') -PathType Leaf)) {
+            Write-Warn "$(Split-Path $packaged -Leaf) holds no $($script:WORLD_FOLDER_NAME)\level.dat, so the RTX Remix Showcase World was not installed."
+            return 'Failed'
+        }
+        try {
+            # Should a world of that name appear meanwhile, this fails rather than
+            # moving the new copy inside it, as Move-Item would.
+            Invoke-MoveWithRetry -Creates $target -Move { [IO.Directory]::Move($world, $target) }
+        } catch {
+            $reason = $_.Exception.GetBaseException().Message.Trim()
+            if (Test-Path -LiteralPath $target) {
+                Write-Warn "Could not move the RTX Remix Showcase World into ${saves}: $reason Something else created $target meanwhile, and it was left as it is."
+            } else {
+                Write-Warn "Could not move the RTX Remix Showcase World into ${saves}: $reason Windows or antivirus software is still scanning the new files. Run the installer again."
+            }
+            return 'Failed'
+        }
+    } finally {
+        if (Test-Path -LiteralPath $stage) {
+            try {
+                Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Warn "Could not remove the unpacking folder ${stage}: $($_.Exception.Message) Delete it yourself."
+            }
+        }
+    }
+    Write-Info "Installed the RTX Remix Showcase World as $target"
+    return 'Installed'
+}
+
 function Get-ServersDatHosts {
     <#
       Parse a Minecraft servers.dat (NBT, big-endian, uncompressed) and
@@ -2692,14 +3088,35 @@ function Install-DevServer {
     }
 }
 
+function Invoke-InstallItem {
+    # Runs a ticked item's step and returns its result. The steps report
+    # their own failures; anything one throws instead, such as a download
+    # that holds two packs, is a warning too and counts as Failed, so the
+    # run still installs the other items.
+    param([string]$Name, [scriptblock]$Step)
+    try {
+        return @(& $Step)[-1]
+    } catch {
+        Write-Warn "$Name was not installed: $($_.Exception.Message)"
+        return 'Failed'
+    }
+}
+
 function Invoke-InstallOrUpgrade {
     param([string]$PreferredLauncher, [switch]$Unattended, [string]$Mode)
     # An interactive run starts at the first step; the banner heads headless logs.
     if ($Unattended) { Write-Banner -Title "RTX Remix for Minecraft - $Mode" -Subtitle "v$($script:APP_VERSION)" }
     # Repair / Upgrade / Install all share this code path; differ only in
     # banner copy. Per-step messages let the user trace what's happening
-    # regardless of which mode dispatched here.
-    Start-StepCounter -Total 5
+    # regardless of which mode dispatched here. The total counts the items
+    # the flags ask for until the checklist settles them.
+    $presets = Get-InstallItemPresets -Unattended:$Unattended -ModChoice $Mod -ArtPackChoice $ArtPack -WorldChoice $World
+    # An unattended run has no checklist, so its flags are the whole selection.
+    if ($Unattended -and -not ($presets.Mod -or $presets.ArtPack -or $presets.World)) {
+        Write-Err 'Nothing to install: -Mod Skip needs -ArtPack Install or -World Install.'
+        return 2
+    }
+    Start-StepCounter -Total (Get-InstallStepCount -Items $presets)
 
     Write-Step 'Checking prerequisites'
     if (-not (Test-NotAdmin)) { return 1 }
@@ -2715,36 +3132,66 @@ function Invoke-InstallOrUpgrade {
     $biasUpgrade = ($Mode -in @('Upgrade', 'Repair'))
     $launcher = Select-Launcher -State $state -Preferred $PreferredLauncher -Unattended:$Unattended -DetectedState $detected -BiasToInstalledLauncher:$biasUpgrade
     Write-Info "Using launcher: $($script:C_BOLD)$launcher$($script:C_RESET)"
-    if ($launcher -eq 'Microsoft' -and -not $Unattended) { Wait-MinecraftLauncherClosed }
+    $ticked = Select-InstallItems -Launcher $launcher -Unattended:$Unattended -ModChoice $Mod -ArtPackChoice $ArtPack -WorldChoice $World
+    $script:StepTotal = Get-InstallStepCount -Items $ticked
 
-    # Java handling matrix (same as install.bat original):
-    #   ARM64           -> always install managed JDK
-    #   x64 + Prism     -> no Java needed (Prism Wizard handles at runtime)
-    #   x64 + Microsoft -> probe + fallback for fabric-installer.jar
-    $installerJava = $null
-    if (Test-HostIsArm64) {
-        $installerJava = Resolve-Java21ForArm
-    } elseif ($launcher -eq 'Microsoft') {
-        $installerJava = Resolve-JavaForFabricInstaller
-    }
+    if ($ticked.Mod) {
+        if ($launcher -eq 'Microsoft' -and -not $Unattended) { Wait-MinecraftLauncherClosed }
 
-    Write-Step 'Preparing launcher'
-    if ($launcher -eq 'Prism') {
-        $probeDataDir = if ($state.PrismDataDir) { $state.PrismDataDir } else { $script:PRISM_PORTABLE_DIR }
-        Test-PathLengthBudget -PrismDataDir $probeDataDir
-        $instanceDir = Initialize-Prism -State $state -Unattended:$Unattended
-        $mcDir = Join-Path $instanceDir '.minecraft'
+        # Java handling matrix (same as install.bat original):
+        #   ARM64           -> always install managed JDK
+        #   x64 + Prism     -> no Java needed (Prism Wizard handles at runtime)
+        #   x64 + Microsoft -> probe + fallback for fabric-installer.jar
+        $installerJava = $null
+        if (Test-HostIsArm64) {
+            $installerJava = Resolve-Java21ForArm
+        } elseif ($launcher -eq 'Microsoft') {
+            $installerJava = Resolve-JavaForFabricInstaller
+        }
+
+        Write-Step 'Preparing launcher'
+        if ($launcher -eq 'Prism') {
+            $probeDataDir = if ($state.PrismDataDir) { $state.PrismDataDir } else { $script:PRISM_PORTABLE_DIR }
+            Test-PathLengthBudget -PrismDataDir $probeDataDir
+            $instanceDir = Initialize-Prism -State $state -Unattended:$Unattended
+            $mcDir = Join-Path $instanceDir '.minecraft'
+        } else {
+            Initialize-MicrosoftLauncher -JavaExe $installerJava -Unattended:$Unattended
+            $mcDir = Join-Path $env:APPDATA '.minecraft'
+        }
+
+        Write-Step 'Installing mod files'
+        $script:ModFilesCopied = $true
+        Install-ModFiles -McDir $mcDir
+
+        Write-Step 'Configuring Fabric API'
+        Install-FabricApi -McDir $mcDir -Launcher $launcher
     } else {
-        Initialize-MicrosoftLauncher -JavaExe $installerJava -Unattended:$Unattended
-        $mcDir = Join-Path $env:APPDATA '.minecraft'
+        # Without the mod, nothing prepares a launcher, so the pack and the
+        # world need the game folder an earlier install made.
+        $mcDir = Get-ContentOnlyMcDir -Launcher $launcher -PrismDataDir $state.PrismDataDir
+        if (-not $mcDir) {
+            $launcherName = if ($launcher -eq 'Prism') { 'Prism' } else { 'the Microsoft launcher' }
+            Write-Err "Install RTX Remix Renderer first: $launcherName has no RTX Remix game folder yet."
+            return 1
+        }
     }
 
-    Write-Step 'Installing mod files'
-    $script:ModFilesCopied = $true
-    Install-ModFiles -McDir $mcDir
-
-    Write-Step 'Configuring Fabric API'
-    Install-FabricApi -McDir $mcDir -Launcher $launcher
+    # Each ticked item runs whatever the others returned. One that failed
+    # fails the run once every step is done; one the download does not carry
+    # only warns.
+    $failedItems = @()
+    $worldResult = $null
+    if ($ticked.ArtPack) {
+        Write-Step 'Installing RTX Remix Materials'
+        $packResult = Invoke-InstallItem -Name 'RTX Remix Materials' -Step { Install-ArtPack -McDir $mcDir }
+        if ($packResult -eq 'Failed') { $failedItems += 'RTX Remix Materials' }
+    }
+    if ($ticked.World) {
+        Write-Step 'Installing RTX Remix Showcase World'
+        $worldResult = Invoke-InstallItem -Name 'RTX Remix Showcase World' -Step { Install-ShowcaseWorld -McDir $mcDir }
+        if ($worldResult -eq 'Failed') { $failedItems += 'RTX Remix Showcase World' }
+    }
 
     # A server entry is added only when -DevServer names a host. An existing
     # populated servers.dat is never merged into.
@@ -2757,9 +3204,10 @@ function Invoke-InstallOrUpgrade {
         }
     }
 
-    Write-FinalInstructions -Launcher $launcher -PrismDataDir $state.PrismDataDir -Unattended:$Unattended
+    Write-FinalInstructions -Launcher $launcher -PrismDataDir $state.PrismDataDir -Unattended:$Unattended -World:($worldResult -in 'Installed', 'Kept') -Failed $failedItems
     # A headless run is a script or CI job; it must not open a window.
     if (-not $Unattended) { Start-InstalledLauncher -Launcher $launcher -PrismDataDir $state.PrismDataDir }
+    if ($failedItems.Count -gt 0) { return 1 }
     return 0
 }
 
@@ -2862,32 +3310,47 @@ function Start-InstalledLauncher {
 }
 
 function Write-FinalInstructions {
-    param([string]$Launcher, [string]$PrismDataDir, [switch]$Unattended)
+    # -World adds where to find the RTX Remix Showcase World. -Failed names
+    # the ticked items that were not installed: the box then says so in
+    # yellow, and a line below it names each one, since the warning that
+    # explains it has usually scrolled away by now.
+    param([string]$Launcher, [string]$PrismDataDir, [switch]$Unattended, [switch]$World, [string[]]$Failed = @())
+    if ($Failed.Count -gt 0) {
+        $msg   = 'RTX Remix for Minecraft installed with problems'
+        $color = $script:C_YELLOW
+        $glyph = [char]0x26A0
+        $icon  = $script:ICON_WARN
+    } else {
+        $msg   = 'RTX Remix for Minecraft install complete'
+        $color = $script:C_GREEN
+        $glyph = [char]0x2713
+        $icon  = $script:ICON_OK
+    }
     # Inner box width must match the 0x2550 count in the top/bottom borders.
-    # Leading gap (3 spaces) + check-mark glyph (1 cell) + gap (2) + message.
+    # Leading gap (3 spaces) + icon glyph (1 cell) + gap (2) + message.
     # Trailing is padded to fill the remaining cells, computed rather
     # than hand-counted so message-text edits can't desynchronize again.
     $inner   = 66
-    $msg     = 'RTX Remix for Minecraft install complete'
-    $leading = "   $([char]0x2713)  "         # 3 spaces + check + 2 spaces
+    $leading = "   $glyph  "                   # 3 spaces + icon + 2 spaces
     $consumed = $leading.Length + $msg.Length  # one display cell per leading/trailing char
     $trailing = ' ' * [math]::Max(0, $inner - $consumed)
 
-    $bar  = "$($script:C_GREEN)$([char]0x2551)$($script:C_RESET)"
-    $top  = "$($script:C_GREEN)$([char]0x2554)$([string][char]0x2550 * $inner)$([char]0x2557)$($script:C_RESET)"
-    $bot  = "$($script:C_GREEN)$([char]0x255A)$([string][char]0x2550 * $inner)$([char]0x255D)$($script:C_RESET)"
+    $bar  = "$color$([char]0x2551)$($script:C_RESET)"
+    $top  = "$color$([char]0x2554)$([string][char]0x2550 * $inner)$([char]0x2557)$($script:C_RESET)"
+    $bot  = "$color$([char]0x255A)$([string][char]0x2550 * $inner)$([char]0x255D)$($script:C_RESET)"
     $blank = "$bar$(' ' * $inner)$bar"
 
     Write-Host ''
     Write-Host $top
     Write-Host $blank
-    # Colorize the visible content with ICON_OK / C_BOLD in-place; the
+    # Colorize the visible content with the icon / C_BOLD in-place; the
     # box sides ($bar) stay on the outside so trailing pad length is
     # computed from visible cells only.
-    $contentLeading = "   $($script:ICON_OK)  "
+    $contentLeading = "   $icon  "
     Write-Host "$bar$contentLeading$($script:C_BOLD)$msg$($script:C_RESET)$trailing$bar"
     Write-Host $blank
     Write-Host $bot
+    foreach ($item in $Failed) { Write-Warn "$item was not installed. See the messages above." }
     Write-Host ''
     Write-Host "$($script:C_BOLD)Next steps:$($script:C_RESET)"
     Write-Host ''
@@ -2909,6 +3372,7 @@ function Write-FinalInstructions {
         Write-Host "  $($script:ICON_INFO) Sign in if prompted."
         Write-Host "  $($script:ICON_INFO) Select the $($script:C_NVGREEN)'$($script:FABRIC_PROFILE_NAME)'$($script:C_RESET) profile and click Play."
     }
+    if ($World) { Write-Host "  $($script:ICON_INFO) Open Singleplayer and choose $($script:WORLD_FOLDER_NAME)." }
     Write-Host "  $($script:ICON_INFO) Once in the world, verify with $($script:C_NVGREEN)/rtx status$($script:C_RESET) in chat."
     Write-Host ''
 }
@@ -2963,8 +3427,11 @@ function Invoke-Uninstall {
         Write-Host "    - $($script:C_DIM)<mc>/mods/fabric-api-$($script:FABRIC_API_VERSION).jar$($script:C_RESET) (Microsoft: only our exact version; Prism: all fabric-api-*)"
         Write-Host "    - $($script:C_DIM)<mc>/remix-sdk/, <mc>/rtx.conf, <mc>/.rtx-remix-version$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/textures/water_normals_flipbook.dds, <mc>/textures/overcast_thunderstorm_bc6u.dds$($script:C_RESET)"
+        Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RTX-Remix-Materials-*.zip$($script:C_RESET) (RTX Remix Materials, and its entry in options.txt)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RtxRemix-LabPBR/$($script:C_RESET) (if left by an earlier version)"
-        Write-Host "  Preserved: $($script:C_DIM)<mc>/rtx-remix/mods/minecraft-logic/$($script:C_RESET) (authored profiles)"
+        Write-Host '  Preserved:'
+        Write-Host "    - $($script:C_DIM)<mc>/rtx-remix/mods/minecraft-logic/$($script:C_RESET) (authored profiles)"
+        Write-Host "    - $($script:C_DIM)<mc>/saves/$($script:WORLD_FOLDER_NAME)/$($script:C_RESET) (RTX Remix Showcase World)"
         if (-not (Confirm-YesNo -Prompt 'Proceed?' -DefaultNo)) {
             Write-Info 'Cancelled.'
             return 0
@@ -3007,11 +3474,11 @@ function Invoke-Uninstall {
         if ($touchedPrism -and $detected.PrismDataDir) {
             $instancePath = Join-Path $detected.PrismDataDir "instances\$($script:PRISM_INSTANCE_NAME)"
             if (Test-Path -LiteralPath $instancePath) {
-                $menuItems += [pscustomobject]@{ Label = 'Remove the RTX Remix Prism instance only'; Hint = 'keeps Prism and your other instances'; Value = 'instance' }
+                $menuItems += [pscustomobject]@{ Label = 'Remove the RTX Remix Prism instance only'; Hint = 'also deletes its worlds; keeps Prism and your other instances'; Value = 'instance' }
             }
         }
         if ($touchedPrism -and ($hasManagedJdk -or $hasPortable -or ($detected.PrismDataDir -and (Test-Path -LiteralPath (Join-Path $detected.PrismDataDir "instances\$($script:PRISM_INSTANCE_NAME)"))))) {
-            $menuItems += [pscustomobject]@{ Label = 'Scorched earth'; Hint = 'instance + managed Java + our Prism portable'; Value = 'all' }
+            $menuItems += [pscustomobject]@{ Label = 'Scorched earth'; Hint = 'instance and its worlds + managed Java + our Prism portable'; Value = 'all' }
         }
 
         if ($menuItems.Count -gt 1) {
@@ -3063,6 +3530,16 @@ function Remove-ModArtifacts {
             Write-Info "Removing $((Split-Path $path -Leaf))"
             Remove-Item -LiteralPath $path -Recurse -Force
         }
+    }
+    foreach ($pack in (Get-InstalledArtPacks -McDir $McDir)) {
+        Write-Info "Removing $($pack.Name)"
+        Remove-Item -LiteralPath $pack.FullName -Force
+    }
+    $null = Set-ArtPackOption -McDir $McDir -PackName ''
+    # The world may hold the player's progress, so it stays.
+    $saves = Join-Path $McDir 'saves'
+    if (Test-Path -LiteralPath (Join-Path $saves $script:WORLD_FOLDER_NAME)) {
+        Write-Info "Kept the $($script:WORLD_FOLDER_NAME) world in ${saves}. Delete that folder yourself if you no longer want it."
     }
 }
 

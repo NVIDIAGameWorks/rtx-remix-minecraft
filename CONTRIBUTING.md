@@ -311,13 +311,19 @@ Use the actual target branch instead of `main` if the change targets another
 branch. Keep machine-local choices in ignored `tools/config.local.json`; the
 shipped defaults pin the demo world and art pack and select no graphics preset.
 
-To build an installable release, run `.\gradlew.bat releaseArchive`. It runs
+To build the installer bundle, run `.\gradlew.bat releaseArchive`. It runs
 `package` and `verifyPackageJar`, stages the verified JAR, which carries the
-runtime textures, with the installer scripts, installer documentation, and
-license notices under `build/release/`, and writes a ZIP with the same layout
-under `build/distributions/`. Use `-Parch=win64` or `-Parch=arm64` for one
+runtime textures, under `build/release/` with the installer scripts, installer
+documentation, license notices, and the RTX Remix Materials and RTX Remix
+Showcase World zips, and writes a ZIP with the same layout under
+`build/distributions/`. Use `-Parch=win64` or `-Parch=arm64` for one
 architecture; omitting it includes both. The baseline resource pack is built
-into the mod, so the archive has no `resourcepacks/`.
+into the mod. The pack and the world come from the `resourcePack` and `world`
+pins in `tools/config.json` that development launches use, so moving a pin
+changes the next release too. `.\gradlew.bat stageReleaseAssets` collects the
+four files a release carries, the JAR, both zips, and the bundle, in
+`build/release-assets/`. Only these release tasks download the pack and the
+world; `build`, `test`, and `package` never do.
 
 ### Visual Comparisons
 
@@ -377,7 +383,9 @@ runtime from public Packman, so it needs no credentials; never add private
 ones to a workflow.
 
 Neither workflow launches Minecraft, measures GPU performance, or produces a
-release archive. Run `releaseArchive` locally when validating packaging.
+release archive. Run `releaseArchive` locally when validating packaging; the
+[`release`](.github/workflows/release.yml) workflow, described under
+[Releases](#releases), runs only when a maintainer starts it.
 Benchmarks are a developer tool, not a public pull request or post-merge gate:
 measure a performance change locally and put the numbers, workload, and visual
 checks in the description. Do not depend on access to additional CI services
@@ -388,6 +396,23 @@ any push to the branch, a rebase included, dismisses the approvals it has, so
 push fixups before asking for review and rebase only to resolve a conflict. It
 is merged as one squashed commit, so write the pull request description as the
 commit message you want to end up with.
+
+## Releases
+
+A maintainer releases by raising `mod_version` in `gradle.properties` and
+`$script:APP_VERSION` in `packaging/installer.ps1` to the same version, which
+`test_version_consistency.py` checks, merging that, and running the
+[`release`](.github/workflows/release.yml) workflow from the Actions tab. It
+builds the four release files with `stageReleaseAssets` on a GitHub-hosted
+runner and, run from `main`, creates a draft release `v<mod_version>` holding
+them. It stops if that release or tag already exists. With **create_draft**
+turned off, or from another branch, it builds the files without drafting, as a
+trial run.
+
+A draft has no tag yet. A person writes the release notes from the squashed
+commits since the last release tag and pastes them into the draft, installs
+the draft's bundle on an RTX machine to smoke-test it, then publishes it;
+GitHub creates the tag at that moment. The release page is the changelog.
 
 ## Developer Certificate of Origin
 
