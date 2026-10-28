@@ -530,8 +530,15 @@ public final class BlockQuadEmitter {
                 tempPositions[v * 3 + 2] = fqPos[v * 3 + 2] + lz;
             }
 
+            // The model leaves the block tint to the renderer, which Indigo
+            // applies to every quad with a color index; vanilla quads get theirs
+            // in stageBakedQuad.
+            int color = fq.color();
+            if (fq.colorIndex() >= 0 && blockColors != null) {
+                color = tintFrapiColor(color, getBlockTint(state, world, fq.colorIndex()));
+            }
             writer.stageQuad(tempPositions, fq.uvs(), fq.nx(), fq.ny(), fq.nz(),
-                    fq.color(), fq.spriteId(),
+                    color, fq.spriteId(),
                     fq.spriteU0(), fq.spriteV0(), fq.spriteU1(), fq.spriteV1(),
                     layerName);
         }
@@ -984,6 +991,19 @@ public final class BlockQuadEmitter {
             tintValidMask |= bit;
         }
         return tintCache[colorIndex];
+    }
+
+    /**
+     * A FRAPI quad's vertex color under its block tint, as Indigo's
+     * {@code ColorHelper.multiplyColor} computes it: each channel multiplied,
+     * rounding down, and the vertex alpha kept. A block without a color
+     * provider has the tint -1, which is white and changes nothing.
+     */
+    static int tintFrapiColor(int vertexColor, int tint) {
+        int red = ((vertexColor >>> 16) & 0xFF) * ((tint >>> 16) & 0xFF) / 0xFF;
+        int green = ((vertexColor >>> 8) & 0xFF) * ((tint >>> 8) & 0xFF) / 0xFF;
+        int blue = (vertexColor & 0xFF) * (tint & 0xFF) / 0xFF;
+        return (vertexColor & 0xFF000000) | (red << 16) | (green << 8) | blue;
     }
 
     /**

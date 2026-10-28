@@ -11,6 +11,11 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- Blocks that a mod draws through Fabric's renderer API keep their colour tint
+  with path tracing on, such as the runes on Twilight Forest's castle doors.
+
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.
