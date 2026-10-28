@@ -2561,7 +2561,8 @@ function Install-ArtPack {
         Updated    an installed pack was replaced in place, and stays on or
                    off as it was
         Missing    the download carries no pack
-        Failed     the pack could not be copied, as while the game holds it
+        Failed     the pack could not be copied, or an older one removed,
+                   as while the game holds it
     #>
     param([string]$McDir, [ValidateSet('Prism','Microsoft')] [string]$Launcher)
     $packaged = Get-DistArtPack
@@ -2587,9 +2588,16 @@ function Install-ArtPack {
         return 'Failed'
     }
     foreach ($old in $installed) {
-        if ($old.Name -ne $name) {
-            Write-Info "Replacing the older RTX Remix Materials pack $($old.Name)"
-            Remove-Item -LiteralPath $old.FullName -Force
+        if ($old.Name -eq $name) { continue }
+        Write-Info "Replacing the older RTX Remix Materials pack $($old.Name)"
+        try {
+            Remove-Item -LiteralPath $old.FullName -Force -ErrorAction Stop
+        } catch {
+            # An upgrade while the game runs: it holds the older pack, the one
+            # it has on. options.txt keeps naming that file, which still
+            # exists, and the next run replaces it, since both packs match.
+            Write-Warn "Could not remove the older $($old.Name) from ${dir}: $($_.Exception.Message) Close Minecraft and run the installer again."
+            return 'Failed'
         }
     }
     Set-ArtPackOption -McDir $McDir -PackName $name -Enable:$enable

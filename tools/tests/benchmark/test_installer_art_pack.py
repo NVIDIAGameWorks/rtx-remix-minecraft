@@ -211,6 +211,23 @@ def test_a_pack_the_game_holds_open_fails_and_changes_nothing(run: Run, mc_dir: 
     assert options(mc_dir) == before
 
 
+def test_an_upgrade_while_the_game_holds_the_older_pack_fails_and_leaves_options_alone(run: Run, mc_dir: Path):
+    (mc_dir / "resourcepacks").mkdir()
+    (mc_dir / "resourcepacks" / OLD_PACK).write_bytes(b"old")
+    before = resource_packs("vanilla", "fabric", f"file/{OLD_PACK}") + "\r\n"
+    (mc_dir / "options.txt").write_bytes(before.encode("utf-8"))
+
+    # The fixture also asserts nothing reached stderr.
+    output = run(hold=mc_dir / "resourcepacks" / OLD_PACK)
+
+    assert returned(output) == ["Failed"]
+    assert "Close Minecraft" in output
+    # options.txt still names a file that exists. Both zips match, so the next run replaces the older one.
+    assert options(mc_dir) == before
+    assert installed(mc_dir) == sorted([OLD_PACK, PACK])
+    assert (mc_dir / "resourcepacks" / OLD_PACK).read_bytes() == b"old"
+
+
 def test_a_bundle_without_a_pack_warns_and_changes_nothing(run: Run, dist: Path, mc_dir: Path):
     (dist / "resourcepacks" / PACK).unlink()
 
