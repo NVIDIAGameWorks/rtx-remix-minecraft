@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""The RTX art pack packaging/installer.ps1 installs, updates, and removes, run under Windows PowerShell 5.1 as
-packaging/install.bat runs it.
+"""The RTX Remix Materials pack packaging/installer.ps1 installs, updates, and removes, run under Windows PowerShell 5.1
+as packaging/install.bat runs it.
 
 Minecraft reads options.txt's resourcePacks as a JSON list, lowest priority first, and loads a zipped pack from
 resourcepacks/ without unpacking it. A listed pack whose file is missing is dropped when the game starts."""
 
+import json
 import os
 import subprocess
 from collections.abc import Callable
@@ -19,15 +20,17 @@ from rtx_tools.benchmark import util
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs the installer")
 
 INSTALLER = util.PROJECT_DIR / "packaging" / "installer.ps1"
-PACK = "rtx-remix-art-pack-0.58.0.zip"
-OLD_PACK = "rtx-remix-art-pack-0.57.0.zip"
+PACK = "RTX-Remix-Materials-0.58.0.zip"
+OLD_PACK = "RTX-Remix-Materials-0.57.0.zip"
 PACK_BYTES = b"PK\x05\x06" + bytes(18)
 # Loads the installer's constants and functions without its entry point, as test_installer_prism_jvm.py does, points
-# it at -Dist as the folder it was extracted to, answers its yes/no prompt with -Answer after printing PROMPTED, and
-# runs one step: Install as Install, Upgrade, and Repair run it, or Uninstall as Remove-ModArtifacts runs it.
+# it at -Dist as the folder it was extracted to, and runs one step: Install as Install, Upgrade, and Repair run it once
+# the player ticks the pack, or Uninstall as Remove-ModArtifacts runs it. A ticked pack is never asked about, so any
+# yes/no prompt fails the run. -Hold keeps a file open without sharing, as a running game holds its enabled packs. The
+# last line is what the step returned, as JSON.
 HARNESS = r"""
-param([string]$Installer, [string]$Loaded, [string]$Dist, [string]$McDir, [string]$Answer, [string]$Choice,
-      [string]$Launcher, [switch]$Unattended, [string]$Action)
+param([string]$Installer, [string]$Loaded, [string]$Dist, [string]$McDir, [string]$Launcher, [string]$Hold,
+      [string]$Action)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
 $entryPoint = $ast.EndBlock.Statements[-1]
 if ($entryPoint -isnot [System.Management.Automation.Language.TryStatementAst]) {
@@ -40,22 +43,33 @@ $body = $ast.Extent.Text.Substring($start, $entryPoint.Extent.StartOffset - $sta
 $script:SCRIPT_DIR = $Dist
 function Confirm-YesNo {
     param([string]$Prompt, [switch]$DefaultNo)
-    Write-Host "Confirm-YesNo: $Prompt"
-    return $Answer -eq 'yes'
+    throw "Asked: $Prompt"
 }
-switch ($Action) {
-    'Install' { Install-ArtPack -McDir $McDir -Launcher $Launcher -Choice $Choice -Unattended:$Unattended }
-    'Uninstall' { Remove-ModArtifacts -McDir $McDir -Launcher $Launcher }
-    default { throw "Unknown action: $Action" }
+$held = if ($Hold) { [IO.File]::Open($Hold, 'Open', 'Read', 'None') } else { $null }
+try {
+    $returned = @(switch ($Action) {
+        'Install' { Install-ArtPack -McDir $McDir -Launcher $Launcher }
+        'Uninstall' { Remove-ModArtifacts -McDir $McDir -Launcher $Launcher }
+        default { throw "Unknown action: $Action" }
+    })
+} finally {
+    if ($held) { $held.Dispose() }
 }
+Write-Host ('Returned: ' + (ConvertTo-Json -InputObject $returned -Compress))
 """
-PROMPTED = "Confirm-YesNo:"
+RETURNED = "Returned: "
 
 Run = Callable[..., str]
 
 
 def resource_packs(*names: str) -> str:
     return "resourcePacks:[" + ",".join(f'"{name}"' for name in names) + "]"
+
+
+def returned(output: str) -> list[str]:
+    lines = [line for line in output.splitlines() if line.startswith(RETURNED)]
+    assert len(lines) == 1, output
+    return json.loads(lines[0][len(RETURNED) :])
 
 
 @pytest.fixture
@@ -78,14 +92,7 @@ def run(tmp_path: Path, dist: Path, mc_dir: Path) -> Run:
     harness = tmp_path / "harness.ps1"
     harness.write_text(HARNESS, encoding="ascii")
 
-    def invoke(
-        action: str = "Install",
-        *,
-        choice: str = "",
-        answer: str = "no",
-        unattended: bool = False,
-        launcher: str = "Prism",
-    ) -> str:
+    def invoke(action: str = "Install", *, launcher: str = "Prism", hold: Path | None = None) -> str:
         command = [
             "powershell",
             "-NoProfile",
@@ -102,17 +109,13 @@ def run(tmp_path: Path, dist: Path, mc_dir: Path) -> Run:
             str(dist),
             "-McDir",
             str(mc_dir),
-            "-Answer",
-            answer,
             "-Launcher",
             launcher,
             "-Action",
             action,
         ]
-        if choice:
-            command += ["-Choice", choice]
-        if unattended:
-            command.append("-Unattended")
+        if hold:
+            command += ["-Hold", str(hold)]
         result = subprocess.run(command, capture_output=True, encoding="utf-8", errors="replace", check=False)
         assert result.returncode == 0, result.stdout + result.stderr
         assert not result.stderr
@@ -130,41 +133,14 @@ def options(mc_dir: Path) -> str:
     return (mc_dir / "options.txt").read_bytes().decode("utf-8")
 
 
-@pytest.mark.parametrize(("choice", "answer", "unattended"), [("Install", "no", True), ("", "yes", False)])
-def test_a_new_instance_gets_the_pack_turned_on_above_fabric(
-    run: Run, mc_dir: Path, choice: str, answer: str, unattended: bool
-):
-    run(choice=choice, answer=answer, unattended=unattended)
+@pytest.mark.parametrize("launcher", ["Prism", "Microsoft"])
+def test_a_new_instance_gets_the_pack_turned_on_above_fabric(run: Run, mc_dir: Path, launcher: str):
+    assert returned(run(launcher=launcher)) == ["Installed"]
 
     assert installed(mc_dir) == [PACK]
     assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
     # The game reads a file at its own data version as current, and fills in every other option.
     assert options(mc_dir) == f"version:3955\r\n{resource_packs('vanilla', 'fabric', f'file/{PACK}')}\r\n"
-
-
-def test_an_interactive_run_asks_first_and_a_no_adds_nothing(run: Run, mc_dir: Path):
-    output = run(answer="no")
-
-    assert PROMPTED in output
-    assert installed(mc_dir) == []
-    assert not (mc_dir / "options.txt").exists()
-
-
-def test_an_unattended_run_adds_the_pack_only_when_asked(run: Run, mc_dir: Path):
-    output = run(unattended=True)
-
-    assert PROMPTED not in output
-    assert "-ArtPack Install" in output
-    assert installed(mc_dir) == []
-    assert not (mc_dir / "options.txt").exists()
-
-
-def test_the_microsoft_launcher_prompt_says_the_pack_is_on_in_normal_play(run: Run, mc_dir: Path):
-    output = run(answer="yes", launcher="Microsoft")
-
-    assert "also on" in output
-    assert "when you play without the mod" in output
-    assert installed(mc_dir) == [PACK]
 
 
 @pytest.mark.parametrize("newline", ["\r\n", "\n"])
@@ -177,7 +153,7 @@ def test_the_pack_goes_below_the_players_own_packs_and_nothing_else_changes(
     )
     (mc_dir / "options.txt").write_bytes(bom + (before + newline).encode("utf-8"))
 
-    run(choice="Install", unattended=True)
+    assert returned(run()) == ["Installed"]
 
     after = newline.join(
         ["version:3955", "ao:true", resource_packs("vanilla", "fabric", f"file/{PACK}", "file/Faithful.zip"), "fov:0.0"]
@@ -188,25 +164,22 @@ def test_the_pack_goes_below_the_players_own_packs_and_nothing_else_changes(
 def test_an_options_file_without_a_pack_list_gets_one_with_fabric_below_the_pack(run: Run, mc_dir: Path):
     (mc_dir / "options.txt").write_bytes(b"version:3955\nao:true")
 
-    run(choice="Install", unattended=True)
+    assert returned(run()) == ["Installed"]
 
     assert options(mc_dir) == f"version:3955\nao:true\n{resource_packs('vanilla', 'fabric', f'file/{PACK}')}\n"
 
 
-@pytest.mark.parametrize(("choice", "unattended"), [("", False), ("", True), ("Install", True)])
-def test_an_upgrade_replaces_an_earlier_pack_in_place_without_asking(
-    run: Run, mc_dir: Path, choice: str, unattended: bool
-):
+def test_an_upgrade_replaces_an_earlier_pack_in_place(run: Run, mc_dir: Path):
     (mc_dir / "resourcepacks").mkdir()
     (mc_dir / "resourcepacks" / OLD_PACK).write_bytes(b"old")
     (mc_dir / "options.txt").write_bytes(
         (resource_packs("vanilla", "fabric", f"file/{OLD_PACK}", "file/Faithful.zip") + "\r\n").encode("utf-8")
     )
 
-    output = run(choice=choice, unattended=unattended)
+    assert returned(run()) == ["Updated"]
 
-    assert PROMPTED not in output
     assert installed(mc_dir) == [PACK]
+    assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
     assert options(mc_dir) == resource_packs("vanilla", "fabric", f"file/{PACK}", "file/Faithful.zip") + "\r\n"
 
 
@@ -216,44 +189,53 @@ def test_an_upgrade_keeps_a_pack_the_player_turned_off_off(run: Run, mc_dir: Pat
     before = resource_packs("vanilla", "fabric", "file/Faithful.zip") + "\r\n"
     (mc_dir / "options.txt").write_bytes(before.encode("utf-8"))
 
-    run()
+    assert returned(run()) == ["Updated"]
 
     assert installed(mc_dir) == [PACK]
     assert options(mc_dir) == before
 
 
-def test_skip_leaves_an_installed_pack_and_options_alone(run: Run, mc_dir: Path):
+def test_a_pack_the_game_holds_open_fails_and_changes_nothing(run: Run, mc_dir: Path):
     (mc_dir / "resourcepacks").mkdir()
-    (mc_dir / "resourcepacks" / OLD_PACK).write_bytes(b"old")
-    before = resource_packs("vanilla", "fabric", f"file/{OLD_PACK}") + "\r\n"
+    (mc_dir / "resourcepacks" / PACK).write_bytes(b"old")
+    before = resource_packs("vanilla", "fabric", f"file/{PACK}") + "\r\n"
     (mc_dir / "options.txt").write_bytes(before.encode("utf-8"))
 
-    output = run(choice="Skip", answer="yes")
+    output = run(hold=mc_dir / "resourcepacks" / PACK)
 
-    assert PROMPTED not in output
-    assert installed(mc_dir) == [OLD_PACK]
+    assert returned(output) == ["Failed"]
+    assert "Close Minecraft" in output
+    # Nothing half-copied is left beside the pack.
+    assert installed(mc_dir) == [PACK]
+    assert (mc_dir / "resourcepacks" / PACK).read_bytes() == b"old"
     assert options(mc_dir) == before
 
 
-def test_an_archive_without_a_pack_warns_and_changes_nothing(run: Run, dist: Path, mc_dir: Path):
+def test_a_bundle_without_a_pack_warns_and_changes_nothing(run: Run, dist: Path, mc_dir: Path):
     (dist / "resourcepacks" / PACK).unlink()
 
-    output = run(choice="Install", unattended=True)
+    output = run()
 
-    assert "carries no RTX art pack" in output
+    assert returned(output) == ["Missing"]
+    assert "carries no RTX Remix Materials" in output
     assert installed(mc_dir) == []
     assert not (mc_dir / "options.txt").exists()
 
 
 def test_files_that_only_look_like_the_pack_are_the_players(run: Run, mc_dir: Path):
     (mc_dir / "resourcepacks").mkdir()
-    lookalikes = ["my-rtx-remix-art-pack-0.1.0.zip", "rtx-remix-art-pack-custom.zip", "rtx-remix-art-pack-0.57.0"]
+    lookalikes = [
+        "my-RTX-Remix-Materials-0.1.0.zip",
+        "RTX-Remix-Materials-latest.zip",
+        "RTX-Remix-Materials-0.57.0",
+        "rtx-remix-materials-0.58.0.zip.bak",
+    ]
     for name in lookalikes:
         (mc_dir / "resourcepacks" / name).write_bytes(b"mine")
     before = resource_packs("vanilla", "fabric", *(f"file/{name}" for name in lookalikes)) + "\r\n"
     (mc_dir / "options.txt").write_bytes(before.encode("utf-8"))
 
-    run(choice="Install", unattended=True)
+    assert returned(run()) == ["Installed"]
     assert installed(mc_dir) == sorted([*lookalikes, PACK])
     assert options(mc_dir) == (
         resource_packs("vanilla", "fabric", f"file/{PACK}", *(f"file/{name}" for name in lookalikes)) + "\r\n"
@@ -268,9 +250,11 @@ def test_a_pack_list_that_is_not_json_is_left_alone(run: Run, mc_dir: Path):
     before = "resourcePacks:[vanilla,fabric\r\n"
     (mc_dir / "options.txt").write_bytes(before.encode("utf-8"))
 
-    output = run(choice="Install", unattended=True)
+    output = run()
 
+    assert returned(output) == ["Installed"]
     assert "not a JSON list" in output
+    assert "Turn RTX Remix Materials on or off" in output
     assert installed(mc_dir) == [PACK]
     assert options(mc_dir) == before
 

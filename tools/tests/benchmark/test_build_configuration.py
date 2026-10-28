@@ -107,6 +107,16 @@ class BuildConfigurationTests(unittest.TestCase):
                 self.assertIn("preserveFileTimestamps = false", body)
                 self.assertIn("reproducibleFileOrder = true", body)
 
+    def test_the_installer_looks_for_the_materials_zip_the_build_names(self):
+        # installer.ps1 installs, replaces, and removes only resource packs with this name, so it must be
+        # materialsArchive's RTX-Remix-Materials-${materialsVersion}.zip for every version fetchReleaseContent accepts.
+        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
+        self.assertIn(r"$script:ART_PACK_PATTERN = '^RTX-Remix-Materials-\d+\.\d+\.\d+\.zip$'", installer.splitlines())
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        materials = re.search(r"materialsVersion ==~ /([^/]+)/", build)
+        assert materials is not None
+        self.assertEqual(materials.group(1), r"\d+\.\d+\.\d+")
+
     def test_materials_zip_is_a_pack_minecraft_lists(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         archive = re.search(
