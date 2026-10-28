@@ -81,6 +81,7 @@ Write-Host ('Returned: ' + (ConvertTo-Json -InputObject $returned -Compress))
 """
 RETURNED = "Returned: "
 WAITED = "Waited: "
+STAYS_OFF = "RTX Remix Materials stays off, as you left it. Turn it on in Options, Resource Packs."
 
 Run = Callable[..., str]
 
@@ -168,8 +169,10 @@ def options(mc_dir: Path) -> str:
 
 
 def test_a_new_instance_gets_the_pack_turned_on_above_fabric(run: Run, mc_dir: Path):
-    assert returned(run()) == ["Installed"]
+    output = run()
 
+    assert returned(output) == ["Installed"]
+    assert STAYS_OFF not in output
     assert installed(mc_dir) == [PACK]
     assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
     # The game reads a file at its own data version as current, and fills in every other option.
@@ -209,8 +212,10 @@ def test_an_upgrade_replaces_an_earlier_pack_in_place(run: Run, mc_dir: Path):
         (resource_packs("vanilla", "fabric", f"file/{OLD_PACK}", "file/Faithful.zip") + "\r\n").encode("utf-8")
     )
 
-    assert returned(run()) == ["Updated"]
+    output = run()
 
+    assert returned(output) == ["Updated"]
+    assert STAYS_OFF not in output
     assert installed(mc_dir) == [PACK]
     assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
     assert options(mc_dir) == resource_packs("vanilla", "fabric", f"file/{PACK}", "file/Faithful.zip") + "\r\n"
@@ -222,8 +227,11 @@ def test_an_upgrade_keeps_a_pack_the_player_turned_off_off(run: Run, mc_dir: Pat
     before = resource_packs("vanilla", "fabric", "file/Faithful.zip") + "\r\n"
     (mc_dir / "options.txt").write_bytes(before.encode("utf-8"))
 
-    assert returned(run()) == ["Updated"]
+    output = run()
 
+    assert returned(output) == ["Updated"]
+    # A player who expected the new pack to show says how to turn it on.
+    assert STAYS_OFF in output
     assert installed(mc_dir) == [PACK]
     assert options(mc_dir) == before
 

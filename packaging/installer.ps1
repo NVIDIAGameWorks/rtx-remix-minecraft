@@ -2657,12 +2657,13 @@ function Set-ArtPackOption {
       $PackName drops every art pack entry. -Enable lists $PackName just above
       Fabric's pack when no art pack is listed, below the player's own packs
       so those still win, and creates options.txt when there is none. The file
-      is rewritten only when the list changes.
+      is rewritten only when the list changes. Returns whether $PackName is
+      on afterwards, or $null for a resourcePacks line it could not read.
     #>
     param([string]$McDir, [string]$PackName, [switch]$Enable)
     $path = Join-Path $McDir 'options.txt'
     $exists = Test-Path -LiteralPath $path -PathType Leaf
-    if (-not $exists -and -not $Enable) { return }
+    if (-not $exists -and -not $Enable) { return $false }
     $text = if ($exists) { [IO.File]::ReadAllText($path) } else { '' }
     $match = [regex]::Match($text, '(?m)^resourcePacks:[^\r\n]*')
     $listed = @()
@@ -2671,7 +2672,7 @@ function Set-ArtPackOption {
             foreach ($pack in (ConvertFrom-Json $match.Value.Substring('resourcePacks:'.Length) -ErrorAction Stop)) { $listed += [string]$pack }
         } catch {
             Write-Warn "Left $path alone: its resourcePacks line is not a JSON list. Turn RTX Remix Materials on or off in Options, Resource Packs."
-            return
+            return $null
         }
     }
     $entry = if ($PackName) { "file/$PackName" } else { $null }
@@ -2690,8 +2691,9 @@ function Set-ArtPackOption {
         if (-not $packs.Contains('vanilla')) { $packs.Insert(0, 'vanilla') }
         if (-not $packs.Contains('fabric')) { $packs.Insert($packs.IndexOf('vanilla') + 1, 'fabric') }
         $packs.Insert($packs.IndexOf('fabric') + 1, $entry)
+        $placed = $true
     }
-    if ($exists -and ($packs -join "`n") -ceq ($listed -join "`n")) { return }
+    if ($exists -and ($packs -join "`n") -ceq ($listed -join "`n")) { return $placed }
     $line = 'resourcePacks:' + (ConvertTo-Json -InputObject @($packs) -Compress)
     if ($match.Success) {
         $updated = $text.Remove($match.Index, $match.Length).Insert($match.Index, $line)
@@ -2703,10 +2705,11 @@ function Set-ArtPackOption {
         # The game fills in every other option with its default.
         $updated = "version:$($script:MC_DATA_VERSION)`r`n$line`r`n"
     }
-    if ($updated -ceq $text) { return }
+    if ($updated -ceq $text) { return $placed }
     $bytes = if ($exists) { [IO.File]::ReadAllBytes($path) } else { @() }
     $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191
     Write-FileAtomic -Path $path -Content $updated -Bom:$bom
+    return $placed
 }
 
 function Install-ArtPack {
@@ -2756,12 +2759,13 @@ function Install-ArtPack {
             return 'Failed'
         }
     }
-    Set-ArtPackOption -McDir $McDir -PackName $name -Enable:$enable
+    $on = Set-ArtPackOption -McDir $McDir -PackName $name -Enable:$enable
     if ($enable) {
         Write-Info "Installed and turned on $name"
         return 'Installed'
     }
     Write-Info "Installed $name"
+    if ($on -eq $false) { Write-Info 'RTX Remix Materials stays off, as you left it. Turn it on in Options, Resource Packs.' }
     return 'Updated'
 }
 
@@ -3531,7 +3535,7 @@ function Remove-ModArtifacts {
         Write-Info "Removing $($pack.Name)"
         Remove-Item -LiteralPath $pack.FullName -Force
     }
-    Set-ArtPackOption -McDir $McDir -PackName ''
+    $null = Set-ArtPackOption -McDir $McDir -PackName ''
     # The world may hold the player's progress, so it stays.
     $saves = Join-Path $McDir 'saves'
     if (Test-Path -LiteralPath (Join-Path $saves $script:WORLD_FOLDER_NAME)) {

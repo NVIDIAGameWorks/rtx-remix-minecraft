@@ -99,7 +99,7 @@ loads without unpacking. The installer copies it into the game folder's
 
 - **A pack already installed** is replaced with the archive's, and older
   versions are removed. Its entry in `resourcePacks` is renamed in place, so a
-  pack you turned off stays off.
+  pack you turned off stays off, and the installer says where to turn it on.
 - **No pack installed:** the new pack is turned on just above Fabric's pack,
   which holds the mod's built-in baseline, and below your own packs, so they
   still override it. With no `options.txt` yet, as in a new Prism instance,
