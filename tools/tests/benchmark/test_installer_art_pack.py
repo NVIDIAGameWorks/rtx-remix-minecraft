@@ -48,7 +48,7 @@ function Confirm-YesNo {
 $held = if ($Hold) { [IO.File]::Open($Hold, 'Open', 'Read', 'None') } else { $null }
 try {
     $returned = @(switch ($Action) {
-        'Install' { Install-ArtPack -McDir $McDir -Launcher $Launcher }
+        'Install' { Install-ArtPack -McDir $McDir }
         'Uninstall' { Remove-ModArtifacts -McDir $McDir -Launcher $Launcher }
         default { throw "Unknown action: $Action" }
     })
@@ -133,9 +133,8 @@ def options(mc_dir: Path) -> str:
     return (mc_dir / "options.txt").read_bytes().decode("utf-8")
 
 
-@pytest.mark.parametrize("launcher", ["Prism", "Microsoft"])
-def test_a_new_instance_gets_the_pack_turned_on_above_fabric(run: Run, mc_dir: Path, launcher: str):
-    assert returned(run(launcher=launcher)) == ["Installed"]
+def test_a_new_instance_gets_the_pack_turned_on_above_fabric(run: Run, mc_dir: Path):
+    assert returned(run()) == ["Installed"]
 
     assert installed(mc_dir) == [PACK]
     assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
