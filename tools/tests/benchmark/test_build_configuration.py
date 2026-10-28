@@ -61,6 +61,10 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertEqual(body.count("resourcepacks"), 1)
         self.assertNotIn("LabPBR", body)
         self.assertNotIn("*.jar", body)
+        # The showcase world rides beside it, where a launcher's saves folder expects it. Both zips stay whole:
+        # the installer decides at install time which of them to unpack.
+        self.assertRegex(body, r"from\(worldArchiveTask\) \{\s*into 'saves'\s*\}")
+        self.assertEqual(body.count("saves"), 1)
 
     def test_release_content_pins_come_from_tools_config(self):
         # The installer offers the pack and world the release carries; development launches stage the ones
@@ -197,7 +201,7 @@ class BuildConfigurationTests(unittest.TestCase):
 
     def test_release_archive_zips_the_staged_installable_tree(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        archive = re.search(r"(?ms)^tasks.register\('releaseArchive', Zip\) \{(.+?)^\}", build)
+        archive = re.search(r"(?ms)^def releaseArchiveTask = tasks.register\('releaseArchive', Zip\) \{(.+?)^\}", build)
         self.assertIsNotNone(archive)
         assert archive is not None
         body = archive.group(1)
@@ -207,6 +211,58 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("destinationDirectory.set(layout.buildDirectory.dir('distributions'))", body)
         self.assertIn("preserveFileTimestamps = false", body)
         self.assertIn("reproducibleFileOrder = true", body)
+
+    def test_release_archive_is_the_installer_bundle(self):
+        # The release carries the JAR, the pack and the world as separate files, so the bundle that holds the
+        # installer and both zips has to read as the installer, not as a second copy of the mod.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(r"(?ms)^def releaseArchiveTask = tasks.register\('releaseArchive', Zip\) \{(.+?)^\}", build)
+        assert archive is not None
+        body = archive.group(1)
+        self.assertIn("archiveClassifier.set('installer')", body)
+        # The installer's name stays apart from the JAR's, which has no classifier.
+        jar = re.search(r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}", build)
+        assert jar is not None
+        self.assertNotIn("archiveClassifier", jar.group(1))
+
+    def test_release_assets_are_the_four_release_files(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        assets = re.search(r"(?ms)^tasks.register\('stageReleaseAssets', Sync\) \{(.+?)^\}", build)
+        self.assertIsNotNone(assets, "release assets must be staged through Sync so a stale file cannot be uploaded")
+        assert assets is not None
+        body = assets.group(1)
+        self.assertIn("into layout.buildDirectory.dir('release-assets')", body)
+        self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
+        # The JAR, both content zips and the bundle, and nothing else: the workflow uploads every file here.
+        self.assertEqual(
+            re.findall(r"from\(([^)]*)\)", body),
+            ["packageJarArchive", "materialsArchiveTask", "worldArchiveTask", "releaseArchiveTask"],
+        )
+        self.assertNotIn("include", body)
+        self.assertNotIn("exclude", body)
+
+    def test_ordinary_builds_do_not_fetch_release_content(self):
+        # The world is hundreds of megabytes, so build, test and package must never pull it. Only release staging
+        # may name the content tasks. The tools suite does not run Gradle and the check workflow has no Java, so
+        # this reads build.gradle instead of running `gradlew build --dry-run`.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        content = ("fetchReleaseContent", "materialsPackMeta", "materialsArchive", "worldArchive")
+        release = ("stageReleaseArchive", "releaseArchive", "stageReleaseAssets")
+        remaining = build
+        # Cut each task's definition out of the script. What is left is every other task, and none may name them.
+        for name in (*content, *release):
+            definition = rf"(?ms)^(?:def \w+ = )?tasks\.register\('{name}'[^\n]*\{{\n.+?^\}}\n"
+            self.assertEqual(len(re.findall(definition, remaining)), 1, f"{name} must be defined exactly once")
+            remaining = re.sub(definition, "", remaining)
+        for name in (*content, *release):
+            with self.subTest(reference=name):
+                # Not assertNotRegex: its failure message would print the whole script.
+                reference = re.search(rf".*\b{name}(?:Task)?\b.*", remaining)
+                self.assertIsNone(
+                    reference,
+                    f"{name} may be named only by the release tasks, so no ordinary build reaches it: "
+                    f"{reference.group(0).strip() if reference else ''}",
+                )
 
     def test_python_guard_pattern_rejects_python_payloads_only(self):
         # verifyPackageJar's pattern is the whole defence against a runtime pin

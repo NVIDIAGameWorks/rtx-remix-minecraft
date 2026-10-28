@@ -781,7 +781,7 @@ def worldArchiveTask = tasks.register('worldArchive', Zip) {
 }
 
 def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
-    description = 'Stages the verified JAR and installer in build/release'
+    description = 'Stages the verified JAR, the pack and world zips, and the installer in build/release'
     group = 'build'
     dependsOn 'package'
     into layout.buildDirectory.dir('release')
@@ -790,8 +790,12 @@ def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
     from(packageJarArchive) {
         into 'mods'
     }
+    // Both zips stay whole. The installer unpacks the ones a player chooses.
     from(materialsArchiveTask) {
         into 'resourcepacks'
+    }
+    from(worldArchiveTask) {
+        into 'saves'
     }
     from 'packaging/install.bat', 'packaging/installer.ps1',
             'packaging/migrate_resource_packs.ps1', 'packaging/INSTALLER_REFERENCE.md'
@@ -806,14 +810,31 @@ def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
     }
 }
 
-tasks.register('releaseArchive', Zip) {
-    description = 'Builds an installable release tree and ZIP with the selected platform SDKs'
+// The classifier keeps the bundle's name apart from the JAR's in the release.
+def releaseArchiveTask = tasks.register('releaseArchive', Zip) {
+    description = 'Builds the installer bundle: JAR, pack and world zips, and installer, with the selected platform SDKs'
     group = 'build'
     from(stageReleaseArchiveTask)
     archiveBaseName.set(projectArchiveName)
     archiveVersion.set(resolvedBuildVersion)
+    archiveClassifier.set('installer')
     destinationDirectory.set(layout.buildDirectory.dir('distributions'))
     duplicatesStrategy = DuplicatesStrategy.FAIL
     preserveFileTimestamps = false
     reproducibleFileOrder = true
+}
+
+// The four files a GitHub release carries, and nothing else, so the workflow
+// uploads build/release-assets/* without a list of names to keep in step.
+// Sync removes a file left behind by a previous version.
+tasks.register('stageReleaseAssets', Sync) {
+    description = 'Stages the four release files in build/release-assets'
+    group = 'build'
+    into layout.buildDirectory.dir('release-assets')
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+
+    from(packageJarArchive)
+    from(materialsArchiveTask)
+    from(worldArchiveTask)
+    from(releaseArchiveTask)
 }
