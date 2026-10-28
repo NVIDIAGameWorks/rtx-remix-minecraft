@@ -1,7 +1,8 @@
 # RTX Remix for Minecraft
 
 This archive installs a Fabric mod that renders Minecraft Java Edition 1.21.1
-through NVIDIA RTX Remix. It sets up a launcher, Java,
+through NVIDIA RTX Remix, with the RTX Remix Materials texture pack and the
+RTX Remix Showcase World it was made with. It sets up a launcher, Java,
 Fabric, the mod, and the RTX Remix runtime for you.
 
 ## What You Need
@@ -19,12 +20,13 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 2. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Prism Launcher' (this will set up the mod automatically)
-    * Say **yes** to the RTX art pack (recommended): it is the look the renderer was made for
+    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then choose 'Continue'
 
 3. **Sign in** to your Microsoft account in Prism Launcher
 
 4. Play
     * In Prism Launcher, double-click the 'NVIDIA RTX Remix for Minecraft' instance
+    * In Minecraft, open 'Singleplayer' and **choose** 'NVIDIA RTX Demo'
     * *Note: if the instance is missing, press F5 to refresh*
     * *Note: on the very first launch, RTX Remix compiles its shaders before showing the world (one time only). See First Launch.*
 
@@ -38,10 +40,12 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 4. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Microsoft Launcher' (this will set up the mod automatically)
-    * Say **yes** to the RTX art pack (recommended): it is the look the renderer was made for
+    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then choose 'Continue'
+    * *Note: this launcher shares one game folder with your normal Minecraft, so 'RTX Remix Materials' also changes how your normal game looks. Untick it to keep your normal look.*
 
 5. Play
     * In Minecraft Launcher, on the 'Minecraft: Java Edition' tab: **choose** 'NVIDIA RTX Remix for Minecraft' from the installation list, and hit 'Play'
+    * In Minecraft, open 'Singleplayer' and **choose** 'NVIDIA RTX Demo'
     * *Note: on the very first launch, RTX Remix compiles its shaders before showing the world (one time only). See First Launch.*
 
 ---
@@ -66,8 +70,9 @@ breaks, report it (see below); that is how it gets fixed.
 | `installer.ps1` | The installer itself. `install.bat` is a thin wrapper around it |
 | `README.md` | This file |
 | `INSTALLER_REFERENCE.md` | The installer modes, every flag, headless and CI use, and what the installer verifies before it downloads anything. |
-| `mods\` | The mod, one JAR |
-| `resourcepacks\` | The RTX art pack, one ZIP the installer offers to install. Minecraft loads it as it is, without unpacking |
+| `mods\` | The mod, RTX Remix Renderer, one JAR |
+| `resourcepacks\` | RTX Remix Materials, the texture pack, one ZIP. The installer copies it as it is, and Minecraft loads it without unpacking |
+| `saves\` | RTX Remix Showcase World, one ZIP. The installer unpacks it into the game's `saves\NVIDIA RTX Demo\` |
 | `migrate_resource_packs.ps1` | Migrates legacy baseline packs and resource-pack ordering |
 | `LICENSE`, `NOTICE` | The project's Apache License 2.0 and its attribution notices |
 | `THIRD_PARTY_NOTICES.md`, `packaging\licenses\` | The third-party components the mod JAR carries, chiefly the RTX Remix runtime, and their license texts |
@@ -95,11 +100,16 @@ launch.
    either way, so your existing game, worlds, and settings are untouched. The
    **Microsoft launcher** is the official one you already use, and the mod then
    shares the same game folder and the same worlds as your normal play.
-5. Say yes when the installer offers the RTX art pack. It is the texture pack
-   the renderer was made with, and you can turn it off later in Options,
-   Resource Packs. With the Microsoft launcher it is also on when you play
-   without the mod, because both share one game folder. Upgrade and Repair
-   bring an installed art pack up to date without asking.
+5. Keep all three items ticked in the list that follows: RTX Remix Renderer,
+   the mod; RTX Remix Materials, the texture pack the renderer was made with;
+   and RTX Remix Showcase World, the world it was tuned against. Enter ticks or
+   unticks the highlighted item, and Continue installs the ticked ones. The
+   pack goes in turned on, and you can turn it off later in Options, Resource
+   Packs. With the Microsoft launcher it is also on when you play without the
+   mod, because both share one game folder, and the list says so beside it;
+   untick it to leave your normal game's look alone. The world goes into
+   `saves\NVIDIA RTX Demo`. A world already there under that name is kept as
+   it is, and the installer says so.
 6. The installer opens the launcher when it finishes. If it cannot, open it
    yourself. A Prism the installer downloaded has no Start menu entry: run
    `prismlauncher.exe` in `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\`,
@@ -108,10 +118,12 @@ launch.
    Accounts, then Add Microsoft.
 7. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
    Prism, or the profile of the same name in the Microsoft launcher.
+8. Open Singleplayer and choose **NVIDIA RTX Demo**, the showcase world.
 
 `INSTALLER_REFERENCE.md` covers the rest: the modes, every flag, headless and
 CI use, and what the installer verifies before it downloads anything. To add
-the mod to a Fabric instance you already have instead, see
+the mod, the pack, or the world to a Fabric instance you already have instead,
+see
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/blob/main/docs/PLAYING.md#installing-without-the-installer>.
 
 ## First Launch
@@ -137,10 +149,10 @@ Once you are in a world, the renderer compiles shaders and draws nothing until
 it finishes. A dark, flat, or half-built scene right after is expected. Let it
 settle before judging the picture.
 
-The RTX art pack is the look the renderer was made for. Without it, the
+RTX Remix Materials is the look the renderer was made for. Without it, the
 baseline PBR textures inside the mod JAR give vanilla's textures simpler
-materials, and no pack needs turning on for those. Packs you turn on above the
-art pack override it, and every pack overrides the built-in baseline.
+materials. Packs you turn on above RTX Remix Materials override it, and every
+pack overrides the built-in baseline.
 
 ## Check It Worked
 
@@ -164,18 +176,22 @@ preselects Upgrade and replaces the mod and its supporting files in the
 launcher that already has them. Launcher, Minecraft, Fabric, and other options
 are preserved. To install into the other launcher instead, choose Install.
 
-Install, Upgrade, and Repair remove an old generated `RtxRemix-LabPBR` pack
+Installing the mod also removes an old generated `RtxRemix-LabPBR` pack
 identified by its metadata and texture inventory, leaving other packs alone.
-In an existing `options.txt`, they change only `resourcePacks`: vanilla first,
+In an existing `options.txt`, it changes only `resourcePacks`: vanilla first,
 Fabric next, then user packs in their existing order, without the retired
 baseline entry. Missing options files are not created for that.
 
-An installed RTX art pack, `resourcepacks\rtx-remix-art-pack-<version>.zip`, is
-replaced with the archive's without asking, and its `resourcePacks` entry is
-renamed in place, so it stays on or off as you left it. A new art pack goes in
-only when you say yes, and is turned on just above Fabric's pack, below your
-own packs. That is the one case where the installer creates a missing
+With RTX Remix Materials ticked, an installed copy,
+`resourcepacks\RTX-Remix-Materials-<version>.zip`, is replaced with the
+archive's, and its `resourcePacks` entry is renamed in place, so it stays on or
+off as you left it. A new pack is turned on just above Fabric's pack, below
+your own packs. That is the one case where the installer creates a missing
 `options.txt`, holding only the game version and the pack list.
+
+The installer never replaces or changes `saves\NVIDIA RTX Demo`, since it may
+hold your progress. For a fresh copy of the showcase world, rename or delete
+that folder and run the installer again with the world ticked.
 
 The runtime under `remix-sdk\` and the baseline `rtx.conf` belong to the mod
 and are replaced on the first launch after an upgrade, so edits to either do
@@ -216,13 +232,15 @@ The automated uninstall removes these:
 - `.rtx-remix-version`
 - `textures\water_normals_flipbook.dds` and
   `textures\overcast_thunderstorm_bc6u.dds`
-- `resourcepacks\rtx-remix-art-pack-<version>.zip`, the RTX art pack, and its
-  entry in the `resourcePacks:` line of `options.txt`
+- `resourcepacks\RTX-Remix-Materials-<version>.zip`, RTX Remix Materials, and
+  its entry in the `resourcePacks:` line of `options.txt`
 - `resourcepacks\RtxRemix-LabPBR\`, if left by an earlier version
 
 Basic uninstall leaves these behind, because they are yours or they are part
 of a world. Delete them by hand if you want the folder clean:
 
+- `saves\NVIDIA RTX Demo\`, the showcase world, which may hold your progress.
+  The uninstall says where it is
 - `rtx-remix\`, which holds the lighting profiles and anything you edited
 - `config\rtxremix.json`, the settings you changed in the mod's settings screen
 - `camera-paths\`, your camera recordings
@@ -250,6 +268,9 @@ if you are wiping it anyway.
 | `Failed to extract JDK 21 archive:` followed by the error details | Check free disk space and the permissions on your temporary folder, then re-run the installer to download and extract a fresh archive |
 | The Fabric API download fails | `maven.fabricmc.net` has to be reachable. Check the firewall and re-run |
 | The installer refuses to choose a launcher | Both Prism and the Microsoft launcher are installed and the run was headless. Pass `-Launcher Prism` or `-Launcher Microsoft` |
+| `Install RTX Remix Renderer first` | RTX Remix Renderer was unticked, and the launcher has no RTX Remix game folder for the pack and the world to go into. Run the installer again with the mod ticked |
+| The RTX Remix Materials step says `Could not place` or `Could not remove the older` | Minecraft holds its resource packs open while it runs. Close it and run the installer again |
+| `Could not unpack the RTX Remix Showcase World` | Nothing of the world was left in `saves\`. Check the free space on that drive, or download the installer bundle again if the zip is damaged |
 
 Problems inside the game rather than inside the installer, such as a black
 screen or a flat-looking world, are covered by the player guide at

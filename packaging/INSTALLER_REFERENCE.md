@@ -34,10 +34,10 @@ Quit closes at once, and a run given `-Mode` never waits.
 
 | Mode | What it does |
 |---|---|
-| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, Fabric API, and, if you say yes, the RTX art pack. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
-| Upgrade | Replaces the mod JAR, Fabric API, and an installed RTX art pack. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
+| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Installs the items ticked under Choosing What To Install: the mod with its launcher setup and Fabric API, RTX Remix Materials, and the RTX Remix Showcase World. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
+| Upgrade | Replaces the mod JAR and Fabric API, and, with RTX Remix Materials ticked, an installed pack. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
 | Repair | Reinstalls the packaged files through the same path as Install and Upgrade. If the `.rtx-remix-version` marker matches, it does not re-extract the runtime or conf payload, but a missing `rtx.conf` is restored on launch. Delete the marker and relaunch to force full extraction |
-| Uninstall | Removes the mod files listed in `README.md`, then offers to remove the installer-managed Java, the Prism portable, and the Prism instance, listing only those that exist. With both launchers holding the mod it asks Prism, Microsoft, or Both |
+| Uninstall | Removes the mod files listed in `README.md`, RTX Remix Materials among them, then offers to remove the installer-managed Java, the Prism portable, and the Prism instance, listing only those that exist. It keeps the RTX Remix Showcase World, as it keeps every world. With both launchers holding the mod it asks Prism, Microsoft, or Both |
 | Export | Prism only. Zips the Prism instance into an archive another machine can drop into its own Prism `instances\` folder, stripping the paths listed under Privacy below |
 
 An interactive Install, Upgrade, or Repair opens the launcher when it
@@ -46,39 +46,90 @@ finishes; `-Unattended` suppresses that. A scripted
 Microsoft launcher, an interactive run first waits for you to close a running
 launcher.
 
-Install, Upgrade, and Repair migrate the retired generated `RtxRemix-LabPBR`
-pack. They identify it by metadata and texture inventory and leave other packs
-alone. In an existing `options.txt`, only `resourcePacks` changes: vanilla,
-Fabric, then user packs in their existing order, without the retired baseline
-entry. They do not create a missing options file for that.
+Installing the mod also migrates the retired generated `RtxRemix-LabPBR`
+pack. It identifies the pack by metadata and texture inventory and leaves
+other packs alone. In an existing `options.txt`, only `resourcePacks` changes:
+vanilla, Fabric, then user packs in their existing order, without the retired
+baseline entry. It does not create a missing options file for that.
 
-## The RTX Art Pack
+## Choosing What To Install
 
-The archive carries the RTX art pack as
-`resourcepacks\rtx-remix-art-pack-<version>.zip`, a resource pack Minecraft
-loads without unpacking. Install, Upgrade, and Repair copy it into the game
-folder's `resourcepacks\` under the same name, as their last step.
+Install, Upgrade, and Repair install three items, and each can be left out:
 
-- **An art pack already installed** is replaced with the archive's without
-  asking, and older versions are removed. Its entry in `resourcePacks` is
-  renamed in place, so a pack you turned off stays off.
-- **No art pack installed:** an interactive run asks first, with yes as the
-  default, and `-ArtPack Install` adds it without asking. An unattended run
-  without `-ArtPack Install` adds nothing and says so. A new art pack is turned
-  on just above Fabric's pack, below your own packs, so they still override
-  it. With no `options.txt` yet, as in a new Prism instance, the installer
-  creates one holding only the game version and the pack list, and the game
-  fills in every other option with its default.
+| Item | What the archive holds | Flag |
+|---|---|---|
+| RTX Remix Renderer | The mod, `mods\rtx-remix-renderer-<version>.jar`. Ticking it also sets up Java, the launcher, and Fabric API | `-Mod` |
+| RTX Remix Materials | The texture pack, `resourcepacks\RTX-Remix-Materials-<version>.zip` | `-ArtPack` |
+| RTX Remix Showcase World | The demo world, `saves\RTX-Remix-Showcase-World-<version>.zip` | `-World` |
+
+Once the launcher is settled, an interactive run shows them as a checklist,
+all three ticked. Enter ticks or unticks the highlighted item, Continue installs
+the ticked ones and needs at least one, and Esc cancels without changing
+anything. A flag set to `Skip` starts its item unticked. An item the archive
+does not carry, as in an older archive, shows `not in this download`, starts
+unticked, and cannot be ticked.
+
+An unattended run has no checklist. It installs the mod unless given
+`-Mod Skip`, and the pack and the world only when given `-ArtPack Install` or
+`-World Install`, so a script written for an earlier archive installs what it
+did before. An unattended Upgrade therefore leaves an installed pack at its
+old version unless it is given `-ArtPack Install`.
+
+With the mod unticked, nothing sets up a launcher, so the pack and the world go
+into the game folder an earlier install made for the launcher you pick: the
+RTX Remix Prism instance's `.minecraft`, or `%APPDATA%\.minecraft` for the
+Microsoft launcher. If that folder does not exist, the run installs nothing,
+says to install RTX Remix Renderer first, and exits with code `1`.
+
+A failure in the mod's steps stops the run with exit code `1`. The pack and
+the world each run whatever the other returned, and one that fails makes the
+run exit with code `1` once every step has finished. An item the archive does
+not carry, asked for with `-ArtPack Install` or `-World Install`, only warns.
+
+### RTX Remix Materials
+
+The archive carries the pack as
+`resourcepacks\RTX-Remix-Materials-<version>.zip`, a resource pack Minecraft
+loads without unpacking. The installer copies it into the game folder's
+`resourcepacks\` under the same name.
+
+- **A pack already installed** is replaced with the archive's, and older
+  versions are removed. Its entry in `resourcePacks` is renamed in place, so a
+  pack you turned off stays off.
+- **No pack installed:** the new pack is turned on just above Fabric's pack,
+  which holds the mod's built-in baseline, and below your own packs, so they
+  still override it. With no `options.txt` yet, as in a new Prism instance,
+  the installer creates one holding only the game version and the pack list,
+  and the game fills in every other option with its default.
 - **With the Microsoft launcher**, the pack is also on when you play without
-  the mod, because both share one game folder. The prompt says so.
-- **`-ArtPack Skip`** leaves the art pack and its entry alone in any mode.
-- **Uninstall** removes the art pack and its `resourcePacks` entry.
+  the mod, because both share one game folder and one `options.txt`. The
+  checklist says so beside the item.
+- **Unticked, or `-ArtPack Skip`,** the pack and its entry are left alone.
+- **Uninstall** removes the pack and its `resourcePacks` entry.
 
-Only files named `rtx-remix-art-pack-<major>.<minor>.<patch>.zip` are the
+Only files named `RTX-Remix-Materials-<major>.<minor>.<patch>.zip` are the
 installer's; any other pack in `resourcepacks\` is yours and stays untouched.
 A `resourcePacks` line that is not a JSON list is left alone, with a warning.
 A running game holds its packs open, so close Minecraft before running the
-installer; if the pack cannot be replaced, the run warns and still succeeds.
+installer. If the new pack cannot be placed, or an older one cannot be
+removed, the step warns and fails.
+
+### RTX Remix Showcase World
+
+The archive carries the world as
+`saves\RTX-Remix-Showcase-World-<version>.zip`, holding one `NVIDIA RTX Demo`
+folder. The installer unpacks it into the game folder's
+`saves\NVIDIA RTX Demo\`, which Singleplayer lists as NVIDIA RTX Demo.
+
+- **A world already there** under that name is never replaced or changed,
+  since it may hold your progress or your edits. The installer says it kept
+  it. For a fresh copy, rename or delete that folder and run the installer
+  again with the world ticked.
+- **A zip that cannot be unpacked**, because it is damaged or the drive is
+  full, leaves nothing of the world in `saves\`, and the step warns and fails.
+- **Uninstall** keeps the world, as it keeps every world, and says where it
+  is. Removing the RTX Remix Prism instance, alone or with Scorched earth,
+  deletes it with the instance's other worlds.
 
 ## JVM Arguments And Prism Memory
 
@@ -130,15 +181,23 @@ read, the instance's memory counts as yours.
 ## Headless And CI Use
 
 `-Unattended` turns off every prompt and returns an error where an interactive
-run would have asked a question. It also keeps the installer from opening the
-launcher afterwards and from waiting for a running Microsoft launcher to close.
+run would have asked a question. The checklist is the exception: an unattended
+run takes the defaults under Choosing What To Install. It also keeps the
+installer from opening the launcher afterwards and from waiting for a running
+Microsoft launcher to close.
 
 ```powershell
-# Fresh install with the usual defaults
+# Fresh install with the usual defaults: the mod only
 install.bat -Mode Install -Unattended -Launcher Prism
 
-# The same, with the RTX art pack installed and turned on
-install.bat -Mode Install -Unattended -Launcher Prism -ArtPack Install
+# The mod, RTX Remix Materials turned on, and the RTX Remix Showcase World
+install.bat -Mode Install -Unattended -Launcher Prism -ArtPack Install -World Install
+
+# Upgrade the mod and bring an installed RTX Remix Materials pack up to date
+install.bat -Mode Upgrade -Unattended -Launcher Prism -ArtPack Install
+
+# Add only the world to the RTX Remix Prism instance an earlier run made
+install.bat -Mode Install -Unattended -Launcher Prism -Mod Skip -World Install
 
 # Pin the Prism version, which avoids the GitHub "latest" lookup entirely
 install.bat -Mode Install -Unattended -Launcher Prism -PrismVersion 9.1
@@ -184,7 +243,9 @@ and the instance could not launch before the run either.
 | `-SkipHashCheck` | switch | Do not verify the SHA-256 of downloads. Troubleshooting only: it turns off the check described under Supply-Chain Safety |
 | `-GitHubToken` | token string | Authenticate GitHub API calls, which raises the rate limit well above the anonymous one. `GITHUB_TOKEN` in the environment is honoured too. Useful where many machines share one outbound address |
 | `-DevServer` | `host` or `host:port` | Add one entry to the instance's saved server list. Omit it and `servers.dat` is not touched. An existing populated `servers.dat` is never merged into |
-| `-ArtPack` | `Install`, `Skip` | Install adds or updates the RTX art pack without asking; Skip leaves it alone. Omit it and an interactive run asks before adding the pack, an unattended one adds nothing, and both update a pack already installed. See The RTX Art Pack |
+| `-Mod` | `Install`, `Skip` | Whether to install RTX Remix Renderer, the mod, with the Java, launcher setup, and Fabric API it needs. Omitted means Install. Skip puts only the pack or the world into the game folder an earlier install made. See Choosing What To Install |
+| `-ArtPack` | `Install`, `Skip` | Whether to install RTX Remix Materials, or bring an installed pack up to the archive's version. Omit it and an interactive run starts with the pack ticked, while an unattended one leaves the pack alone, installed or not. See RTX Remix Materials |
+| `-World` | `Install`, `Skip` | Whether to unpack the RTX Remix Showcase World into `saves\`. A world already there is kept. Omit it and an interactive run starts with the world ticked, while an unattended one leaves it out. See RTX Remix Showcase World |
 | `-Verbose` | switch | Trace-level output. `install.bat` also honours `VERBOSE=1` in the environment |
 
 ## Calling installer.ps1 Directly

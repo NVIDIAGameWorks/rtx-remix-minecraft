@@ -8,7 +8,7 @@ GPU, powered by NVIDIA RTX Remix.
 This is a beta. It was built as a technology showcase, but we love Minecraft
 and want it to succeed as a rendering mod. We tuned it against one showcase
 world, built for this project by [BlockWorks](https://www.blockworks.uk/) (see
-[Showcase World And Art Pack](#showcase-world-and-art-pack)), and the places
+[Showcase World And Materials Pack](#showcase-world-and-materials-pack)), and the places
 that world visits are where it looks and runs best. We have worked hard to fix
 as many issues as we could, but it ships with
 [known issues](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/issues),
@@ -31,16 +31,22 @@ We hope the community helps fill it out. If something breaks,
 
 ## Download
 
-Download the release archive from the
+Download the installer bundle, `rtx-remix-renderer-<version>-installer.zip`,
+from the
 [Releases page](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest).
+It holds the mod, the
+[RTX Remix Materials pack and the RTX Remix Showcase World](#showcase-world-and-materials-pack),
+and the installer that sets them up.
 
-## Install in three steps
+## Install in four steps
 
-1. Extract the release archive.
-2. Double-click `install.bat` and follow the menu. Say yes when it offers the
-   [RTX art pack](#showcase-world-and-art-pack): it is the look the renderer
-   was made for.
-3. Launch the **NVIDIA RTX Remix for Minecraft** profile from your launcher.
+1. Extract the installer bundle.
+2. Double-click `install.bat` and follow the menu. Pick a launcher, and keep
+   RTX Remix Renderer, RTX Remix Materials, and RTX Remix Showcase World
+   ticked.
+3. Sign in, and launch the **NVIDIA RTX Remix for Minecraft** profile from
+   your launcher.
+4. Open Singleplayer and choose **NVIDIA RTX Demo**.
 
 The step-by-step version, with launcher advice and troubleshooting, is in
 [Playing](docs/PLAYING.md).
@@ -91,31 +97,34 @@ or for an exact before-and-after comparison.
 exposure, and materials, all in Options, with no config files to edit, and a
 button into Remix's own Graphics Settings for the quality tier.
 
-## Showcase World And Art Pack
+## Showcase World And Materials Pack
 
-Two extras go with the mod. The developer launcher in
-[`tools/`](tools/README.md) downloads both the first time it runs and launches
-into the world with the pack on.
+Two extras go with the mod. Each release carries both, inside the installer
+bundle and as files of their own, and the installer puts them in place. The
+developer launcher in [`tools/`](tools/README.md) downloads both the first
+time it runs and launches into the world with the pack on.
 
-- **The RTX art pack**, a texture resource pack created by an art team at
+- **RTX Remix Materials**, a texture resource pack created by an art team at
   NVIDIA, is the look the renderer was made for, and the recommended way to
-  play. The release archive carries it as
-  `resourcepacks\rtx-remix-art-pack-<version>.zip`, and the installer offers
-  to install it and turn it on. To add it by hand, copy that file into the
-  game's `resourcepacks` folder and turn it on in Options, Resource Packs.
-  Without it, the baseline textures built into the mod give vanilla's
-  textures simpler materials. Its normal and specular maps follow the
+  play. The installer turns it on above the textures built into the mod and
+  below your own packs. Without it, the mod's built-in baseline textures give
+  vanilla's textures simpler materials. Its normal and specular maps follow the
   [LabPBR standard](https://shaderlabs.org/wiki/LabPBR_Material_Standard), so
   other renderers and shader packs that read LabPBR may be able to use it too,
   but it has only been tested with this mod. Its `_sss` subsurface maps are
   this mod's own addition, described in
   [Resource Packs](docs/RESOURCE_PACKS.md).
-- **The showcase world**, the map the renderer was tuned against, was built for
-  this project by BlockWorks: [website](https://www.blockworks.uk/),
+- **RTX Remix Showcase World**, the map the renderer was tuned against, was
+  built for this project by BlockWorks: [website](https://www.blockworks.uk/),
   [YouTube](https://www.youtube.com/@BlockWorksYT),
   [X](https://x.com/BlockWorksYT), and
-  [Instagram](https://www.instagram.com/blockworks/). The release archive does
-  not carry it.
+  [Instagram](https://www.instagram.com/blockworks/). The installer unpacks it
+  as **NVIDIA RTX Demo** under Singleplayer, and never overwrites a copy you
+  already have.
+
+To add either by hand, take `RTX-Remix-Materials-<version>.zip` or
+`RTX-Remix-Showcase-World-<version>.zip` from the release and follow
+[Installing Without The Installer](docs/PLAYING.md#installing-without-the-installer).
 
 ## Start Here
 
@@ -136,7 +145,7 @@ into the world with the pack on.
 | Contribute a change | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Report a bug | [Reporting a Bug](docs/PLAYING.md#reporting-a-bug) |
 | Report a security vulnerability | [SECURITY.md](SECURITY.md) |
-| See what changed | [CHANGELOG.md](CHANGELOG.md) |
+| See what changed | [Releases](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases) |
 
 ## Source And Tooling Layout
 

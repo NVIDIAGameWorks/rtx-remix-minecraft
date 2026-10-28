@@ -50,6 +50,12 @@ missing runtime, and stages it, so even `test` needs the C++ toolchain.
 the runtime and payload in `build/distributions/`. It verifies inclusion of
 every `packaging/licenses/` file and excludes Python interpreter and binding
 payloads. Staged and packaged contents must agree with `NativeExtractor`.
+A release carries four files, which `stageReleaseAssets` collects: the JAR;
+the RTX Remix Materials and RTX Remix Showcase World zips, which
+`materialsArchive` and `worldArchive` build from what `fetchReleaseContent`
+pulls for the `resourcePack` and `world` pins in `tools/config.json`; and the
+installer bundle `releaseArchive` makes from those three and the installer.
+`build`, `test`, and `package` never fetch the pack or world.
 See [Getting Started](docs/GETTING_STARTED.md) and
 [`build.gradle`](build.gradle) for the staging inventory.
 
@@ -376,8 +382,9 @@ even though the Gradle wrapper and native compiler entry points are batch script
 
 Runtime payloads live in `remix-runtime/{win64|arm64}/`, outside `build/` so
 Gradle `clean` cannot traverse Packman junctions into the shared package cache.
-The runtime textures' and art pack's junctions, `remix-runtime/textures/` and
-`remix-runtime/art-pack/`, sit beside them.
+The junctions for the runtime textures, `remix-runtime/textures/`, and for the
+release's Materials pack and showcase world, `remix-runtime/art-pack/` and
+`remix-runtime/world/`, sit beside them.
 Treat these junctions as read-only, and keep every Packman link under
 `remix-runtime/`, which git has never tracked: a checkout of a commit that
 tracks files under a junction writes and deletes them in the shared cache. Staging and packaging combine the selected

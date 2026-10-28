@@ -251,7 +251,8 @@ interactive readiness from the settled image.
 .\gradlew.bat build                         # development JAR in build/libs/
 .\gradlew.bat test                          # JUnit suites
 .\gradlew.bat package -Parch=win64           # installable JAR in build/distributions/
-.\gradlew.bat releaseArchive -Parch=win64    # installable release ZIP in build/distributions/
+.\gradlew.bat releaseArchive -Parch=win64    # installer bundle ZIP in build/distributions/
+.\gradlew.bat stageReleaseAssets             # the four release files in build/release-assets/
 ```
 
 `.\gradlew.bat compileJava` checks Java compilation without fetching or staging
@@ -261,9 +262,10 @@ validation of native integration.
 The JAR from `package` is the one players get: it embeds the runtime, gameplay
 conf payload, runtime textures, and baseline PBR textures. To try it in a
 normal installation of Minecraft 1.21.1 that already has Fabric Loader and
-Fabric API, drop it into the instance's `mods` folder; nothing else is needed.
-The release archive's installer also migrates old generated baseline packs and
-preserves user-pack ordering.
+Fabric API, drop it into the instance's `mods` folder; the mod needs nothing
+else to run. The release's installer also adds the RTX Remix Materials pack
+and the showcase world, migrates old generated baseline packs, and preserves
+user-pack ordering.
 
 Every task that reaches `classes` runs `setupRuntime` first, which compiles the
 bridge and stages the runtime. `test` and `build` therefore need a staged
@@ -288,15 +290,28 @@ The task also requires every `packaging/licenses/` file in the JAR.
 | `package -Parch=win64` | win64 only, skips the arm64 bridge compile |
 | `package -Parch=arm64` | arm64 only, useful for cross-building for device testing |
 
-`releaseArchive` runs `package` and its `verifyPackageJar` check, then stages
-the verified JAR under `build/release/mods/` and the installer scripts,
-documentation, and license notices beside it, with the RTX art pack as a ZIP
-under `build/release/resourcepacks/`. It writes that layout as a ZIP in
-`build/distributions/`. The same `-Parch` selection applies; omitting it
-includes both architectures. The baseline resource pack is built into the mod.
-The art pack is pulled through Packman into `remix-runtime/art-pack/` from
-the pin in `packman/art-pack.packman.xml`, which matches the version
-`tools/config.json` stages for development launches.
+`releaseArchive` builds the installer bundle. It runs `package` and its
+`verifyPackageJar` check, then stages the verified JAR under
+`build/release/mods/`, the RTX Remix Materials zip under
+`build/release/resourcepacks/`, the RTX Remix Showcase World zip under
+`build/release/saves/`, and the installer scripts, documentation, and license
+notices beside them. It writes that layout as
+`rtx-remix-renderer-<version>-installer.zip` in `build/distributions/`. The
+same `-Parch` selection applies; omitting it includes both architectures. The
+baseline resource pack is built into the mod.
+
+`fetchReleaseContent` pulls the pack and the world through Packman into
+`remix-runtime/art-pack/` and `remix-runtime/world/` from the pins in
+`tools/config.json`: `resourcePack.package` and `resourcePack.version` for the
+pack, `world.name` and `world.version` for the world. Development launches and
+benchmarks stage the same pins, so players and developers see the same
+content. Because the installer finds the zips by name, `fetchReleaseContent`
+refuses a pack version that does not read `1.2.3` or a world version that does
+not read `v1.2.3`, its `v` optional. `materialsArchive` and `worldArchive` zip
+the two with the files in `packaging/content/`, and `stageReleaseAssets`
+collects the four files a release carries, the JAR, both zips, and the bundle,
+in `build/release-assets/`. Only these release tasks fetch the pack and world;
+`build`, `test`, and `package` never do.
 
 ## Tooling And CI
 
@@ -334,7 +349,9 @@ They run `tools\rtx.bat check --tests` and `gradlew.bat build test`,
 respectively, with read-only repository permissions and no secrets. Pull
 request checks also scan the added commit messages. These workflows do not
 launch a GPU client, run benchmarks, or produce a release archive; run those
-locally when they are relevant. Runtime fetching has the publication
+locally when they are relevant. The [`release`](../.github/workflows/release.yml)
+workflow builds the release files and runs only when a maintainer starts it;
+see [Releases](../CONTRIBUTING.md#releases). Runtime fetching has the publication
 prerequisite described in [Get A Runtime](#get-a-runtime).
 
 ## Choosing A Launch Workflow
@@ -485,7 +502,7 @@ removes its stale registration.
 | `UnsatisfiedLinkError` naming `remixbridge` | The bridge did not compile, or it was compiled for the other architecture. Re-run the build and check that `-Parch` matches the staged runtime |
 | Minecraft still uses an old local runtime build | The staged runtime is a copy; run `tools\rtx.bat sdk restage` |
 | The build fails at `fetchRuntimeTextures` | Packman could not pull the runtime textures pinned in `packman/textures.packman.xml`. Check access to Packman's download host |
-| `releaseArchive` fails at `fetchArtPack` | Packman could not pull the art pack pinned in `packman/art-pack.packman.xml`, or the cached copy has no `pack.mcmeta` at its root. Check access to Packman's download host, or delete the folder the message names and build again |
+| `releaseArchive` fails at `fetchReleaseContent` | Packman could not pull the pack or world pinned in `tools/config.json`, or the cached copy has no `pack.mcmeta` or `world/level.dat`. Check access to Packman's download host, or delete the folder the message names and build again. A message quoting both pins means a version the installer would not find by name; see [Other Commands](#other-commands) |
 | The build reports that the runtime textures are missing files | The shared Packman cache holds the package without its textures. Delete the folder the message names and build again; Packman downloads the package afresh |
 | `package` reports mixed sources | Stage both architectures from one kind of source, or package one with `-Parch=` |
 | Empty or partial scene on first launch | Shader compilation. Wait for it to settle before reporting a defect |
