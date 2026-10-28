@@ -206,6 +206,19 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("inputs.file(releaseContentConfigFile)", body)
         self.assertIn("/remix-runtime/", (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
 
+    def test_release_content_runs_packman_by_a_relative_path(self):
+        # cmd /c strips the outer quotes of a quoted script path, which splits a checkout path containing spaces, so
+        # the pull runs packman.cmd from its own folder, as fetchRuntimeTextures does.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        fetch = re.search(
+            r"(?ms)^def fetchReleaseContentTask = tasks.register\('fetchReleaseContent'\) \{(.+?)^\}", build
+        )
+        assert fetch is not None
+        body = fetch.group(1)
+        self.assertIn("workingDir packmanDirectory", body)
+        self.assertIn("commandLine 'cmd', '/d', '/c', '.\\\\packman.cmd', 'pull', temporaryManifest.absolutePath", body)
+        self.assertNotIn("'packman.cmd').absolutePath", body)
+
     def test_distributable_jar_carries_the_runtime_textures(self):
         # A launcher such as CurseForge installs the JAR alone, with no installer to copy textures beside it, so the
         # JAR must carry every runtime texture for NativeExtractor to write into the game directory.

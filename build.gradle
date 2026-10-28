@@ -681,9 +681,10 @@ def fetchReleaseContentTask = tasks.register('fetchReleaseContent') {
             temporaryManifest.setText(groovy.xml.XmlUtil.serialize(manifest), 'UTF-8')
             logger.lifecycle("Pulling the Materials pack ${materialsVersion} and the showcase world ${worldVersion}")
             runtimeFetchServices.execOperations.exec {
+                // A relative script path from its own folder, as fetchRuntimeTextures
+                // runs it: cmd /c splits a quoted script path that contains spaces.
                 workingDir packmanDirectory
-                commandLine 'cmd', '/d', '/c', new File(packmanDirectory, 'packman.cmd').absolutePath,
-                        'pull', temporaryManifest.absolutePath
+                commandLine 'cmd', '/d', '/c', '.\\packman.cmd', 'pull', temporaryManifest.absolutePath
             }
         } finally {
             temporaryManifest.delete()
