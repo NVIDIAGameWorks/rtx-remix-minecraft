@@ -3134,17 +3134,17 @@ function Invoke-InstallOrUpgrade {
     # Each ticked item runs whatever the others returned. One that failed
     # fails the run once every step is done; one the download does not carry
     # only warns.
-    $itemFailed = $false
+    $failedItems = @()
     $worldResult = $null
     if ($ticked.ArtPack) {
         Write-Step 'Installing RTX Remix Materials'
         $packResult = Invoke-InstallItem -Name 'RTX Remix Materials' -Step { Install-ArtPack -McDir $mcDir }
-        if ($packResult -eq 'Failed') { $itemFailed = $true }
+        if ($packResult -eq 'Failed') { $failedItems += 'RTX Remix Materials' }
     }
     if ($ticked.World) {
         Write-Step 'Installing RTX Remix Showcase World'
         $worldResult = Invoke-InstallItem -Name 'RTX Remix Showcase World' -Step { Install-ShowcaseWorld -McDir $mcDir }
-        if ($worldResult -eq 'Failed') { $itemFailed = $true }
+        if ($worldResult -eq 'Failed') { $failedItems += 'RTX Remix Showcase World' }
     }
 
     # A server entry is added only when -DevServer names a host. An existing
@@ -3158,10 +3158,10 @@ function Invoke-InstallOrUpgrade {
         }
     }
 
-    Write-FinalInstructions -Launcher $launcher -PrismDataDir $state.PrismDataDir -Unattended:$Unattended -World:($worldResult -in 'Installed', 'Kept')
+    Write-FinalInstructions -Launcher $launcher -PrismDataDir $state.PrismDataDir -Unattended:$Unattended -World:($worldResult -in 'Installed', 'Kept') -Failed $failedItems
     # A headless run is a script or CI job; it must not open a window.
     if (-not $Unattended) { Start-InstalledLauncher -Launcher $launcher -PrismDataDir $state.PrismDataDir }
-    if ($itemFailed) { return 1 }
+    if ($failedItems.Count -gt 0) { return 1 }
     return 0
 }
 
@@ -3264,33 +3264,47 @@ function Start-InstalledLauncher {
 }
 
 function Write-FinalInstructions {
-    # -World adds where to find the RTX Remix Showcase World.
-    param([string]$Launcher, [string]$PrismDataDir, [switch]$Unattended, [switch]$World)
+    # -World adds where to find the RTX Remix Showcase World. -Failed names
+    # the ticked items that were not installed: the box then says so in
+    # yellow, and a line below it names each one, since the warning that
+    # explains it has usually scrolled away by now.
+    param([string]$Launcher, [string]$PrismDataDir, [switch]$Unattended, [switch]$World, [string[]]$Failed = @())
+    if ($Failed.Count -gt 0) {
+        $msg   = 'RTX Remix for Minecraft installed with problems'
+        $color = $script:C_YELLOW
+        $glyph = [char]0x26A0
+        $icon  = $script:ICON_WARN
+    } else {
+        $msg   = 'RTX Remix for Minecraft install complete'
+        $color = $script:C_GREEN
+        $glyph = [char]0x2713
+        $icon  = $script:ICON_OK
+    }
     # Inner box width must match the 0x2550 count in the top/bottom borders.
-    # Leading gap (3 spaces) + check-mark glyph (1 cell) + gap (2) + message.
+    # Leading gap (3 spaces) + icon glyph (1 cell) + gap (2) + message.
     # Trailing is padded to fill the remaining cells, computed rather
     # than hand-counted so message-text edits can't desynchronize again.
     $inner   = 66
-    $msg     = 'RTX Remix for Minecraft install complete'
-    $leading = "   $([char]0x2713)  "         # 3 spaces + check + 2 spaces
+    $leading = "   $glyph  "                   # 3 spaces + icon + 2 spaces
     $consumed = $leading.Length + $msg.Length  # one display cell per leading/trailing char
     $trailing = ' ' * [math]::Max(0, $inner - $consumed)
 
-    $bar  = "$($script:C_GREEN)$([char]0x2551)$($script:C_RESET)"
-    $top  = "$($script:C_GREEN)$([char]0x2554)$([string][char]0x2550 * $inner)$([char]0x2557)$($script:C_RESET)"
-    $bot  = "$($script:C_GREEN)$([char]0x255A)$([string][char]0x2550 * $inner)$([char]0x255D)$($script:C_RESET)"
+    $bar  = "$color$([char]0x2551)$($script:C_RESET)"
+    $top  = "$color$([char]0x2554)$([string][char]0x2550 * $inner)$([char]0x2557)$($script:C_RESET)"
+    $bot  = "$color$([char]0x255A)$([string][char]0x2550 * $inner)$([char]0x255D)$($script:C_RESET)"
     $blank = "$bar$(' ' * $inner)$bar"
 
     Write-Host ''
     Write-Host $top
     Write-Host $blank
-    # Colorize the visible content with ICON_OK / C_BOLD in-place; the
+    # Colorize the visible content with the icon / C_BOLD in-place; the
     # box sides ($bar) stay on the outside so trailing pad length is
     # computed from visible cells only.
-    $contentLeading = "   $($script:ICON_OK)  "
+    $contentLeading = "   $icon  "
     Write-Host "$bar$contentLeading$($script:C_BOLD)$msg$($script:C_RESET)$trailing$bar"
     Write-Host $blank
     Write-Host $bot
+    foreach ($item in $Failed) { Write-Warn "$item was not installed. See the messages above." }
     Write-Host ''
     Write-Host "$($script:C_BOLD)Next steps:$($script:C_RESET)"
     Write-Host ''

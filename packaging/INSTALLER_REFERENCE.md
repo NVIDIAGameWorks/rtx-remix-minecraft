@@ -83,8 +83,10 @@ says to install RTX Remix Renderer first, and exits with code `1`.
 
 A failure in the mod's steps stops the run with exit code `1`. The pack and
 the world each run whatever the other returned, and one that fails makes the
-run exit with code `1` once every step has finished. An item the archive does
-not carry, asked for with `-ArtPack Install` or `-World Install`, only warns.
+run exit with code `1` once every step has finished. The closing summary then
+says the install had problems and names each item that was not installed. An
+item the archive does not carry, asked for with `-ArtPack Install` or
+`-World Install`, only warns.
 
 ### RTX Remix Materials
 

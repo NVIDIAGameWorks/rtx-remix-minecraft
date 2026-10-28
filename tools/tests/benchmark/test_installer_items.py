@@ -32,6 +32,8 @@ INSTANCE = "NVIDIA RTX Remix for Minecraft"
 TITLE = "  Choose what to install. Enter ticks or unticks an item."
 MICROSOFT_NOTE = "also changes the look of your normal Minecraft"
 PLAY_THE_WORLD = "Open Singleplayer and choose NVIDIA RTX Demo."
+COMPLETE = "RTX Remix for Minecraft install complete"
+PROBLEMS = "RTX Remix for Minecraft installed with problems"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 STEP = re.compile(r"^\[(\d+)/(\d+)\] \S+ (.+)$")
 # Loads the installer's constants and functions without its entry point, as test_installer_art_pack.py does, points
@@ -178,6 +180,14 @@ def steps(output: str) -> list[tuple[int, int, str]]:
         if match:
             found.append((int(match[1]), int(match[2]), match[3]))
     return found
+
+
+def final_box(output: str, headline: str) -> list[str]:
+    """The five lines of the box the final instructions open with: its border, a blank line, the headline line, a
+    blank line, and its border."""
+    lines = output.splitlines()
+    [row] = [i for i, line in enumerate(lines) if headline in line]
+    return lines[row - 2 : row + 3]
 
 
 def files(folder: Path) -> list[str]:
@@ -494,9 +504,29 @@ def test_a_failed_item_fails_the_run_after_every_step(run: Run, dist: Path, pris
     assert "RTX Remix Materials was not installed: Expected one RTX Remix Materials pack" in output
     assert files(mc_dir / "resourcepacks") == []
     assert files(mc_dir / "saves") == [WORLD, f"{WORLD}/level.dat"]
-    # The final instructions still print, after the steps.
-    assert output.index("Installing RTX Remix Showcase World") < output.index("install complete")
+    # The final instructions still print, after the steps, and their headline says the install had problems, since the
+    # warning above has usually scrolled away by then.
+    assert COMPLETE not in output
+    box = final_box(output, PROBLEMS)
+    assert output.index("Installing RTX Remix Showcase World") < output.index(PROBLEMS)
+    assert len({len(line) for line in box}) == 1, box
+    after = output[output.index(PROBLEMS) :]
+    assert "RTX Remix Materials was not installed. See the messages above." in after
+    assert "RTX Remix Showcase World was not installed" not in after
     assert PLAY_THE_WORLD in output
+
+
+def test_a_run_where_every_item_installs_says_it_is_complete(run: Run, prism: Path):
+    instance(prism)
+
+    result = run("Run", unattended=True, mod="Skip", art_pack="Install", world="Install")
+
+    assert returned(result.stdout) == [0]
+    output = ANSI.sub("", result.stdout)
+    assert PROBLEMS not in output
+    assert "was not installed" not in output
+    box = final_box(output, COMPLETE)
+    assert len({len(line) for line in box}) == 1, box
 
 
 def test_an_item_missing_from_the_bundle_only_warns(run: Run, dist: Path, prism: Path):
