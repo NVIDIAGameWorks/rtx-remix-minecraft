@@ -217,12 +217,15 @@ static void writeCrashFiles(EXCEPTION_POINTERS* ep) {
         mei.ExceptionPointers = ep;
         mei.ClientPointers    = FALSE;
 
+        // No MiniDumpWithIndirectlyReferencedMemory: it copies the memory
+        // that stack values point at, and the game's main thread points at
+        // the launch arguments for the whole session, the launcher's access
+        // token among them. Players attach these files to public issues.
         DWORD flags = MiniDumpWithDataSegs
                     | MiniDumpWithHandleData
                     | MiniDumpWithThreadInfo
                     | MiniDumpWithUnloadedModules
-                    | MiniDumpWithFullMemoryInfo
-                    | MiniDumpWithIndirectlyReferencedMemory;
+                    | MiniDumpWithFullMemoryInfo;
 
         MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
                           dmpFile, (MINIDUMP_TYPE)flags, &mei, nullptr, nullptr);
