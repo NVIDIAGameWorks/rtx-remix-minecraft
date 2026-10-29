@@ -38,6 +38,9 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 public final class BootstrapDiagnostic {
     private final Minecraft mc = Minecraft.getMinecraft();
     private boolean launched, enabled, reported;
+    private final boolean terrainMode = Boolean.getBoolean("rtxremix.forge.diagnostic.terrain");
+    private TerrainDiagnostic terrain;
+    private String testWorld;
     private RemixAPI api;
     private WorldClient world;
     private long material, mesh, light;
@@ -54,14 +57,23 @@ public final class BootstrapDiagnostic {
         if (!launched && mc.currentScreen instanceof GuiMainMenu) {
             launched = true;
             WorldSettings settings = new WorldSettings(0, GameType.CREATIVE, false, false, WorldType.FLAT);
-            mc.launchIntegratedServer("remix-bootstrap-" + System.currentTimeMillis(), "Remix bootstrap", settings);
+            testWorld = "remix-bootstrap-" + System.currentTimeMillis();
+            mc.launchIntegratedServer(testWorld, "Remix bootstrap", settings);
         }
-        if (mc.world != null && mc.player != null && !enabled) {
+        if (testWorld != null && mc.world != null && mc.player != null && !enabled) {
             enabled = true;
+            if (terrainMode) terrain = new TerrainDiagnostic(testWorld);
             ClientCommandHandler.instance.executeCommand(mc.player, "/remix on");
         }
         ForgeRenderer renderer = RendererLifecycle.renderer();
         if (api != null && (renderer == null || renderer.world() != world)) close();
+        if (terrainMode) {
+            if (!reported && terrain != null && terrain.tick(renderer)) {
+                reported = true;
+                if (Boolean.getBoolean("rtxremix.forge.diagnostic.exit")) mc.shutdown();
+            }
+            return;
+        }
         if (!reported && renderer != null && renderer.frames() >= 120) {
             reported = true;
             RemixForgeMod.LOG.info("BOOTSTRAP_DIAGNOSTIC: 120 native frames completed; inspect the green panel.");
@@ -71,6 +83,7 @@ public final class BootstrapDiagnostic {
 
     @SubscribeEvent
     public void world(RenderWorldLastEvent event) {
+        if (terrainMode) return;
         ForgeRenderer renderer = RendererLifecycle.renderer();
         if (renderer == null || renderer.api() == null || renderer.world() != mc.world) return;
         if (api == null) {

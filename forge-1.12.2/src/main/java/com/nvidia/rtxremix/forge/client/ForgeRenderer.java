@@ -14,6 +14,7 @@ import com.nvidia.rtxremix.forge.interop.LegacyGlInterop;
 import com.nvidia.rtxremix.forge.presentation.FullscreenPresentation;
 import com.nvidia.rtxremix.forge.presentation.PresentationHooks;
 import com.nvidia.rtxremix.forge.runtime.ForgeRuntime;
+import com.nvidia.rtxremix.forge.terrain.TerrainCapture;
 import java.io.File;
 import java.util.Arrays;
 import net.minecraft.client.Minecraft;
@@ -28,6 +29,7 @@ final class ForgeRenderer implements PresentationHooks.Backend {
     private RemixAPI api;
     private LegacyGlInterop interop;
     private WorldClient world;
+    private TerrainCapture terrain;
     private boolean attempted, pending, closing;
     private long frames;
 
@@ -39,11 +41,13 @@ final class ForgeRenderer implements PresentationHooks.Backend {
         if (world != mc.world) {
             releaseWorld();
             world = mc.world;
+            terrain = new TerrainCapture(api, mc);
         }
     }
 
     void render(float partialTicks) {
         requireRenderThread();
+        terrain.update();
         CameraInfo view = camera.capture(mc, partialTicks);
         api.setupCamera(view);
         InteropInfo frame = submit();
@@ -112,6 +116,10 @@ final class ForgeRenderer implements PresentationHooks.Backend {
 
     void releaseWorld() {
         requireRenderThread();
+        if (terrain != null) {
+            terrain.close();
+            terrain = null;
+        }
         world = null;
     }
 
