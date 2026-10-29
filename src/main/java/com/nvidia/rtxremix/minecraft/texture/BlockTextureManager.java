@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
+import com.nvidia.rtxremix.minecraft.util.NativeImageColors;
 import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.MaterialInfo;
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
@@ -213,7 +214,7 @@ public class BlockTextureManager {
             BitSet transparent = null;
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
-                    if (((img.getColor(x, y) >> 24) & 0xFF) < 255) {
+                    if (((NativeImageColors.getAbgr(img, x, y) >> 24) & 0xFF) < 255) {
                         if (transparent == null) transparent = new BitSet(w * h);
                         transparent.set(y * w + x);
                     }
@@ -1035,7 +1036,7 @@ public class BlockTextureManager {
             int sw = sprite.getContents().getWidth(), sh = sprite.getContents().getHeight();
             for (int y = 0; y < sh; y++)
                 for (int x = 0; x < sw; x++) {
-                    int abgr = img.getColor(x, y);
+                    int abgr = NativeImageColors.getAbgr(img, x, y);
                     int idx = ((sy + y) * w + (sx + x)) * 4;
                     buf[idx]     = (byte) (abgr & 0xFF);
                     buf[idx + 1] = (byte) ((abgr >> 8) & 0xFF);

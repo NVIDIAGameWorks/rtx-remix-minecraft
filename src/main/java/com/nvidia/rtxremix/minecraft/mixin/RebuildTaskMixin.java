@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture;
  * returns that never read it. A task cancelled before it ever runs leaves its region to the
  * collector, which only forgoes the reuse.
  */
-@Mixin(targets = "net.minecraft.client.render.chunk.ChunkBuilder$BuiltChunk$RebuildTask")
+@Mixin(ChunkBuilder.BuiltChunk.RebuildTask.class)
 public abstract class RebuildTaskMixin {
 
     @Shadow

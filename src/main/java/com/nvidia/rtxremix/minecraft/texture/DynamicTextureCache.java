@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
+import com.nvidia.rtxremix.minecraft.util.NativeImageColors;
 import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
@@ -22,17 +23,10 @@ import java.util.WeakHashMap;
  * Pixel cache for dynamic textures (maps, player skins, etc.) that are not
  * accessible through the resource manager.
  *
- * <p>Textures are captured via two mixin paths:
- * <ul>
- *   <li>{@code NativeImageBackedTextureMixin}, for {@code NativeImageBackedTexture}
- *       instances (capes, etc.)</li>
- *   <li>{@code PlayerSkinTextureMixin}, for {@code PlayerSkinTexture} instances
- *       (player skins downloaded from Mojang CDN)</li>
- * </ul>
- *
- * <p>In both cases, {@code TextureManagerMixin} intercepts {@code registerTexture()}
- * to record the texture-to-identifier mapping in {@link #TEXTURE_IDS}, and the type-specific
- * mixin captures pixel data at upload time via {@link #captureFromUpload}.
+ * <p>{@code TextureManagerMixin} records image-backed textures at registration and
+ * captures their available pixels immediately, including downloaded player skins.
+ * {@code NativeImageBackedTextureMixin} captures subsequent mutable uploads via
+ * {@link #captureFromUpload}, using the mapping in {@link #TEXTURE_IDS}.
  *
  * <p>Font glyph pages are served here too but never snapshotted: Minecraft assembles a
  * page on the GPU one glyph at a time and {@link GlyphPageMirror} follows along, so
@@ -71,7 +65,7 @@ public final class DynamicTextureCache {
 
     /**
      * Maps a texture object to its identifier so that upload-time mixins
-     * ({@code NativeImageBackedTextureMixin}, {@code PlayerSkinTextureMixin})
+     * ({@code NativeImageBackedTextureMixin})
      * can look up the id when {@code upload()} fires.  Uses identity semantics
      * since {@code AbstractTexture} does not override {@code equals}/{@code hashCode}.
      */
@@ -104,7 +98,7 @@ public final class DynamicTextureCache {
 
     /**
      * Captures pixel data at upload time, where {@code image} is guaranteed non-null.
-     * Called from {@code NativeImageBackedTextureMixin} and {@code PlayerSkinTextureMixin}.
+     * Called from {@code NativeImageBackedTextureMixin}.
      *
      * @return true if the texture was registered and pixels were stored
      */
@@ -189,7 +183,7 @@ public final class DynamicTextureCache {
         byte[] out = new byte[w * h * 4];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int abgr = image.getColor(x, y);
+                int abgr = NativeImageColors.getAbgr(image, x, y);
                 int idx = (y * w + x) * 4;
                 out[idx]     = (byte)  (abgr         & 0xFF);
                 out[idx + 1] = (byte) ((abgr >>  8)  & 0xFF);

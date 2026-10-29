@@ -346,7 +346,7 @@ public final class BlockQuadEmitter {
         // against the unoffset grid position; see the note there before adding a
         // light rule to a block that offsets.
         if (state.hasModelOffset()) {
-            Vec3d modelOffset = state.getModelOffset(world, pos);
+            Vec3d modelOffset = state.getModelOffset(pos);
             lx += (float) modelOffset.x;
             ly += (float) modelOffset.y;
             lz += (float) modelOffset.z;
@@ -443,8 +443,8 @@ public final class BlockQuadEmitter {
         }
 
         int color = 0xFFFFFFFF;
-        if (bq.getColorIndex() >= 0 && blockColors != null) {
-            int tint = getBlockTint(state, world, bq.getColorIndex());
+        if (bq.getTintIndex() >= 0 && blockColors != null) {
+            int tint = getBlockTint(state, world, bq.getTintIndex());
             int r = (tint >> 16) & 0xFF, g = (tint >> 8) & 0xFF, b = tint & 0xFF;
             color = 0xFF000000 | (r << 16) | (g << 8) | b;
         }
@@ -517,9 +517,10 @@ public final class BlockQuadEmitter {
         frapiState = state;
         frapiWorld = world;
 
-        renderContext.prepare(world, state, mutablePos.toImmutable(), this::frapiCullTest);
+        renderContext.prepare(this::frapiCullTest);
 
-        fbm.emitBlockQuads(world, state, mutablePos.toImmutable(), randomSupplier, renderContext);
+        fbm.emitBlockQuads(renderContext.getEmitter(), world, state, mutablePos.toImmutable(),
+                randomSupplier, this::frapiCullTest);
 
         List<SectionBlockData.BlockQuad> frapiQuads = renderContext.harvest();
         for (SectionBlockData.BlockQuad fq : frapiQuads) {
@@ -588,7 +589,7 @@ public final class BlockQuadEmitter {
             BlockState aboveState = getCachedBlockState(world,
                     fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
             float topCoverageHeight = Math.min(Math.min(h00, h10), Math.min(h01, h11));
-            if (isFluidTopCoveredByCeiling(world, topCoverageHeight, fluidCheckPos, aboveState)) {
+            if (isFluidTopCoveredByCeiling(topCoverageHeight, aboveState)) {
                 waterTopCovered = classifyWaterTopExposure(world, fluidState, wx, wy, wz)
                         == FluidTopOcclusion.Exposure.HIDDEN;
             }
@@ -649,7 +650,7 @@ public final class BlockQuadEmitter {
                 fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
         BlockState belowState = getCachedBlockState(world,
                 fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
-        if (!belowFluid.getFluid().matchesType(fluidState.getFluid()) && !belowState.isOpaqueFullCube(world, fluidCheckPos)) {
+        if (!belowFluid.getFluid().matchesType(fluidState.getFluid()) && !belowState.isOpaqueFullCube()) {
             setPos4(tempPositions, lx, ly, lz + 1, lx + 1, ly, lz + 1,
                     lx + 1, ly, lz, lx, ly, lz);
             if (isWater) {
@@ -677,7 +678,7 @@ public final class BlockQuadEmitter {
                     fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
 
             if (sideFluid.getFluid().matchesType(fluidState.getFluid())) continue;
-            if (sideState.isOpaqueFullCube(world, fluidCheckPos)) continue;
+            if (sideState.isOpaqueFullCube()) continue;
 
             float sideH0, sideH1;
             switch (dir) {
@@ -734,17 +735,16 @@ public final class BlockQuadEmitter {
         }
     }
 
-    static boolean isFluidTopCoveredByCeiling(BlockView world, float fluidHeight,
-                                              BlockPos neighborPos, BlockState neighborState) {
+    static boolean isFluidTopCoveredByCeiling(float fluidHeight, BlockState neighborState) {
         if (fluidHeight + WATER_HEIGHT_EPSILON < WATER_CEILING_CULL_MIN_HEIGHT
                 || !neighborState.isOpaque()) {
             return false;
         }
-        if (neighborState.isOpaqueFullCube(world, neighborPos)) {
+        if (neighborState.isOpaqueFullCube()) {
             return true;
         }
 
-        VoxelShape neighborShape = neighborState.getCullingShape(world, neighborPos);
+        VoxelShape neighborShape = neighborState.getCullingShape();
         return isFluidSideCovered(Direction.UP, 1.0f, true, neighborShape);
     }
 
@@ -847,7 +847,7 @@ public final class BlockQuadEmitter {
 
         fluidCheckPos.set(worldX, worldY + 1, worldZ);
         BlockState aboveState = getCachedBlockState(world, worldX, worldY + 1, worldZ);
-        return isFluidTopCoveredByCeiling(world, fluid.getHeight(), fluidCheckPos, aboveState)
+        return isFluidTopCoveredByCeiling(fluid.getHeight(), aboveState)
                 ? FluidTopOcclusion.CONNECTED
                 : FluidTopOcclusion.EXPOSED;
     }
@@ -909,8 +909,7 @@ public final class BlockQuadEmitter {
             return faceCullResults[slot] == FACE_CULL_DRAWN;
         }
 
-        neighborPos.set(neighborX, neighborY, neighborZ);
-        boolean drawn = Block.shouldDrawSide(state, world, mutablePos, side, neighborPos);
+        boolean drawn = Block.shouldDrawSide(state, neighbor, side);
         faceCullKeys[slot] = key;
         faceCullResults[slot] = drawn ? FACE_CULL_DRAWN : FACE_CULL_HIDDEN;
         return drawn;

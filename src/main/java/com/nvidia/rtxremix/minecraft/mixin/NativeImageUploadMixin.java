@@ -34,8 +34,7 @@ public abstract class NativeImageUploadMixin {
     @Inject(method = "uploadInternal", at = @At("HEAD"))
     private void rtxremix$mirrorGlyphUpload(int level, int offsetX, int offsetY,
                                              int unpackSkipPixels, int unpackSkipRows,
-                                             int width, int height, boolean blur, boolean clamp,
-                                             boolean mipmap, boolean close, CallbackInfo ci) {
+                                             int width, int height, boolean close, CallbackInfo ci) {
         GlyphPageMirror page = GlyphPageMirror.uploadTarget();
         if (page == null || level != 0 || width <= 0 || height <= 0) {
             return;

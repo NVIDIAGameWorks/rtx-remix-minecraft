@@ -5,13 +5,11 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import net.minecraft.block.BlockState;
-import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.render.model.MultipartBakedModel;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.random.CheckedRandom;
 import net.minecraft.util.math.random.Random;
-import org.apache.commons.lang3.tuple.Pair;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -24,7 +22,6 @@ import java.util.BitSet;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Predicate;
 
 /**
  * Selects a multipart model's parts without the per-call garbage vanilla makes. Fences,
@@ -45,7 +42,7 @@ public abstract class MultipartBakedModelMixin {
 
     @Shadow
     @Final
-    private List<Pair<Predicate<BlockState>, BakedModel>> components;
+    private List<MultipartBakedModel.Selector> selectors;
 
     @Shadow
     @Final
@@ -67,8 +64,8 @@ public abstract class MultipartBakedModelMixin {
         BitSet selected = stateCache.get(state);
         if (selected == null) {
             selected = new BitSet();
-            for (int i = 0, n = components.size(); i < n; i++) {
-                if (components.get(i).getLeft().test(state)) {
+            for (int i = 0, n = selectors.size(); i < n; i++) {
+                if (selectors.get(i).condition().test(state)) {
                     selected.set(i);
                 }
             }
@@ -80,7 +77,7 @@ public abstract class MultipartBakedModelMixin {
         boolean owned = false;
         for (int i = selected.nextSetBit(0); i >= 0; i = selected.nextSetBit(i + 1)) {
             partRandom.setSeed(seed);
-            List<BakedQuad> quads = components.get(i).getRight().getQuads(state, face, partRandom);
+            List<BakedQuad> quads = selectors.get(i).model().getQuads(state, face, partRandom);
             if (result == null) {
                 result = quads;
             } else {

@@ -8,7 +8,6 @@ import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
 import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.client.texture.PlayerSkinTexture;
 import net.minecraft.client.texture.TextureManager;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,13 +19,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Intercepts {@link TextureManager#registerTexture} to track dynamic textures
  * for pixel capture across every upload.
  *
- * <p>Handles three texture types:
+ * <p>Handles two texture types:
  * <ul>
  *   <li>{@link NativeImageBackedTexture}: if the image is already available at
  *       registration time, pixels are captured immediately; the texture remains
- *       tracked for later mutable uploads such as maps.</li>
- *   <li>{@link PlayerSkinTexture}: always async (image downloads from Mojang CDN),
- *       so {@code PlayerSkinTextureMixin} can capture the uploaded image.</li>
+ *       tracked for later mutable uploads such as maps. Downloaded player skins
+ *       use this path too.</li>
  *   <li>Font glyph pages, which {@code GlyphAtlasTextureMixin} gives a
  *       {@link GlyphPageMirror}: the mirror is registered under the page's id so the
  *       submitter reads it like any other dynamic texture. {@code FontStorage}
@@ -36,12 +34,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(TextureManager.class)
 public class TextureManagerMixin {
 
-    @Inject(method = "registerTexture", at = @At("HEAD"))
+    @Inject(method = "registerTexture(Lnet/minecraft/util/Identifier;Lnet/minecraft/client/texture/AbstractTexture;)V", at = @At("HEAD"))
     private void rtxremix$onRegisterTexture(Identifier id, AbstractTexture texture, CallbackInfo ci) {
         if (texture instanceof NativeImageBackedTexture nib) {
             DynamicTextureCache.onRegisterTexture(id, texture, nib.getImage());
-        } else if (texture instanceof PlayerSkinTexture) {
-            DynamicTextureCache.onRegisterTexture(id, texture, null);
         } else if (texture instanceof GlyphPageMirror.Owner page) {
             DynamicTextureCache.onRegisterGlyphPage(id, page.rtxremix$glyphPageMirror());
         }

@@ -8,16 +8,11 @@ import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
 import net.fabricmc.fabric.api.renderer.v1.mesh.MutableQuadView;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadView;
-import net.fabricmc.fabric.api.renderer.v1.render.RenderContext;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.model.BakedModel;
+import net.fabricmc.fabric.api.renderer.v1.mesh.QuadTransform;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.world.BlockRenderView;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
@@ -30,29 +25,22 @@ import java.util.List;
 import java.util.function.Predicate;
 
 /**
- * {@link RenderContext} implementation that captures quads emitted by FRAPI
+ * Capture context for quads emitted by FRAPI
  * models via {@code emitBlockQuads()}. The captured quads are converted to
  * {@link SectionBlockData.BlockQuad} records with full sprite/layer context.
  *
  * <p>Thread-local: one instance is reused per worker thread (via ThreadLocal
  * in {@link BlockQuadEmitter}).
  */
-final class RemixRenderContext implements RenderContext {
+final class RemixRenderContext {
 
     private final CapturingQuadEmitter emitter = new CapturingQuadEmitter();
     private final Deque<QuadTransform> transformStack = new ArrayDeque<>();
     private final List<SectionBlockData.BlockQuad> captured = new ArrayList<>();
 
-    private BlockRenderView world;
-    private BlockState state;
-    private BlockPos pos;
     private Predicate<Direction> cullTest;
 
-    void prepare(BlockRenderView world, BlockState state, BlockPos pos,
-                 Predicate<Direction> cullTest) {
-        this.world = world;
-        this.state = state;
-        this.pos = pos;
+    void prepare(Predicate<Direction> cullTest) {
         this.cullTest = cullTest;
         captured.clear();
         transformStack.clear();
@@ -63,79 +51,13 @@ final class RemixRenderContext implements RenderContext {
         return List.copyOf(captured);
     }
 
-    // --- RenderContext ---
-
-    @Override
-    public QuadEmitter getEmitter() {
+    QuadEmitter getEmitter() {
         emitter.clear();
         return emitter;
     }
 
-    @Override
-    public boolean isFaceCulled(@Nullable Direction face) {
-        if (face == null) return false;
-        return cullTest != null && cullTest.test(face);
-    }
-
-    @Override
-    public void pushTransform(QuadTransform transform) {
-        transformStack.push(transform);
-    }
-
-    @Override
-    public void popTransform() {
-        transformStack.pop();
-    }
-
-    @Override
-    public boolean hasTransform() {
-        return !transformStack.isEmpty();
-    }
-
-    // BakedModelConsumer (and the bakedModelConsumer() method on RenderContext)
-    // are @Deprecated(forRemoval = true) in Fabric API. Java 9+ tracks
-    // forRemoval separately from regular deprecation, so we need both
-    // suppressions. RenderContext still declares this as an abstract method,
-    // so we have to implement it until Fabric removes it from the interface.
-    // Replacement per the Fabric javadoc is to call FabricBakedModel.emitBlockQuads
-    // directly, which is what BlockQuadEmitter.emitFrapiBlock already does.
-    @SuppressWarnings({"deprecation", "removal"})
-    @Override
-    public BakedModelConsumer bakedModelConsumer() {
-        return new BakedModelConsumer() {
-            @Override
-            public void accept(BakedModel model) {
-                accept(model, RemixRenderContext.this.state);
-            }
-
-            @Override
-            public void accept(BakedModel model, @Nullable BlockState state) {
-                if (state == null) state = RemixRenderContext.this.state;
-
-                // Vanilla's per-position model-randomisation seed, matching
-                // BlockQuadEmitter.emitBlock. A constant here would put every
-                // instance of a multi-variant block on the same variant, which
-                // is the bug the seed plumbing exists to fix; this path is
-                // deprecated but still reachable, so it has to agree.
-                long seed = state.getRenderingSeed(RemixRenderContext.this.pos);
-                Random random = Random.create(seed);
-
-                for (Direction dir : Direction.values()) {
-                    // Re-seeded per direction, as vanilla does and as the loops
-                    // in BlockQuadEmitter.emitVanillaBlock do.
-                    random.setSeed(seed);
-                    for (BakedQuad quad : model.getQuads(state, dir, random)) {
-                        emitter.fromVanilla(quad, null, dir);
-                        emitter.emit();
-                    }
-                }
-                random.setSeed(seed);
-                for (BakedQuad quad : model.getQuads(state, null, random)) {
-                    emitter.fromVanilla(quad, null, null);
-                    emitter.emit();
-                }
-            }
-        };
+    private boolean isFaceCulled(@Nullable Direction face) {
+        return face != null && cullTest != null && cullTest.test(face);
     }
 
     /**
@@ -156,7 +78,7 @@ final class RemixRenderContext implements RenderContext {
         private Direction cullFaceVal;
         private Direction nominalFaceVal;
         private RenderMaterial materialVal;
-        private int colorIndexVal = -1;
+        private int tintIndexVal = -1;
         private int tagVal;
 
         private Sprite bakedSprite;
@@ -175,10 +97,20 @@ final class RemixRenderContext implements RenderContext {
             cullFaceVal = null;
             nominalFaceVal = null;
             materialVal = null;
-            colorIndexVal = -1;
+            tintIndexVal = -1;
             tagVal = 0;
             bakedSprite = null;
             faceNormalDirty = true;
+        }
+
+        @Override
+        public void pushTransform(QuadTransform transform) {
+            transformStack.push(transform);
+        }
+
+        @Override
+        public void popTransform() {
+            transformStack.pop();
         }
 
         @Override
@@ -331,8 +263,8 @@ final class RemixRenderContext implements RenderContext {
         }
 
         @Override
-        public QuadEmitter colorIndex(int colorIndex) {
-            this.colorIndexVal = colorIndex;
+        public QuadEmitter tintIndex(int tintIndex) {
+            this.tintIndexVal = tintIndex;
             return this;
         }
 
@@ -431,7 +363,7 @@ final class RemixRenderContext implements RenderContext {
                                         @Nullable Direction cullFace) {
             this.cullFaceVal = cullFace;
             this.materialVal = material;
-            this.colorIndexVal = quad.getColorIndex();
+            this.tintIndexVal = quad.getTintIndex();
             this.bakedSprite = quad.getSprite();
             this.nominalFaceVal = quad.getFace();
 
@@ -470,7 +402,7 @@ final class RemixRenderContext implements RenderContext {
             cullFace(source.cullFace());
             nominalFace(source.nominalFace());
             material(source.material());
-            colorIndex(source.colorIndex());
+            tintIndex(source.tintIndex());
             tag(source.tag());
             return this;
         }
@@ -562,7 +494,7 @@ final class RemixRenderContext implements RenderContext {
         }
 
         @Override public RenderMaterial material() { return materialVal; }
-        @Override public int colorIndex() { return colorIndexVal; }
+        @Override public int tintIndex() { return tintIndexVal; }
         @Override public int tag() { return tagVal; }
 
         @Override

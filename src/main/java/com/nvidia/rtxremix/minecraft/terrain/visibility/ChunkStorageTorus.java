@@ -26,17 +26,17 @@ public final class ChunkStorageTorus {
             int sizeY,
             int sizeZ,
             int bottomY,
-            double cameraX,
-            double cameraZ) {
+            int cameraSectionX,
+            int cameraSectionZ) {
         workspace.resize(sizeX, sizeZ);
 
         for (int x = 0; x < sizeX; x++) {
-            int targetX = targetOrigin(cameraX, x, sizeX);
+            int targetX = targetOrigin(cameraSectionX, x, sizeX);
             workspace.targetX[x] = targetX;
             workspace.changedX[x] = storage.rtxremix$getOriginX(index(x, 0, 0, sizeX, sizeY)) != targetX;
         }
         for (int z = 0; z < sizeZ; z++) {
-            int targetZ = targetOrigin(cameraZ, z, sizeZ);
+            int targetZ = targetOrigin(cameraSectionZ, z, sizeZ);
             workspace.targetZ[z] = targetZ;
             workspace.changedZ[z] = storage.rtxremix$getOriginZ(index(0, 0, z, sizeX, sizeY)) != targetZ;
         }
@@ -65,19 +65,13 @@ public final class ChunkStorageTorus {
         return movedSlots;
     }
 
-    static int targetOrigin(double cameraCoordinate, int slot, int size) {
-        int span = size * SECTION_SIZE;
-        int start = ceil(cameraCoordinate) - 8 - span / 2;
-        return start + Math.floorMod(slot * SECTION_SIZE - start, span);
+    static int targetOrigin(int cameraSection, int slot, int size) {
+        int firstSection = cameraSection - size / 2;
+        return (firstSection + Math.floorMod(slot - firstSection, size)) * SECTION_SIZE;
     }
 
     public static int index(int x, int y, int z, int sizeX, int sizeY) {
         return (z * sizeY + y) * sizeX + x;
-    }
-
-    private static int ceil(double value) {
-        int truncated = (int) value;
-        return value > truncated ? truncated + 1 : truncated;
     }
 
     public interface StorageAccess {

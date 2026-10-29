@@ -22,7 +22,6 @@ import net.minecraft.fluid.FluidState;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.world.BlockRenderView;
-import net.minecraft.world.BlockView;
 import com.mojang.blaze3d.systems.VertexSorter;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -37,7 +36,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * of running a separate pass.
  *
  * <ul>
- *   <li>{@code isOpaqueFullCube} redirect: captures opacity bitmap,
+ *   <li>{@code getBlockState} redirect: captures opacity bitmap,
  *       face masks, and light entries for every block, and emits the
  *       block's model quads directly to the Remix interleaved buffer.</li>
  *   <li>{@code getRenderType} redirect: reports every block invisible while
@@ -113,23 +112,22 @@ public class SectionBuilderMixin {
         rtxremix$tracyBlockLoop.set(ProfileScope.begin("block loop"));
     }
 
-    // isOpaqueFullCube: capture opacity / face masks / lights / quads
+    // Capture each block before vanilla checks opacity or selects a render path.
     @Redirect(method = "build",
               at = @At(value = "INVOKE",
-                       target = "Lnet/minecraft/block/BlockState;isOpaqueFullCube(Lnet/minecraft/world/BlockView;Lnet/minecraft/util/math/BlockPos;)Z"))
-    private boolean rtxremix$captureBlock(BlockState state, BlockView world, BlockPos pos) {
-        boolean opaque = state.isOpaqueFullCube(world, pos);
+                       target = "Lnet/minecraft/client/render/chunk/ChunkRendererRegion;getBlockState(Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/block/BlockState;"))
+    private BlockState rtxremix$captureBlock(ChunkRendererRegion world, BlockPos pos) {
+        BlockState state = world.getBlockState(pos);
         BlockQuadEmitter emitter = BlockQuadEmitter.current();
         if (emitter != null && emitter.isActive()) {
-            emitter.processBlock(state, world, pos, opaque);
+            emitter.processBlock(state, world, pos, state.isOpaqueFullCube());
             // Vanilla hands only MODEL blocks to renderBlock; ENTITYBLOCK_ANIMATED blocks
             // belong to their block-entity renderer.
             if (BlockQuadEmitter.getRenderTypeCached(state) == BlockRenderType.MODEL) {
-                // build() only ever passes its ChunkRendererRegion here.
-                emitter.emitBlock(state, pos, (BlockRenderView) world);
+                emitter.emitBlock(state, pos, world);
             }
         }
-        return opaque;
+        return state;
     }
 
     // While capturing, the block's quads were already emitted above, so vanilla's raster

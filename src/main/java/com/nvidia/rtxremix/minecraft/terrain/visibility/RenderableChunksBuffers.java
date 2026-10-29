@@ -7,4 +7,10 @@ package com.nvidia.rtxremix.minecraft.terrain.visibility;
 /** The reusable buffers a vanilla visibility state was built on; see {@code RenderableChunksMixin}. */
 public interface RenderableChunksBuffers {
     ChunkInfoPool rtxremix$infoPool();
+
+    void rtxremix$recordVisibleSection(long sectionPos);
+
+    int rtxremix$visibleSectionCount();
+
+    long rtxremix$visibleSectionHash();
 }

@@ -76,7 +76,7 @@ class SeededSurfaceScanTest {
 
         /** {@code WORLD_SURFACE}: one above the highest non-air block, the bottom if there is none. */
         int worldSurface(int x, int z) {
-            for (int y = world.getTopY() - 1; y >= world.getBottomY(); y--) {
+            for (int y = world.getTopYInclusive(); y >= world.getBottomY(); y--) {
                 if (state(x, y, z) != AIR) {
                     return y + 1;
                 }
@@ -108,12 +108,12 @@ class SeededSurfaceScanTest {
     /** Vanilla's walk from the world top, written plainly: every pair whose lower block is in a non-empty section. */
     private static int oracle(Column c, int x, int z, List<Pair> visited) {
         HeightLimitView w = c.world;
-        for (int lowerY = w.getTopY() - 1; lowerY >= w.getBottomY(); lowerY--) {
+        for (int lowerY = w.getTopYInclusive(); lowerY >= w.getBottomY(); lowerY--) {
             if (c.sectionEmpty(w.getSectionIndex(lowerY))) {
                 continue;
             }
             int upperY = lowerY + 1;
-            boolean upperInEmptySection = upperY >= w.getTopY() || c.sectionEmpty(w.getSectionIndex(upperY));
+            boolean upperInEmptySection = upperY > w.getTopYInclusive() || c.sectionEmpty(w.getSectionIndex(upperY));
             int upperState = upperInEmptySection ? AIR : c.state(x, upperY, z);
             int lowerState = c.state(x, lowerY, z);
             visited.add(new Pair(upperY, upperState, lowerY, lowerState));
@@ -275,8 +275,9 @@ class SeededSurfaceScanTest {
         // the seed is at most vanilla's own start, the bottom of the section above the
         // highest non-empty one, where the walk is vanilla's exactly.
         Column c = flat(-64, 384, 70, SOLID);
-        assertMatchesOracle(c, (x, z) -> c.world.getTopY() + 200);
-        assertMatchesOracle(c, (x, z) -> c.world.getTopY());
+        int topExclusive = c.world.getTopYInclusive() + 1;
+        assertMatchesOracle(c, (x, z) -> topExclusive + 200);
+        assertMatchesOracle(c, (x, z) -> topExclusive);
     }
 
     @Test

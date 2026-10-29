@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.sky;
 
+import com.nvidia.rtxremix.minecraft.util.NativeImageColors;
 import com.nvidia.rtxremix.HardcodedVertex;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.InstanceInfoBlendEXT;
@@ -679,7 +680,7 @@ public class SkyRenderer {
             pixels = new byte[width * height * 4];
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
-                    int abgr = image.getColor(x, y);
+                    int abgr = NativeImageColors.getAbgr(image, x, y);
                     int index = (y * width + x) * 4;
                     pixels[index] = (byte) (abgr & 0xFF);
                     pixels[index + 1] = (byte) ((abgr >>> 8) & 0xFF);
