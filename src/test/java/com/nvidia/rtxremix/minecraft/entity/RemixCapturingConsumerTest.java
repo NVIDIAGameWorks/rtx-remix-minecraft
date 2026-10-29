@@ -149,7 +149,7 @@ class RemixCapturingConsumerTest {
             vd[v * 8 + 5] = Float.floatToRawIntBits(sprite.getMinV() + (sprite.getMaxV() - sprite.getMinV()) * (1 - y));
             vd[v * 8 + 7] = face == Direction.NORTH ? 0x00810000 : 0x007F0000;
         }
-        return new BakedQuad(vd, -1, face, sprite, true);
+        return new BakedQuad(vd, -1, face, sprite, true, 0);
     }
 
     private static void assertRect(float[] px, float[] py, int start, float x0, float x1, float y0, float y1) {
@@ -166,7 +166,7 @@ class RemixCapturingConsumerTest {
     private static SpriteContents spriteContents(String id, String[] rows) {
         NativeImage image = new NativeImage(8, 8, false);
         for (int y = 0; y < 8; y++) {
-            for (int x = 0; x < 8; x++) image.setColor(x, y, rows[y].charAt(x) == '#' ? 0xFF808080 : 0);
+            for (int x = 0; x < 8; x++) image.setColorArgb(x, y, rows[y].charAt(x) == '#' ? 0xFF808080 : 0);
         }
         return new SpriteContents(Identifier.of("minecraft", id), new SpriteDimensions(8, 8), image,
                 ResourceMetadata.NONE);
@@ -560,7 +560,7 @@ class RemixCapturingConsumerTest {
             vertexData[v * 8 + 3] = packedAbgr;
             vertexData[v * 8 + 7] = 0x007F0000; // +Z face normal
         }
-        return new BakedQuad(vertexData, -1, Direction.UP, null, true);
+        return new BakedQuad(vertexData, -1, Direction.UP, null, true, 0);
     }
 
     @Test

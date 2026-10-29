@@ -160,7 +160,7 @@ loom {
     runs {
         client {
             // Keep in sync with RECOMMENDED_JVM_ARGS in packaging/installer.ps1.
-            // Minecraft Launcher 1.21.1 defaults for supported Windows arches:
+            // Minecraft Launcher 1.21.4 defaults for supported Windows arches:
             // version metadata supplies HeapDumpPath; the profile supplies G1.
             vmArgs "-Xmx2G", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC",
                    "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20",
@@ -206,13 +206,13 @@ loom {
 // Fabric API (keep in sync with FABRIC_API_VERSION in packaging/installer.ps1,
 // which is what gets installed at runtime on the user's machine). One literal
 // serves both the compile dependency and stageFabricApi.
-def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.116.10+1.21.1"
+def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.119.4+1.21.4"
 
 dependencies {
     // Minecraft and Fabric
-    minecraft "com.mojang:minecraft:1.21.1"
-    mappings "net.fabricmc:yarn:1.21.1+build.3:v2"
-    modImplementation "net.fabricmc:fabric-loader:0.16.5"
+    minecraft "com.mojang:minecraft:1.21.4"
+    mappings "net.fabricmc:yarn:1.21.4+build.8:v2"
+    modImplementation "net.fabricmc:fabric-loader:0.16.9"
 
     modImplementation fabricApiCoordinate
 

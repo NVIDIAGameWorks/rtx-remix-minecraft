@@ -21,6 +21,7 @@ import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.CheckboxWidget;
 import net.minecraft.client.gui.widget.CyclingButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.Text;
@@ -301,7 +302,7 @@ public final class CopperBeaconScreen extends HandledScreen<CopperBeaconScreenHa
         context.drawBorder(x, y, backgroundWidth, backgroundHeight, 0xFF8B8B8B);
         for (var slot : handler.slots) {
             context.drawGuiTexture(
-                    SLOT_TEXTURE,
+                    RenderLayer::getGuiTextured, SLOT_TEXTURE,
                     x + slot.x - 1,
                     y + slot.y - 1,
                     18,

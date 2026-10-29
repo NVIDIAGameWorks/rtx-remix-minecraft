@@ -23,7 +23,7 @@ import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import net.minecraft.client.render.entity.model.EntityModelLayer;
 import net.minecraft.client.util.SpriteIdentifier;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.client.texture.SpriteAtlasTexture;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
@@ -38,17 +38,17 @@ public final class CopperBeaconBlockEntityRenderer
     public static final EntityModelLayer LENS_MODEL_LAYER = new EntityModelLayer(
             Identifier.of(RtxRemixCommonMod.MOD_ID, "copper_beacon"), "lens");
     private static final SpriteIdentifier COPPER_TEXTURE = new SpriteIdentifier(
-            PlayerScreenHandler.BLOCK_ATLAS_TEXTURE,
+            SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE,
             Identifier.ofVanilla("block/copper_block"));
     static final Identifier LENS_SPRITE_ID =
             Identifier.of(RtxRemixCommonMod.MOD_ID, "block/copper_beacon_lens");
     static final Identifier UNLIT_LENS_SPRITE_ID =
             Identifier.of(RtxRemixCommonMod.MOD_ID, "block/copper_beacon_lens_unlit");
     private static final SpriteIdentifier LENS_TEXTURE = new SpriteIdentifier(
-            PlayerScreenHandler.BLOCK_ATLAS_TEXTURE,
+            SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE,
             LENS_SPRITE_ID);
     private static final SpriteIdentifier UNLIT_LENS_TEXTURE = new SpriteIdentifier(
-            PlayerScreenHandler.BLOCK_ATLAS_TEXTURE,
+            SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE,
             UNLIT_LENS_SPRITE_ID);
 
     private final ModelPart yoke;

@@ -68,7 +68,7 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
      * Vanilla's "Functional Blocks" creative tab, where torches and lanterns live.
      *
      * <p>Built from the registry id rather than {@code ItemGroups.FUNCTIONAL},
-     * which is private in 1.21.1 and would otherwise need an access-widener entry.
+     * which would otherwise need an access-widener entry.
      */
     private static final RegistryKey<ItemGroup> FUNCTIONAL_BLOCKS =
             RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.ofVanilla("functional_blocks"));
@@ -82,8 +82,10 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
     }
 
     /** Shared settings for every beacon variant. */
-    protected static AbstractBlock.Settings beaconSettings() {
+    protected static AbstractBlock.Settings beaconSettings(String path) {
         return AbstractBlock.Settings.create()
+                .registryKey(RegistryKey.of(RegistryKeys.BLOCK,
+                        Identifier.of(RtxRemixCommonMod.MOD_ID, path)))
                 .strength(3.0f)
                 .sounds(BlockSoundGroup.METAL)
                 .luminance(state -> LUMINANCE);
@@ -113,7 +115,9 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
     private static void register(String path, SpotLightBlock block) {
         Identifier id = Identifier.of(RtxRemixCommonMod.MOD_ID, path);
         Registry.register(Registries.BLOCK, id, block);
-        BlockItem item = Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()));
+        BlockItem item = Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()
+                .registryKey(RegistryKey.of(RegistryKeys.ITEM, id))
+                .useBlockPrefixedTranslationKey()));
         ItemGroupEvents.modifyEntriesEvent(FUNCTIONAL_BLOCKS).register(entries -> entries.add(item));
     }
 

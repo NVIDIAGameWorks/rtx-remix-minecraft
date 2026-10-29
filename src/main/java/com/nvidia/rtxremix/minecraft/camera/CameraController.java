@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.LongSupplier;
 
@@ -860,7 +861,7 @@ public final class CameraController {
                 return;
             }
             serverPlayer.teleport(serverPlayer.getServerWorld(),
-                    shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
+                    shot.x(), shot.y(), shot.z(), Set.of(), shot.yaw(), shot.pitch(), false);
             serverPlayer.setVelocity(0.0, 0.0, 0.0);
         });
     }
@@ -1212,7 +1213,7 @@ public final class CameraController {
     private static void applyTimeOfDay(MinecraftClient client, long timeOfDay) {
         long normalized = normalizeTimeOfDay(timeOfDay);
         if (client.world != null) {
-            client.world.setTimeOfDay(normalized);
+            client.world.getLevelProperties().setTimeOfDay(normalized);
         }
 
         MinecraftServer server = client.getServer();

@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.At;
  * Gives every glyph atlas page a {@link GlyphPageMirror} and brackets each glyph upload
  * so the upload mixins know which page the pixels are for.
  *
- * <p>{@code getGlyphRenderer} is the one place a page is written: it binds the texture
+ * <p>{@code bake} is the one place a page is written: it binds the texture
  * and calls the glyph's {@code upload} with the slot it found. The glyph implementations
  * reach GL through two different primitives, {@code NativeImage.uploadInternal} for
  * bitmap, TrueType and built-in glyphs and {@code GlStateManager._upload} for Unihex,
@@ -42,7 +42,7 @@ public abstract class GlyphAtlasTextureMixin implements GlyphPageMirror.Owner {
     }
 
     @WrapOperation(
-        method = "getGlyphRenderer",
+        method = "bake",
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/font/RenderableGlyph;upload(II)V")
     )
     private void rtxremix$mirrorGlyphUpload(RenderableGlyph glyph, int x, int y, Operation<Void> original) {

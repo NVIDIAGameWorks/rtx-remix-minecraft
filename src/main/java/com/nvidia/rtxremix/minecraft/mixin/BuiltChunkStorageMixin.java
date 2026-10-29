@@ -12,6 +12,7 @@ import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.terrain.visibility.ChunkStorageTorus;
 import net.minecraft.client.render.BuiltChunkStorage;
+import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
@@ -42,10 +43,17 @@ public abstract class BuiltChunkStorageMixin
     @Shadow
     public ChunkBuilder.BuiltChunk[] chunks;
 
+    @Shadow
+    private ChunkSectionPos sectionPos;
+
+    @Shadow
+    @Final
+    protected WorldRenderer worldRenderer;
+
     private ChunkStorageTorus.Workspace rtxremix$torusWorkspace;
 
-    @Inject(method = "updateCameraPosition(DD)V", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$updateCameraPosition(double cameraX, double cameraZ, CallbackInfo ci) {
+    @Inject(method = "updateCameraPosition(Lnet/minecraft/util/math/ChunkSectionPos;)V", at = @At("HEAD"), cancellable = true)
+    private void rtxremix$updateCameraPosition(ChunkSectionPos cameraSection, CallbackInfo ci) {
         if (!RtxRemixMod.isRtxEnabled()) {
             return;
         }
@@ -61,10 +69,12 @@ public abstract class BuiltChunkStorageMixin
                     sizeY,
                     sizeZ,
                     world.getBottomY(),
-                    cameraX,
-                    cameraZ);
+                    cameraSection.getSectionX(),
+                    cameraSection.getSectionZ());
             scope.captureCount(movedSlots).scannedChunkCount(sizeX + sizeZ);
         }
+        sectionPos = cameraSection;
+        worldRenderer.getChunkRenderingDataPreparer().scheduleTerrainUpdate();
         ci.cancel();
     }
 
@@ -80,7 +90,7 @@ public abstract class BuiltChunkStorageMixin
 
     @Override
     public void rtxremix$setOrigin(int slotIndex, int x, int y, int z) {
-        chunks[slotIndex].setOrigin(x, y, z);
+        chunks[slotIndex].setSectionPos(ChunkSectionPos.asLong(x >> 4, y >> 4, z >> 4));
     }
 
     /** The slot vanilla aliases the section onto, or null unless that slot currently holds the section. */

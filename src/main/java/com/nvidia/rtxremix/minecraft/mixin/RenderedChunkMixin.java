@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RenderRegionStoragePool;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionSnapshotRelease;
 import net.minecraft.block.BlockState;
+import net.minecraft.client.render.chunk.RenderedChunk;
 import net.minecraft.util.collection.PackedIntegerArray;
 import net.minecraft.world.chunk.PalettedContainer;
 import org.spongepowered.asm.mixin.Final;
@@ -23,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * builds, hence the count. The pool flag is set around the constructor by
  * {@link ClientChunkMixin}; vanilla's own snapshot code is untouched.
  */
-@Mixin(targets = "net.minecraft.client.render.chunk.RenderedChunk")
+@Mixin(RenderedChunk.class)
 public abstract class RenderedChunkMixin implements RegionSnapshotRelease {
 
     @Shadow

@@ -115,6 +115,7 @@ class CopperBeaconBlockEntityTest {
                 "assets/rtx-remix-renderer/models/block/copper_beacon_wall.json",
                 "assets/rtx-remix-renderer/models/block/copper_beacon_complete.json",
                 "assets/rtx-remix-renderer/models/item/copper_beacon.json",
+                "assets/rtx-remix-renderer/items/copper_beacon.json",
                 "assets/rtx-remix-renderer/blockstates/copper_beacon.json"}) {
             var stream = CopperBeaconBlockEntityTest.class.getClassLoader()
                     .getResourceAsStream(path);
@@ -122,6 +123,20 @@ class CopperBeaconBlockEntityTest {
             JsonObject json = JsonParser.parseReader(
                     new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
             assertNotNull(json, path);
+        }
+    }
+
+    @Test
+    void itemDefinitionReferencesTheCompleteBeaconModel() throws IOException {
+        String path = "assets/rtx-remix-renderer/items/copper_beacon.json";
+        try (var stream = CopperBeaconBlockEntityTest.class.getClassLoader()
+                .getResourceAsStream(path)) {
+            assertNotNull(stream, path);
+            JsonObject model = JsonParser.parseReader(
+                    new InputStreamReader(stream, StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonObject("model");
+            assertEquals("minecraft:model", model.get("type").getAsString());
+            assertEquals("rtx-remix-renderer:item/copper_beacon", model.get("model").getAsString());
         }
     }
 

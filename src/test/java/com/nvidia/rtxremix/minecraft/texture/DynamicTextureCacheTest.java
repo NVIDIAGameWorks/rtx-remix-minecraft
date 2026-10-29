@@ -8,7 +8,6 @@ import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.texture.TextureManager;
-import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
@@ -209,9 +208,6 @@ class DynamicTextureCacheTest {
     }
 
     private static AbstractTexture newTexture() {
-        return new AbstractTexture() {
-            @Override
-            public void load(ResourceManager manager) {}
-        };
+        return new AbstractTexture() {};
     }
 }
