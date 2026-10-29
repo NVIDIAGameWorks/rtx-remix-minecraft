@@ -83,7 +83,7 @@ switch ($Action) {
         function Invoke-InstallOrUpgrade {
             switch ($Outcome) {
                 'ok' { return 0 }
-                'fail' { Write-Err 'Do not run the installer as Administrator.'; return 1 }
+                'fail' { Write-Err 'Install failed.'; return 1 }
                 'throw' { throw 'Download failed.' }
             }
         }

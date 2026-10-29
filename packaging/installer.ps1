@@ -394,19 +394,6 @@ function New-SessionTempPath {
 }
 
 # --- Prerequisite checks ---
-function Test-NotAdmin {
-    # Per-user paths resolve incorrectly under elevation (%APPDATA% points
-    # at SYSTEM's profile). Refuse to run.
-    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Err 'Do not run the installer as Administrator.'
-        Write-Err 'Run it from a normal (non-elevated) command prompt so per-user paths resolve correctly.'
-        return $false
-    }
-    return $true
-}
-
 function Test-InteractiveHost {
     # Detect CI / piped-stdin contexts where TUI prompts would deadlock.
     # PS 5.1 on .NET 4.5+ has [Console]::IsInputRedirected.
@@ -2702,7 +2689,6 @@ function Invoke-InstallOrUpgrade {
     Start-StepCounter -Total 5
 
     Write-Step 'Checking prerequisites'
-    if (-not (Test-NotAdmin)) { return 1 }
     $state = Get-LauncherState
     # Fetch the richer state too; lets Select-Launcher do the "auto-pick
     # the launcher with an existing install" bias on Upgrade/Repair.

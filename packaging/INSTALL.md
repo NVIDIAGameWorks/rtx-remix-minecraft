@@ -79,8 +79,7 @@ launch.
 
 1. Extract the whole archive to a folder. Running the installer from inside the
    zip file does not work.
-2. Double-click `install.bat`. Do not right-click and run it as administrator.
-   The installer writes to your own user folders and refuses to run elevated.
+2. Double-click `install.bat`. The installer writes to your own user folders.
 3. The installer opens a menu and preselects the right action for what is
    already on your machine: Install, Upgrade, or Repair. Press Enter to accept
    it. Upgrade and Repair keep the launcher that already has the mod and skip
@@ -224,7 +223,6 @@ if you are wiping it anyway.
 
 | Symptom | What to do |
 |---|---|
-| `Do not run the installer as Administrator.` | Close the elevated window and start `install.bat` normally. The install writes to per-user folders that do not resolve for an elevated shell |
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start it once, then re-run `install.bat`, which detects it |
 | The Prism download fails | Check the firewall and retry. The installer asks GitHub for the newest Prism release, and a shared network address can hit GitHub's anonymous rate limit. If GitHub reports a rate limit, wait before retrying |
 | `Download failed after 3 attempts from` followed by an Adoptium URL and the error details | The Adoptium API at `api.adoptium.net` has to be reachable. Check the firewall and re-run |
