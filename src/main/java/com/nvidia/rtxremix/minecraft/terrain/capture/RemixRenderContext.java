@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
+import net.fabricmc.fabric.api.renderer.v1.mesh.Mesh;
 import net.fabricmc.fabric.api.renderer.v1.mesh.MutableQuadView;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadView;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -40,6 +42,7 @@ import java.util.function.Predicate;
 final class RemixRenderContext implements RenderContext {
 
     private final CapturingQuadEmitter emitter = new CapturingQuadEmitter();
+    private final Consumer<Mesh> meshConsumer = mesh -> mesh.outputTo(getEmitter());
     private final Deque<QuadTransform> transformStack = new ArrayDeque<>();
     private final List<SectionBlockData.BlockQuad> captured = new ArrayList<>();
 
@@ -69,6 +72,12 @@ final class RemixRenderContext implements RenderContext {
     public QuadEmitter getEmitter() {
         emitter.clear();
         return emitter;
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public Consumer<Mesh> meshConsumer() {
+        return meshConsumer;
     }
 
     @Override
@@ -465,6 +474,10 @@ final class RemixRenderContext implements RenderContext {
                 lightmap(v, source.lightmap(v));
                 if (source.hasNormal(v)) {
                     normal(v, source.normalX(v), source.normalY(v), source.normalZ(v));
+                } else {
+                    normSet[v] = false;
+                    int i = v * 3;
+                    normData[i] = 0; normData[i + 1] = 0; normData[i + 2] = 0;
                 }
             }
             cullFace(source.cullFace());

@@ -2,13 +2,12 @@
  * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-package com.nvidia.rtxremix.minecraft.mixin;
+package com.nvidia.rtxremix.minecraft;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStreamReader;
