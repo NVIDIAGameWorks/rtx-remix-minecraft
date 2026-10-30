@@ -6,8 +6,8 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.input.RemixMouseAccess;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.Mouse;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.MouseHandler;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,21 +22,21 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * The gate blocks Minecraft only while the overlay capture session owns input.
  */
-@Mixin(Mouse.class)
+@Mixin(MouseHandler.class)
 public abstract class MouseMixin implements RemixMouseAccess {
     private static final double rtxremix$HIDDEN_CURSOR_COORDINATE = -Double.MAX_VALUE;
 
     @Shadow @Final
-    private MinecraftClient client;
+    private Minecraft minecraft;
 
     @Shadow
     private int activeButton;
 
     @Shadow
-    private int field_1796;
+    private int clickDepth;
 
     @Shadow
-    private void onMouseButton(long window, int button, int action, int mods) { }
+    private void onPress(long window, int button, int action, int mods) { }
 
     private boolean rtxremix$releasingActiveButton;
 
@@ -47,58 +47,58 @@ public abstract class MouseMixin implements RemixMouseAccess {
         }
 
         // Touchscreen mode counts outstanding presses and suppresses intermediate releases.
-        field_1796 = client.options.getTouchscreen().getValue() ? 1 : 0;
+        clickDepth = minecraft.options.touchscreen().get() ? 1 : 0;
         rtxremix$releasingActiveButton = true;
         try {
-            onMouseButton(client.getWindow().getHandle(), activeButton, GLFW.GLFW_RELEASE, 0);
+            onPress(minecraft.getWindow().getWindow(), activeButton, GLFW.GLFW_RELEASE, 0);
         } finally {
             rtxremix$releasingActiveButton = false;
         }
     }
 
     @Shadow
-    private double x;
+    private double xpos;
 
     @Shadow
-    private double y;
+    private double ypos;
 
     @Shadow
-    private boolean hasResolutionChanged;
+    private boolean ignoreFirstMove;
 
-    @Inject(method = "onCursorPos", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onMove", at = @At("HEAD"), cancellable = true)
     private void rtxremix$blockMovementWhileMenuOpen(
             long window, double cursorX, double cursorY, CallbackInfo ci) {
         if (RtxRemixMod.getRemixInputGate().isCaptureSessionOpen()) {
-            x = cursorX;
-            y = cursorY;
-            hasResolutionChanged = false;
+            xpos = cursorX;
+            ypos = cursorY;
+            ignoreFirstMove = false;
             ci.cancel();
         }
     }
 
     /* Screen rendering derives hover state from these coordinates even without a movement event. */
-    @Inject(method = "getX", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "xpos", at = @At("HEAD"), cancellable = true)
     private void rtxremix$hideXWhileMenuOpen(CallbackInfoReturnable<Double> cir) {
         if (RtxRemixMod.getRemixInputGate().isCaptureSessionOpen()) {
             cir.setReturnValue(rtxremix$HIDDEN_CURSOR_COORDINATE);
         }
     }
 
-    @Inject(method = "getY", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "ypos", at = @At("HEAD"), cancellable = true)
     private void rtxremix$hideYWhileMenuOpen(CallbackInfoReturnable<Double> cir) {
         if (RtxRemixMod.getRemixInputGate().isCaptureSessionOpen()) {
             cir.setReturnValue(rtxremix$HIDDEN_CURSOR_COORDINATE);
         }
     }
 
-    @Inject(method = "lockCursor", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "grabMouse", at = @At("HEAD"), cancellable = true)
     private void rtxremix$blockLockWhileMenuOpen(CallbackInfo ci) {
         if (RtxRemixMod.getRemixInputGate().isCaptureSessionOpen()) {
             ci.cancel();
         }
     }
 
-    @Inject(method = "onMouseButton", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onPress", at = @At("HEAD"), cancellable = true)
     private void rtxremix$blockClickWhileMenuOpen(long window, int button, int action, int mods, CallbackInfo ci) {
         boolean syntheticRelease = rtxremix$releasingActiveButton
                 && action == GLFW.GLFW_RELEASE
@@ -108,7 +108,7 @@ public abstract class MouseMixin implements RemixMouseAccess {
         }
     }
 
-    @Inject(method = "onMouseScroll", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onScroll", at = @At("HEAD"), cancellable = true)
     private void rtxremix$blockScrollWhileMenuOpen(long window, double horizontal, double vertical, CallbackInfo ci) {
         if (RtxRemixMod.getRemixInputGate().isCaptureSessionOpen()) {
             ci.cancel();

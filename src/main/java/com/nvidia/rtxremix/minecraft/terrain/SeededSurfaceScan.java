@@ -4,10 +4,10 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.HeightLimitView;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.LevelHeightAccessor;
 
 /**
  * Vanilla's {@code ChunkSkyLight.refreshSurfaceY} walk with each column started at its
@@ -64,10 +64,10 @@ public final class SeededSurfaceScan {
      * @param faceBlocksLight        vanilla's pair predicate
      * @param sink                   receives the 256 surfaces
      */
-    public static <S> void refreshSurfaceY(HeightLimitView world, int highestNonEmptySection, SurfaceHeight surface,
+    public static <S> void refreshSurfaceY(LevelHeightAccessor world, int highestNonEmptySection, SurfaceHeight surface,
                                            S air, Sections<S> sections, FaceBlocksLight<S> faceBlocksLight,
                                            SurfaceSink sink) {
-        int minY = world.getBottomY() - 1;
+        int minY = world.getMinBuildHeight() - 1;
         if (highestNonEmptySection == -1) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
@@ -76,9 +76,9 @@ public final class SeededSurfaceScan {
             }
             return;
         }
-        int vanillaStart = ChunkSectionPos.getBlockCoord(world.sectionIndexToCoord(highestNonEmptySection) + 1);
-        BlockPos.Mutable upper = new BlockPos.Mutable();
-        BlockPos.Mutable lower = new BlockPos.Mutable();
+        int vanillaStart = SectionPos.sectionToBlockCoord(world.getSectionYFromSectionIndex(highestNonEmptySection) + 1);
+        BlockPos.MutableBlockPos upper = new BlockPos.MutableBlockPos();
+        BlockPos.MutableBlockPos lower = new BlockPos.MutableBlockPos();
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 int seed = Math.min(surface.get(x, z), vanillaStart);
@@ -95,8 +95,8 @@ public final class SeededSurfaceScan {
      * coordinates go into the positions as vanilla passes them. A seed at or below the world
      * bottom visits no pair and yields the minimum, as vanilla reports for an empty column.
      */
-    private static <S> int walkDownFrom(HeightLimitView world, int upperY, int localX, int localZ,
-                                        BlockPos.Mutable upper, BlockPos.Mutable lower, S air, Sections<S> sections,
+    private static <S> int walkDownFrom(LevelHeightAccessor world, int upperY, int localX, int localZ,
+                                        BlockPos.MutableBlockPos upper, BlockPos.MutableBlockPos lower, S air, Sections<S> sections,
                                         FaceBlocksLight<S> faceBlocksLight, int minY) {
         upper.set(localX, upperY, localZ);
         lower.set(localX, upperY - 1, localZ);
@@ -106,7 +106,7 @@ public final class SeededSurfaceScan {
         for (int j = startIndex; j >= 0; --j) {
             if (sections.isEmpty(j)) {
                 upperState = air;
-                upper.setY(ChunkSectionPos.getBlockCoord(world.sectionIndexToCoord(j)));
+                upper.setY(SectionPos.sectionToBlockCoord(world.getSectionYFromSectionIndex(j)));
                 lower.setY(upper.getY() - 1);
                 continue;
             }
@@ -123,9 +123,9 @@ public final class SeededSurfaceScan {
         return minY;
     }
 
-    private static <S> S stateAt(HeightLimitView world, int y, int localX, int localZ, S air, Sections<S> sections) {
+    private static <S> S stateAt(LevelHeightAccessor world, int y, int localX, int localZ, S air, Sections<S> sections) {
         int index = world.getSectionIndex(y);
-        if (index < 0 || index >= world.countVerticalSections() || sections.isEmpty(index)) {
+        if (index < 0 || index >= world.getSectionsCount() || sections.isEmpty(index)) {
             return air;
         }
         return sections.state(index, localX, y & 15, localZ);

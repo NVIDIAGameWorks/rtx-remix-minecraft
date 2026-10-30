@@ -4,15 +4,15 @@
  */
 package com.nvidia.rtxremix.minecraft.logic;
 
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.CommandBlockBlockEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.CommandBlockEntity;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,22 +57,22 @@ public final class MarkerBlockScanner {
                 return;
             }
             int scanned = 0;
-            int viewDistance = server.getPlayerManager().getViewDistance();
-            for (ServerWorld world : server.getWorlds()) {
+            int viewDistance = server.getPlayerList().getViewDistance();
+            for (ServerLevel world : server.getAllLevels()) {
                 // Overlapping player view ranges must not double-scan a chunk.
                 HashSet<Long> visited = new HashSet<>();
-                for (var player : world.getPlayers()) {
-                    ChunkPos center = player.getChunkPos();
+                for (var player : world.players()) {
+                    ChunkPos center = player.chunkPosition();
                     for (int cx = center.x - viewDistance; cx <= center.x + viewDistance; cx++) {
                         for (int cz = center.z - viewDistance; cz <= center.z + viewDistance; cz++) {
                             if (!sessionIsCurrent.getAsBoolean()) {
                                 return;
                             }
-                            if (!visited.add(ChunkPos.toLong(cx, cz))) {
+                            if (!visited.add(ChunkPos.asLong(cx, cz))) {
                                 continue;
                             }
-                            Chunk chunk = world.getChunkManager().getChunk(cx, cz, ChunkStatus.FULL, false);
-                            if (chunk instanceof WorldChunk worldChunk) {
+                            ChunkAccess chunk = world.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
+                            if (chunk instanceof LevelChunk worldChunk) {
                                 scanChunk(registry, worldChunk);
                                 scanned++;
                             }
@@ -85,12 +85,12 @@ public final class MarkerBlockScanner {
     }
 
     /** Registers every well-formed "rtx zone define" command block in the chunk. Server thread. */
-    public static void scanChunk(ZoneRegistry registry, WorldChunk chunk) {
+    public static void scanChunk(ZoneRegistry registry, LevelChunk chunk) {
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            if (!(be instanceof CommandBlockBlockEntity commandBlock)) {
+            if (!(be instanceof CommandBlockEntity commandBlock)) {
                 continue;
             }
-            String command = commandBlock.getCommandExecutor().getCommand();
+            String command = commandBlock.getCommandBlock().getCommand();
             if (command == null) {
                 continue;
             }
@@ -104,7 +104,7 @@ public final class MarkerBlockScanner {
                     && !Character.isWhitespace(withoutSlash.charAt(MARKER.length()))) {
                 continue;
             }
-            BlockPos pos = be.getPos();
+            BlockPos pos = be.getBlockPos();
             try {
                 ZoneDefinition zone = ZoneDefinition.parse(trimmed,
                         pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);

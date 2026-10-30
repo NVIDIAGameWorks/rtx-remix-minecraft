@@ -4,15 +4,15 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.entity.EntityRenderContext;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.item.HeldItemRenderer;
-import net.minecraft.client.render.model.json.ModelTransformationMode;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.ItemInHandRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -26,59 +26,59 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * through {@code renderItem(LivingEntity, ...)}, so the holder recorded here is
  * what lets the item renderer's hook decide whether a held torch is burning.
  */
-@Mixin(HeldItemRenderer.class)
+@Mixin(ItemInHandRenderer.class)
 public class HeldItemRendererMixin {
 
     private static final String rtxremix$RENDER_HELD_ITEM =
-            "renderItem(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/item/ItemStack;"
-            + "Lnet/minecraft/client/render/model/json/ModelTransformationMode;Z"
-            + "Lnet/minecraft/client/util/math/MatrixStack;"
-            + "Lnet/minecraft/client/render/VertexConsumerProvider;I)V";
+            "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/item/ItemStack;"
+            + "Lnet/minecraft/world/item/ItemDisplayContext;Z"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
+            + "Lnet/minecraft/client/renderer/MultiBufferSource;I)V";
 
     @Inject(method = rtxremix$RENDER_HELD_ITEM, at = @At("HEAD"))
-    private void rtxremix$beginHeldItem(LivingEntity entity, ItemStack stack, ModelTransformationMode mode,
-                                        boolean leftHanded, MatrixStack matrices,
-                                        VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+    private void rtxremix$beginHeldItem(LivingEntity entity, ItemStack stack, ItemDisplayContext mode,
+                                        boolean leftHanded, PoseStack matrices,
+                                        MultiBufferSource vertexConsumers, int light, CallbackInfo ci) {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) context.setHeldItemHolder(entity);
     }
 
     @Inject(method = rtxremix$RENDER_HELD_ITEM, at = @At("RETURN"))
-    private void rtxremix$endHeldItem(LivingEntity entity, ItemStack stack, ModelTransformationMode mode,
-                                      boolean leftHanded, MatrixStack matrices,
-                                      VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+    private void rtxremix$endHeldItem(LivingEntity entity, ItemStack stack, ItemDisplayContext mode,
+                                      boolean leftHanded, PoseStack matrices,
+                                      MultiBufferSource vertexConsumers, int light, CallbackInfo ci) {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) context.clearHeldItemHolder();
     }
 
-    @Inject(method = "renderFirstPersonItem", at = @At("HEAD"))
+    @Inject(method = "renderArmWithItem", at = @At("HEAD"))
     private void rtxremix$beginFirstPersonHand(
-            AbstractClientPlayerEntity player,
+            AbstractClientPlayer player,
             float tickDelta,
             float pitch,
-            Hand hand,
+            InteractionHand hand,
             float swingProgress,
             ItemStack item,
             float equipProgress,
-            MatrixStack matrices,
-            VertexConsumerProvider vertexConsumers,
+            PoseStack matrices,
+            MultiBufferSource vertexConsumers,
             int light,
             CallbackInfo ci) {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) context.setActiveHand(hand);
     }
 
-    @Inject(method = "renderFirstPersonItem", at = @At("RETURN"))
+    @Inject(method = "renderArmWithItem", at = @At("RETURN"))
     private void rtxremix$endFirstPersonHand(
-            AbstractClientPlayerEntity player,
+            AbstractClientPlayer player,
             float tickDelta,
             float pitch,
-            Hand hand,
+            InteractionHand hand,
             float swingProgress,
             ItemStack item,
             float equipProgress,
-            MatrixStack matrices,
-            VertexConsumerProvider vertexConsumers,
+            PoseStack matrices,
+            MultiBufferSource vertexConsumers,
             int light,
             CallbackInfo ci) {
         EntityRenderContext context = EntityRenderContext.get();

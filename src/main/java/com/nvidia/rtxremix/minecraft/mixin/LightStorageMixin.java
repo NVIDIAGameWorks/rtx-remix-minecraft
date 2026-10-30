@@ -14,15 +14,14 @@ import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.world.LightType;
-import net.minecraft.world.chunk.ChunkNibbleArray;
-import net.minecraft.world.chunk.ChunkProvider;
-import net.minecraft.world.chunk.ChunkToNibbleArrayMap;
-import net.minecraft.world.chunk.light.BlockLightStorage;
-import net.minecraft.world.chunk.light.LightStorage;
-import net.minecraft.world.chunk.light.SkyLightStorage;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.LightChunkGetter;
+import net.minecraft.world.level.lighting.BlockLightSectionStorage;
+import net.minecraft.world.level.lighting.DataLayerStorageMap;
+import net.minecraft.world.level.lighting.LayerLightSectionStorage;
+import net.minecraft.world.level.lighting.SkyLightSectionStorage;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -49,31 +48,31 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * separate snapshot, published as {@link ServerLightSnapshot}'s overlay view instead of a
  * whole-map clone. Its notifications run exactly as vanilla's do.
  */
-@Mixin(LightStorage.class)
-public abstract class LightStorageMixin<M extends ChunkToNibbleArrayMap<M>> implements LightStorageSnapshotAccess {
+@Mixin(LayerLightSectionStorage.class)
+public abstract class LightStorageMixin<M extends DataLayerStorageMap<M>> implements LightStorageSnapshotAccess {
 
     @Shadow
     @Final
-    protected ChunkProvider chunkProvider;
+    protected LightChunkGetter chunkSource;
 
     @Shadow
     @Final
-    protected M storage;
+    protected M updatingSectionData;
 
     @Shadow
-    protected volatile M uncachedStorage;
-
-    @Shadow
-    @Final
-    protected LongSet dirtySections;
+    protected volatile M visibleSectionData;
 
     @Shadow
     @Final
-    protected LongSet notifySections;
+    protected LongSet changedSections;
 
     @Shadow
     @Final
-    private LightType lightType;
+    protected LongSet sectionsAffectedByLightUpdates;
+
+    @Shadow
+    @Final
+    private LightLayer layer;
 
     /** Created on the first pass: classifying the engine needs the chunk provider's world. */
     private ClientLightSnapshotPolicy rtxremix$snapshotPolicy;
@@ -83,7 +82,7 @@ public abstract class LightStorageMixin<M extends ChunkToNibbleArrayMap<M>> impl
 
     private boolean rtxremix$classified;
 
-    @Inject(method = "notifyChanges", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "swapSectionMap", at = @At("HEAD"), cancellable = true)
     private void rtxremix$publishSnapshotForCapture(CallbackInfo ci) {
         rtxremix$classify();
         if (rtxremix$serverSnapshot != null) {
@@ -95,10 +94,10 @@ public abstract class LightStorageMixin<M extends ChunkToNibbleArrayMap<M>> impl
                 RtxRemixMod.isRtxEnabled(), VanillaSectionBuilds.anyInFlight());
         switch (decision) {
             case ALIAS_LIVE_MAP -> {
-                uncachedStorage = storage;
-                dirtySections.clear();
-                SkippedSectionRebuilds.recordLightOnly(notifySections.size());
-                notifySections.clear();
+                visibleSectionData = updatingSectionData;
+                changedSections.clear();
+                SkippedSectionRebuilds.recordLightOnly(sectionsAffectedByLightUpdates.size());
+                sectionsAffectedByLightUpdates.clear();
                 ci.cancel();
             }
             case REPUBLISH_THEN_VANILLA -> rtxremix$publishRealCopy();
@@ -116,35 +115,35 @@ public abstract class LightStorageMixin<M extends ChunkToNibbleArrayMap<M>> impl
 
     /** Vanilla's publication sequence; the copy runs without its lookup cache because workers share it. */
     private void rtxremix$publishRealCopy() {
-        M copy = storage.copy();
+        M copy = updatingSectionData.copy();
         copy.disableCache();
-        uncachedStorage = copy;
-        dirtySections.clear();
+        visibleSectionData = copy;
+        changedSections.clear();
     }
 
     /** Vanilla's sequence with the clone replaced by the overlay view; notifications unchanged. */
     @SuppressWarnings("unchecked")
     private void rtxremix$publishServerOverlay() {
-        if (!dirtySections.isEmpty()) {
+        if (!changedSections.isEmpty()) {
             M snapshot;
-            if (storage instanceof SkyLightStorage.Data sky) {
+            if (updatingSectionData instanceof SkyLightSectionStorage.SkyDataLayerStorageMap sky) {
                 ServerLightSnapshot.Published published =
-                        rtxremix$serverSnapshot.publish(storage.arrays, sky.columnToTopSection, dirtySections);
-                snapshot = (M) new SkyLightStorage.Data(published.sections(), published.columns(), sky.minSectionY);
+                        rtxremix$serverSnapshot.publish(updatingSectionData.map, sky.topSections, changedSections);
+                snapshot = (M) new SkyLightSectionStorage.SkyDataLayerStorageMap(published.sections(), published.columns(), sky.currentLowestY);
             } else {
                 ServerLightSnapshot.Published published =
-                        rtxremix$serverSnapshot.publish(storage.arrays, null, dirtySections);
-                snapshot = (M) new BlockLightStorage.Data(published.sections());
+                        rtxremix$serverSnapshot.publish(updatingSectionData.map, null, changedSections);
+                snapshot = (M) new BlockLightSectionStorage.BlockDataLayerStorageMap(published.sections());
             }
             snapshot.disableCache();
-            uncachedStorage = snapshot;
-            dirtySections.clear();
+            visibleSectionData = snapshot;
+            changedSections.clear();
         }
-        if (!notifySections.isEmpty()) {
-            for (LongIterator sections = notifySections.iterator(); sections.hasNext(); ) {
-                chunkProvider.onLightUpdate(lightType, ChunkSectionPos.from(sections.nextLong()));
+        if (!sectionsAffectedByLightUpdates.isEmpty()) {
+            for (LongIterator sections = sectionsAffectedByLightUpdates.iterator(); sections.hasNext(); ) {
+                chunkSource.onLightUpdate(layer, SectionPos.of(sections.nextLong()));
             }
-            notifySections.clear();
+            sectionsAffectedByLightUpdates.clear();
         }
     }
 
@@ -153,7 +152,7 @@ public abstract class LightStorageMixin<M extends ChunkToNibbleArrayMap<M>> impl
             return;
         }
         rtxremix$classified = true;
-        boolean clientEngine = chunkProvider.getWorld() instanceof ClientWorld;
+        boolean clientEngine = chunkSource.getLevel() instanceof ClientLevel;
         rtxremix$snapshotPolicy = new ClientLightSnapshotPolicy(
                 clientEngine, ClientLightSnapshotPolicy.ALIAS_ALLOWED);
         if (!clientEngine && ClientLightSnapshotPolicy.ALIAS_ALLOWED) {

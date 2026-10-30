@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 /**
  * Minecraft's render distance as the mod's cull ceilings read it.
@@ -20,9 +20,9 @@ public final class ClientViewDistance {
     private ClientViewDistance() {}
 
     public static int chunks() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client != null && client.options != null) {
-            return client.options.getViewDistance().getValue();
+            return client.options.renderDistance().get();
         }
         return FALLBACK_CHUNKS;
     }

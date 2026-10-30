@@ -4,10 +4,10 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Stable identity for one block-attached Remix light.
  */
-public record BlockLightKey(BlockPos pos, Identifier ruleId, int lightIndex) {}
+public record BlockLightKey(BlockPos pos, ResourceLocation ruleId, int lightIndex) {}

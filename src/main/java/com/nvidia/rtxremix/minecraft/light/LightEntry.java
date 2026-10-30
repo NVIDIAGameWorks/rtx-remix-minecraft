@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.block.Block;
+import net.minecraft.world.level.block.Block;
 
 /**
  * Resolved block-attached light discovered during chunk iteration.

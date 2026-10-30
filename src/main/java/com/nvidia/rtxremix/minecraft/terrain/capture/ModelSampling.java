@@ -5,18 +5,18 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.block.BlockRenderManager;
-import net.minecraft.client.render.model.BakedModel;
-import net.minecraft.client.render.model.BakedQuad;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.LocalRandom;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
 
 /**
  * Samples the baked model of the block currently being meshed, so a block light
  * rule can be positioned against the geometry that actually rendered.
  *
- * <p>Rules see only a {@link BlockState} and a {@link net.minecraft.util.math.BlockPos},
+ * <p>Rules see only a {@link BlockState} and a {@link net.minecraft.core.BlockPos},
  * which is enough for a block whose model is fixed. It is not enough for one
  * whose blockstate picks among rotated variants: the rotation lives in the
  * blockstate JSON, not in a property, so no offset table written against the
@@ -36,9 +36,9 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
     };
 
     /** Own random, so sampling cannot perturb the emitter's model randomisation. */
-    private final LocalRandom random = new LocalRandom(0L);
+    private final SingleThreadedRandomSource random = new SingleThreadedRandomSource(0L);
 
-    private BlockRenderManager blockRenderManager;
+    private BlockRenderDispatcher blockRenderManager;
     private BlockState state;
     private long seed;
 
@@ -53,7 +53,7 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
     private boolean centroidComputed;
 
     /** Rebinds this sampler to a new block and drops everything memoised. */
-    public void begin(BlockRenderManager blockRenderManager, BlockState state, long seed) {
+    public void begin(BlockRenderDispatcher blockRenderManager, BlockState state, long seed) {
         this.blockRenderManager = blockRenderManager;
         this.state = state;
         this.seed = seed;
@@ -96,7 +96,7 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
         if (!modelResolved) {
             modelResolved = true;
             model = (blockRenderManager != null && state != null)
-                    ? blockRenderManager.getModel(state)
+                    ? blockRenderManager.getBlockModel(state)
                     : null;
         }
         if (model == null) return;
@@ -106,7 +106,7 @@ public final class ModelSampling implements BlockLightRuleManager.ModelSampler {
             // multi-variant model resolves to the same variant here as on screen.
             random.setSeed(seed);
             for (BakedQuad quad : model.getQuads(state, dir, random)) {
-                int[] vd = quad.getVertexData();
+                int[] vd = quad.getVertices();
                 ensureCapacity(vertexCount + 4);
                 for (int v = 0; v < 4; v++) {
                     int off = v * 8;

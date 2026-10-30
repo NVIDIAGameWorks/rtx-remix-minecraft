@@ -5,9 +5,6 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionSnapshotRelease;
-import net.minecraft.client.render.chunk.BlockBufferAllocatorStorage;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-import net.minecraft.client.render.chunk.ChunkRendererRegion;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,6 +12,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.client.renderer.SectionBufferBuilderPack;
+import net.minecraft.client.renderer.chunk.RenderChunkRegion;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 
 /**
  * Releases a rebuild task's region snapshot once the section build that read it has
@@ -24,22 +24,22 @@ import java.util.concurrent.CompletableFuture;
  * returns that never read it. A task cancelled before it ever runs leaves its region to the
  * collector, which only forgoes the reuse.
  */
-@Mixin(targets = "net.minecraft.client.render.chunk.ChunkBuilder$BuiltChunk$RebuildTask")
+@Mixin(targets = "net.minecraft.client.renderer.chunk.SectionRenderDispatcher$RenderSection$RebuildTask")
 public abstract class RebuildTaskMixin {
 
     @Shadow
-    protected ChunkRendererRegion region;
+    protected RenderChunkRegion region;
 
-    private ChunkRendererRegion rtxremix$consumed;
+    private RenderChunkRegion rtxremix$consumed;
 
-    @Inject(method = "run", at = @At("HEAD"))
-    private void rtxremix$captureRegion(BlockBufferAllocatorStorage buffers, CallbackInfoReturnable<CompletableFuture<ChunkBuilder.Result>> cir) {
+    @Inject(method = "doTask", at = @At("HEAD"))
+    private void rtxremix$captureRegion(SectionBufferBuilderPack buffers, CallbackInfoReturnable<CompletableFuture<SectionRenderDispatcher.SectionTaskResult>> cir) {
         rtxremix$consumed = region;
     }
 
-    @Inject(method = "run", at = @At("RETURN"))
-    private void rtxremix$releaseRegion(BlockBufferAllocatorStorage buffers, CallbackInfoReturnable<CompletableFuture<ChunkBuilder.Result>> cir) {
-        ChunkRendererRegion consumed = rtxremix$consumed;
+    @Inject(method = "doTask", at = @At("RETURN"))
+    private void rtxremix$releaseRegion(SectionBufferBuilderPack buffers, CallbackInfoReturnable<CompletableFuture<SectionRenderDispatcher.SectionTaskResult>> cir) {
+        RenderChunkRegion consumed = rtxremix$consumed;
         rtxremix$consumed = null;
         if (consumed != null) {
             ((RegionSnapshotRelease) consumed).rtxremix$release();

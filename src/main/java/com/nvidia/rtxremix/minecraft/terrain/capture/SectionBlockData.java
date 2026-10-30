@@ -5,10 +5,9 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.ChunkSectionPos;
-
 import java.util.List;
+import net.minecraft.core.SectionPos;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Captured block-level mesh data for a single chunk section (16x16x16),
@@ -18,7 +17,7 @@ import java.util.List;
  * layout via {@link SectionMeshData}. No intermediate SoA copies.
  */
 public record SectionBlockData(
-    ChunkSectionPos sectionPos,
+    SectionPos sectionPos,
     SectionMeshData meshData,
     List<LightEntry> lights,
     /**
@@ -70,7 +69,7 @@ public record SectionBlockData(
         float[] uvs,
         float nx, float ny, float nz,
         int color,
-        Identifier spriteId,
+        ResourceLocation spriteId,
         float spriteU0, float spriteV0,
         float spriteU1, float spriteV1,
         String renderLayer,

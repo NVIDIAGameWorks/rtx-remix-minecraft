@@ -4,15 +4,15 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,9 +32,9 @@ class FarChunkProbeTest {
     private enum Verdict { REACHED, BLOCKED, LEFT_WORLD }
 
     private static Verdict vanillaReachesCamera(
-            BlockPos origin, Direction direction, BlockPos cameraSectionCenter, Vec3d cameraPos,
+            BlockPos origin, Direction direction, BlockPos cameraSectionCenter, Vec3 cameraPos,
             int worldTop, int worldBottom, FarChunkProbe.GraphLookup graph) {
-        BlockPos corner = origin.add(
+        BlockPos corner = origin.offset(
                 direction.getAxis() == Direction.Axis.X
                         ? (cameraSectionCenter.getX() > origin.getX() ? 16 : 0)
                         : (cameraSectionCenter.getX() < origin.getX() ? 16 : 0),
@@ -44,14 +44,14 @@ class FarChunkProbeTest {
                 direction.getAxis() == Direction.Axis.Z
                         ? (cameraSectionCenter.getZ() > origin.getZ() ? 16 : 0)
                         : (cameraSectionCenter.getZ() < origin.getZ() ? 16 : 0));
-        Vec3d point = new Vec3d(corner.getX(), corner.getY(), corner.getZ());
-        Vec3d step = cameraPos.subtract(point).normalize().multiply(STEP);
-        while (cameraPos.subtract(point).lengthSquared() > 3600.0) {
+        Vec3 point = new Vec3(corner.getX(), corner.getY(), corner.getZ());
+        Vec3 step = cameraPos.subtract(point).normalize().scale(STEP);
+        while (cameraPos.subtract(point).lengthSqr() > 3600.0) {
             point = point.add(step);
             if (point.y > worldTop || point.y < worldBottom) {
                 return Verdict.LEFT_WORLD;
             }
-            BlockPos probe = BlockPos.ofFloored(point.x, point.y, point.z);
+            BlockPos probe = BlockPos.containing(point.x, point.y, point.z);
             if (!graph.contains(probe.getX(), probe.getY(), probe.getZ())) {
                 return Verdict.BLOCKED;
             }
@@ -95,18 +95,18 @@ class FarChunkProbeTest {
             // The camera ranges well outside the world: a ray between two points inside
             // the height range never leaves it, so only a camera above build height or
             // below bedrock (both reachable in spectator) exercises the early exit.
-            Vec3d cameraPos = new Vec3d(
+            Vec3 cameraPos = new Vec3(
                     (random.nextDouble() - 0.5) * 200.0,
                     worldBottom - 128 + random.nextDouble() * (worldTop - worldBottom + 256),
                     (random.nextDouble() - 0.5) * 200.0);
             BlockPos cameraSectionOrigin = new BlockPos(
-                    MathHelper.floor(cameraPos.x / 16.0) * 16,
-                    MathHelper.floor(cameraPos.y / 16.0) * 16,
-                    MathHelper.floor(cameraPos.z / 16.0) * 16);
-            BlockPos cameraSectionCenter = cameraSectionOrigin.add(8, 8, 8);
+                    Mth.floor(cameraPos.x / 16.0) * 16,
+                    Mth.floor(cameraPos.y / 16.0) * 16,
+                    Mth.floor(cameraPos.z / 16.0) * 16);
+            BlockPos cameraSectionCenter = cameraSectionOrigin.offset(8, 8, 8);
             BlockPos origin = new BlockPos(
                     (random.nextInt(80) - 40) * 16,
-                    MathHelper.clamp((random.nextInt(30) - 5) * 16, worldBottom, worldTop - 16),
+                    Mth.clamp((random.nextInt(30) - 5) * 16, worldBottom, worldTop - 16),
                     (random.nextInt(80) - 40) * 16);
             Direction direction = Direction.values()[random.nextInt(6)];
             long salt = random.nextLong();

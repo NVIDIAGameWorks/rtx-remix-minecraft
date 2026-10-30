@@ -4,12 +4,13 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * The material cache stores records and is probed with a mutable key. HashMap calls
@@ -18,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class EntityMaterialKeyTest {
 
-    private static final Identifier TEX = Identifier.of("minecraft", "textures/entity/cow/cow.png");
+    private static final ResourceLocation TEX = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/cow/cow.png");
 
     @Test
     void lookupProbeAgreesWithTheStoredRecordOnHashAndEquality() {

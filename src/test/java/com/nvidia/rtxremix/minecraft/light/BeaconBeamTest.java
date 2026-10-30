@@ -4,11 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.util.math.Direction;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import net.minecraft.core.Direction;
 
 class BeaconBeamTest {
 
@@ -37,9 +38,9 @@ class BeaconBeamTest {
                 }
 
                 Vector3f offset = new Vector3f(
-                        BeaconBeam.lensLocal(mount.getOffsetX(), forward.getOffsetX()) - 0.5f,
-                        BeaconBeam.lensLocal(mount.getOffsetY(), forward.getOffsetY()) - 0.5f,
-                        BeaconBeam.lensLocal(mount.getOffsetZ(), forward.getOffsetZ()) - 0.5f);
+                        BeaconBeam.lensLocal(mount.getStepX(), forward.getStepX()) - 0.5f,
+                        BeaconBeam.lensLocal(mount.getStepY(), forward.getStepY()) - 0.5f,
+                        BeaconBeam.lensLocal(mount.getStepZ(), forward.getStepZ()) - 0.5f);
                 String placement = "mount=" + mount + ", facing=" + forward;
 
                 assertEquals(2.0f / 16.0f, dot(offset, mount), EPSILON, placement);
@@ -49,8 +50,8 @@ class BeaconBeamTest {
     }
 
     private static float dot(Vector3f vector, Direction direction) {
-        return vector.x * direction.getOffsetX()
-                + vector.y * direction.getOffsetY()
-                + vector.z * direction.getOffsetZ();
+        return vector.x * direction.getStepX()
+                + vector.y * direction.getStepY()
+                + vector.z * direction.getStepZ();
     }
 }

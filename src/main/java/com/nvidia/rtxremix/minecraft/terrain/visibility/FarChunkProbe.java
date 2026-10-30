@@ -4,8 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
 
 /**
  * Vanilla's line-of-sight probe for sections far from the camera, without its per-step
@@ -92,7 +92,7 @@ public final class FarChunkProbe {
                 return true;
             }
             if (!graph.contains(
-                    MathHelper.floor(pointX), MathHelper.floor(pointY), MathHelper.floor(pointZ))) {
+                    Mth.floor(pointX), Mth.floor(pointY), Mth.floor(pointZ))) {
                 return false;
             }
         }

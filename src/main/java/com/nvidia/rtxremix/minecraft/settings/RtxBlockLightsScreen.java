@@ -7,20 +7,20 @@ package com.nvidia.rtxremix.minecraft.settings;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ConfirmScreen;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.option.GameOptionsScreen;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.DirectionalLayoutWidget;
-import net.minecraft.client.gui.widget.TextWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.layouts.LinearLayout;
+import net.minecraft.client.gui.screens.ConfirmScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.options.OptionsSubScreen;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 /** Two-column editor for built-in block-light intensity multipliers. */
-final class RtxBlockLightsScreen extends GameOptionsScreen {
+final class RtxBlockLightsScreen extends OptionsSubScreen {
 
     private final RtxSettings settings;
     private final Runnable saveSettings;
@@ -29,8 +29,8 @@ final class RtxBlockLightsScreen extends GameOptionsScreen {
     RtxBlockLightsScreen(Screen parent, RtxSettings settings, Runnable saveSettings) {
         super(
                 parent,
-                MinecraftClient.getInstance().options,
-                Text.translatable("rtxremix.settings.blockLights.title"));
+                Minecraft.getInstance().options,
+                Component.translatable("rtxremix.settings.blockLights.title"));
         this.settings = settings;
         this.saveSettings = saveSettings;
     }
@@ -39,41 +39,41 @@ final class RtxBlockLightsScreen extends GameOptionsScreen {
     @SuppressWarnings("unchecked")
     protected void addOptions() {
         sliders.clear();
-        this.body.addWidgetEntry(
-                new TextWidget(
+        this.list.addSmall(
+                new StringWidget(
                         150,
                         20,
-                        Text.translatable("rtxremix.settings.blockLights.block")
-                                .formatted(Formatting.BOLD),
-                        this.textRenderer),
-                new TextWidget(
+                        Component.translatable("rtxremix.settings.blockLights.block")
+                                .withStyle(ChatFormatting.BOLD),
+                        this.font),
+                new StringWidget(
                         150,
                         20,
-                        Text.translatable("rtxremix.settings.blockLights.intensity")
-                                .formatted(Formatting.BOLD),
-                        this.textRenderer));
+                        Component.translatable("rtxremix.settings.blockLights.intensity")
+                                .withStyle(ChatFormatting.BOLD),
+                        this.font));
 
         for (RtxSetting<?> raw : settings.group(SettingGroup.BLOCK_LIGHTS)) {
             RtxSetting<Double> setting = (RtxSetting<Double>) raw;
-            TextWidget name =
-                    new TextWidget(150, 20, Text.translatable(setting.labelKey()), this.textRenderer);
-            name.setTooltip(Tooltip.of(Text.translatable(setting.tooltipKey())));
+            StringWidget name =
+                    new StringWidget(150, 20, Component.translatable(setting.labelKey()), this.font);
+            name.setTooltip(Tooltip.create(Component.translatable(setting.tooltipKey())));
             BlockLightMultiplierSlider slider = new BlockLightMultiplierSlider(setting);
             sliders.add(slider);
-            this.body.addWidgetEntry(name, slider);
+            this.list.addSmall(name, slider);
         }
     }
 
     @Override
-    protected void initFooter() {
-        DirectionalLayoutWidget footer = DirectionalLayoutWidget.horizontal().spacing(8);
-        footer.add(ButtonWidget.builder(
-                        Text.translatable("rtxremix.settings.reset"), button -> confirmReset())
-                .tooltip(Tooltip.of(Text.translatable("rtxremix.settings.reset.tip")))
+    protected void addFooter() {
+        LinearLayout footer = LinearLayout.horizontal().spacing(8);
+        footer.addChild(Button.builder(
+                        Component.translatable("rtxremix.settings.reset"), button -> confirmReset())
+                .tooltip(Tooltip.create(Component.translatable("rtxremix.settings.reset.tip")))
                 .width(98)
                 .build());
-        footer.add(ButtonWidget.builder(ScreenTexts.DONE, button -> close()).width(98).build());
-        this.layout.addFooter(footer);
+        footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(98).build());
+        this.layout.addToFooter(footer);
     }
 
     private boolean commitPendingValues() {
@@ -86,7 +86,7 @@ final class RtxBlockLightsScreen extends GameOptionsScreen {
 
     private void confirmReset() {
         boolean pendingChanged = commitPendingValues();
-        this.client.setScreen(new ConfirmScreen(confirmed -> {
+        this.minecraft.setScreen(new ConfirmScreen(confirmed -> {
             boolean rebuild = pendingChanged;
             if (confirmed) {
                 rebuild |= settings.hasOverrides(SettingGroup.BLOCK_LIGHTS);
@@ -98,17 +98,17 @@ final class RtxBlockLightsScreen extends GameOptionsScreen {
             if (rebuild) {
                 RtxRemixMod.rebuildLoadedTerrain();
             }
-            this.client.setScreen(new RtxBlockLightsScreen(this.parent, settings, saveSettings));
-        }, Text.translatable(
+            this.minecraft.setScreen(new RtxBlockLightsScreen(this.lastScreen, settings, saveSettings));
+        }, Component.translatable(
                         "rtxremix.settings.reset.confirm.title",
-                        Text.translatable("rtxremix.settings.blockLights.title")),
-                Text.translatable(
+                        Component.translatable("rtxremix.settings.blockLights.title")),
+                Component.translatable(
                         "rtxremix.settings.reset.confirm.message",
-                        Text.translatable("rtxremix.settings.blockLights.title"))));
+                        Component.translatable("rtxremix.settings.blockLights.title"))));
     }
 
     @Override
-    public void close() {
+    public void onClose() {
         boolean changed = commitPendingValues();
         if (saveSettings != null) {
             saveSettings.run();
@@ -116,6 +116,6 @@ final class RtxBlockLightsScreen extends GameOptionsScreen {
         if (changed) {
             RtxRemixMod.rebuildLoadedTerrain();
         }
-        this.client.setScreen(this.parent);
+        this.minecraft.setScreen(this.lastScreen);
     }
 }

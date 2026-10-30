@@ -8,24 +8,24 @@ import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.light.OverridesItemLight;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FacingBlock;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroup;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.sound.BlockSoundGroup;
-import net.minecraft.state.StateManager;
-import net.minecraft.util.BlockMirror;
-import net.minecraft.util.BlockRotation;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.DirectionalBlock;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
 
 /**
  * Base for aimable light sources, the lamp room of a lighthouse.
@@ -38,7 +38,7 @@ import net.minecraft.util.math.Direction;
  * {@code BulbBlock} holds the shared behaviour while each copper-oxidation
  * block supplies its own settings.
  *
- * <p>Carries the vanilla {@link net.minecraft.state.property.Properties#FACING}
+ * <p>Carries the vanilla {@link net.minecraft.world.level.block.state.properties.BlockStateProperties#FACING}
  * property (all six directions), set to the opposite of the placing player's
  * look direction so the lens faces them, matching vanilla dispensers and
  * observers.
@@ -59,7 +59,7 @@ import net.minecraft.util.math.Direction;
  * A <em>dropped</em> beacon does stay dark, an item entity having no aim worth
  * pointing a beam along.
  */
-public abstract class SpotLightBlock extends FacingBlock implements OverridesItemLight {
+public abstract class SpotLightBlock extends DirectionalBlock implements OverridesItemLight {
 
     /** Full block light level, matching a lantern. */
     protected static final int LUMINANCE = 15;
@@ -70,23 +70,23 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
      * <p>Built from the registry id rather than {@code ItemGroups.FUNCTIONAL},
      * which is private in 1.21.1 and would otherwise need an access-widener entry.
      */
-    private static final RegistryKey<ItemGroup> FUNCTIONAL_BLOCKS =
-            RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.ofVanilla("functional_blocks"));
+    private static final ResourceKey<CreativeModeTab> FUNCTIONAL_BLOCKS =
+            ResourceKey.create(Registries.CREATIVE_MODE_TAB, ResourceLocation.withDefaultNamespace("functional_blocks"));
 
     private final LightEntry.ColorOverride beamColor;
 
-    protected SpotLightBlock(AbstractBlock.Settings settings, LightEntry.ColorOverride beamColor) {
+    protected SpotLightBlock(BlockBehaviour.Properties settings, LightEntry.ColorOverride beamColor) {
         super(settings);
         this.beamColor = beamColor;
-        setDefaultState(getStateManager().getDefaultState().with(FACING, Direction.NORTH));
+        registerDefaultState(getStateDefinition().any().setValue(FACING, Direction.NORTH));
     }
 
     /** Shared settings for every beacon variant. */
-    protected static AbstractBlock.Settings beaconSettings() {
-        return AbstractBlock.Settings.create()
+    protected static BlockBehaviour.Properties beaconSettings() {
+        return BlockBehaviour.Properties.of()
                 .strength(3.0f)
-                .sounds(BlockSoundGroup.METAL)
-                .luminance(state -> LUMINANCE);
+                .sound(SoundType.METAL)
+                .lightLevel(state -> LUMINANCE);
     }
 
     /**
@@ -111,29 +111,29 @@ public abstract class SpotLightBlock extends FacingBlock implements OverridesIte
 
     /** Registers one variant, its item, and the creative tab entry. */
     private static void register(String path, SpotLightBlock block) {
-        Identifier id = Identifier.of(RtxRemixCommonMod.MOD_ID, path);
-        Registry.register(Registries.BLOCK, id, block);
-        BlockItem item = Registry.register(Registries.ITEM, id, new BlockItem(block, new Item.Settings()));
-        ItemGroupEvents.modifyEntriesEvent(FUNCTIONAL_BLOCKS).register(entries -> entries.add(item));
+        ResourceLocation id = ResourceLocation.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, path);
+        Registry.register(BuiltInRegistries.BLOCK, id, block);
+        BlockItem item = Registry.register(BuiltInRegistries.ITEM, id, new BlockItem(block, new Item.Properties()));
+        ItemGroupEvents.modifyEntriesEvent(FUNCTIONAL_BLOCKS).register(entries -> entries.accept(item));
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING);
     }
 
     @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        return getDefaultState().with(FACING, ctx.getPlayerLookDirection().getOpposite());
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        return defaultBlockState().setValue(FACING, ctx.getNearestLookingDirection().getOpposite());
     }
 
     @Override
-    protected BlockState rotate(BlockState state, BlockRotation rotation) {
-        return state.with(FACING, rotation.rotate(state.get(FACING)));
+    protected BlockState rotate(BlockState state, Rotation rotation) {
+        return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
     }
 
     @Override
-    protected BlockState mirror(BlockState state, BlockMirror mirror) {
-        return state.with(FACING, mirror.apply(state.get(FACING)));
+    protected BlockState mirror(BlockState state, Mirror mirror) {
+        return state.setValue(FACING, mirror.mirror(state.getValue(FACING)));
     }
 }

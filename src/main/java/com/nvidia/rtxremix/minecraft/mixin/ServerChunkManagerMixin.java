@@ -5,14 +5,14 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.terrain.ChunkHolderTickEntry;
-import net.minecraft.server.world.ChunkHolder;
-import net.minecraft.server.world.ServerChunkManager;
-import net.minecraft.world.chunk.WorldChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 import java.util.ArrayList;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
  * Ticks the server's loaded chunks without rebuilding the list of them every tick. Vanilla's
@@ -23,10 +23,10 @@ import java.util.ArrayList;
  * for as long as its chunk stays the same ({@link ChunkHolderMixin}). The order, the shuffle
  * and everything the loop does with the entries are vanilla's.
  */
-@Mixin(ServerChunkManager.class)
+@Mixin(ServerChunkCache.class)
 public abstract class ServerChunkManagerMixin {
 
-    private final ArrayList<ServerChunkManager.ChunkWithHolder> rtxremix$tickList = new ArrayList<>();
+    private final ArrayList<ServerChunkCache.ChunkAndHolder> rtxremix$tickList = new ArrayList<>();
 
     @Redirect(
             method = "tickChunks",
@@ -34,8 +34,8 @@ public abstract class ServerChunkManagerMixin {
                     value = "INVOKE",
                     target = "Lcom/google/common/collect/Lists;newArrayListWithCapacity(I)Ljava/util/ArrayList;"
             ))
-    private ArrayList<ServerChunkManager.ChunkWithHolder> rtxremix$reuseTickList(int capacity) {
-        ArrayList<ServerChunkManager.ChunkWithHolder> list = rtxremix$tickList;
+    private ArrayList<ServerChunkCache.ChunkAndHolder> rtxremix$reuseTickList(int capacity) {
+        ArrayList<ServerChunkCache.ChunkAndHolder> list = rtxremix$tickList;
         list.clear();
         list.ensureCapacity(capacity);
         return list;
@@ -45,9 +45,9 @@ public abstract class ServerChunkManagerMixin {
             method = "tickChunks",
             at = @At(
                     value = "NEW",
-                    target = "(Lnet/minecraft/world/chunk/WorldChunk;Lnet/minecraft/server/world/ChunkHolder;)Lnet/minecraft/server/world/ServerChunkManager$ChunkWithHolder;"
+                    target = "(Lnet/minecraft/world/level/chunk/LevelChunk;Lnet/minecraft/server/level/ChunkHolder;)Lnet/minecraft/server/level/ServerChunkCache$ChunkAndHolder;"
             ))
-    private ServerChunkManager.ChunkWithHolder rtxremix$cachedTickEntry(WorldChunk chunk, ChunkHolder holder) {
+    private ServerChunkCache.ChunkAndHolder rtxremix$cachedTickEntry(LevelChunk chunk, ChunkHolder holder) {
         return ((ChunkHolderTickEntry) holder).rtxremix$tickEntry(chunk);
     }
 }

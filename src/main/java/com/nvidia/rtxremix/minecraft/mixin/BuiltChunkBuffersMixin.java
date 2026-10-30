@@ -4,10 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.vertex.VertexBuffer;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.minecraft.client.gl.VertexBuffer;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.chunk.ChunkBuilder;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -20,6 +18,8 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 
 /**
  * Vanilla gives every {@code BuiltChunk} a {@link VertexBuffer} per block render layer: three
@@ -36,11 +36,11 @@ import java.util.stream.Collectors;
  * {@code getBuffer(layer)}; that returns a shared scratch buffer per layer here instead of
  * null, so the upload lands harmlessly in a buffer nothing draws.
  */
-@Mixin(ChunkBuilder.BuiltChunk.class)
+@Mixin(SectionRenderDispatcher.RenderSection.class)
 public abstract class BuiltChunkBuffersMixin {
 
     /** Per-layer scratch buffers for the toggle window; created on the render thread at first need. */
-    private static final Map<RenderLayer, VertexBuffer> rtxremix$scratchBuffers = new HashMap<>();
+    private static final Map<RenderType, VertexBuffer> rtxremix$scratchBuffers = new HashMap<>();
 
     @Redirect(
             method = "<init>",
@@ -55,7 +55,7 @@ public abstract class BuiltChunkBuffersMixin {
         }
         // Constructed on the render thread, like the sections themselves.
         if (rtxremix$scratchBuffers.isEmpty()) {
-            for (RenderLayer layer : RenderLayer.getBlockLayers()) {
+            for (RenderType layer : RenderType.chunkBufferLayers()) {
                 rtxremix$scratchBuffers.put(layer, new VertexBuffer(VertexBuffer.Usage.STATIC));
             }
         }
@@ -66,7 +66,7 @@ public abstract class BuiltChunkBuffersMixin {
     }
 
     @Inject(method = "getBuffer", at = @At("RETURN"), cancellable = true)
-    private void rtxremix$scratchForMissingLayer(RenderLayer layer, CallbackInfoReturnable<VertexBuffer> cir) {
+    private void rtxremix$scratchForMissingLayer(RenderType layer, CallbackInfoReturnable<VertexBuffer> cir) {
         if (cir.getReturnValue() == null) {
             cir.setReturnValue(rtxremix$scratchBuffers.get(layer));
         }

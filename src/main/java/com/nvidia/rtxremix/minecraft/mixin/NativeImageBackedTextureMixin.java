@@ -4,10 +4,10 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
-import net.minecraft.client.texture.AbstractTexture;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Intercepts {@link NativeImageBackedTexture#upload()} to capture pixel data
+ * Intercepts {@link DynamicTexture#upload()} to capture pixel data
  * for dynamic textures (maps, capes, etc.).
  *
  * <p>At the HEAD of {@code upload()}, the {@code NativeImage} is guaranteed
@@ -27,16 +27,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>Only stores pixels for textures that {@code TextureManagerMixin} registered
  * for tracking; all others are ignored with minimal overhead.
  */
-@Mixin(NativeImageBackedTexture.class)
+@Mixin(DynamicTexture.class)
 public class NativeImageBackedTextureMixin {
 
     @Shadow
     @Nullable
-    protected NativeImage image;
+    protected NativeImage pixels;
 
     @Inject(method = "upload", at = @At("HEAD"))
     private void rtxremix$onUpload(CallbackInfo ci) {
-        if (image == null) return;
-        DynamicTextureCache.captureFromUpload((AbstractTexture) (Object) this, image);
+        if (pixels == null) return;
+        DynamicTextureCache.captureFromUpload((AbstractTexture) (Object) this, pixels);
     }
 }

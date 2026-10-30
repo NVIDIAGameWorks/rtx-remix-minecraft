@@ -6,13 +6,13 @@ package com.nvidia.rtxremix.minecraft.terrain;
 
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.minecraft.light.BlockLightKey;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -131,7 +131,7 @@ class ChunkManagerLightBudgetTest {
         for (int i = 0; i < lights.length; i++) {
             entry.putLight(
                     new BlockLightKey(new BlockPos(i, 0, 0),
-                            Identifier.of("test", "light_" + i), 0),
+                            ResourceLocation.fromNamespaceAndPath("test", "light_" + i), 0),
                     new TerrainLight(lights[i]));
         }
     }

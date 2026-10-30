@@ -4,17 +4,17 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.entity.EntityRenderContext;
 import com.nvidia.rtxremix.minecraft.entity.HeldItemEffectsRenderer;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockQuadEmitter;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.item.ItemRenderer;
-import net.minecraft.client.render.model.BakedModel;
-import net.minecraft.client.render.model.json.ModelTransformationMode;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.entity.ItemRenderer;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -34,11 +34,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ItemRendererMixin {
 
     @Inject(
-        method = "renderItem(Lnet/minecraft/item/ItemStack;Lnet/minecraft/client/render/model/json/ModelTransformationMode;ZLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;IILnet/minecraft/client/render/model/BakedModel;)V",
+        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
         at = @At("HEAD")
     )
-    private void rtxremix$beginItem(ItemStack stack, ModelTransformationMode mode, boolean leftHanded,
-                                    MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+    private void rtxremix$beginItem(ItemStack stack, ItemDisplayContext mode, boolean leftHanded,
+                                    PoseStack matrices, MultiBufferSource vertexConsumers,
                                     int light, int overlay, BakedModel model, CallbackInfo ci) {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) {
@@ -52,25 +52,25 @@ public class ItemRendererMixin {
      * a hand-specific renderer covers every hand-held render with one hook.
      */
     @Inject(
-        method = "renderItem(Lnet/minecraft/item/ItemStack;Lnet/minecraft/client/render/model/json/ModelTransformationMode;ZLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;IILnet/minecraft/client/render/model/BakedModel;)V",
+        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/render/item/ItemRenderer;renderBakedItemModel(Lnet/minecraft/client/render/model/BakedModel;Lnet/minecraft/item/ItemStack;IILnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;)V",
+            target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;renderModelLists(Lnet/minecraft/client/resources/model/BakedModel;Lnet/minecraft/world/item/ItemStack;IILcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;)V",
             shift = At.Shift.AFTER
         )
     )
-    private void rtxremix$renderHeldFlame(ItemStack stack, ModelTransformationMode mode, boolean leftHanded,
-                                          MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+    private void rtxremix$renderHeldFlame(ItemStack stack, ItemDisplayContext mode, boolean leftHanded,
+                                          PoseStack matrices, MultiBufferSource vertexConsumers,
                                           int light, int overlay, BakedModel model, CallbackInfo ci) {
         HeldItemEffectsRenderer.render(stack, mode, matrices, vertexConsumers, model);
     }
 
     @Inject(
-        method = "renderItem(Lnet/minecraft/item/ItemStack;Lnet/minecraft/client/render/model/json/ModelTransformationMode;ZLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;IILnet/minecraft/client/render/model/BakedModel;)V",
+        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
         at = @At("RETURN")
     )
-    private void rtxremix$endItem(ItemStack stack, ModelTransformationMode mode, boolean leftHanded,
-                                  MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+    private void rtxremix$endItem(ItemStack stack, ItemDisplayContext mode, boolean leftHanded,
+                                  PoseStack matrices, MultiBufferSource vertexConsumers,
                                   int light, int overlay, BakedModel model, CallbackInfo ci) {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) {
@@ -86,7 +86,7 @@ public class ItemRendererMixin {
     private static int rtxremix$blockLayer(ItemStack stack) {
         return stack.getItem() instanceof BlockItem blockItem
                 ? BlockTextureManager.layerType(
-                        BlockQuadEmitter.classifyBlockLayer(blockItem.getBlock().getDefaultState()))
+                        BlockQuadEmitter.classifyBlockLayer(blockItem.getBlock().defaultBlockState()))
                 : EntityRenderContext.NO_BLOCK_ITEM;
     }
 }
