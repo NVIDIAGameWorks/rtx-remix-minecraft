@@ -42,7 +42,7 @@ if not exist "%VSWHERE%" (
     exit /b 1
 )
 
-for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -property installationPath`) do set "VS_PATH=%%i"
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS_PATH=%%i"
 if not defined VS_PATH (
     echo ERROR: No Visual Studio installation found.
     exit /b 1
