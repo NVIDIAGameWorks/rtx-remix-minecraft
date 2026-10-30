@@ -314,8 +314,8 @@ class ConfLayerDriverTest {
         // 1 water + 1 view-distance controller + 1 volumetric settling
         // controller + 2 weather + 4 time profiles. Optional biome and zone
         // rows are discovered from disk.
-        assertEquals(64, ConfLayerDriver.vanillaBiomeNames().size(),
-                "vanilla 1.21.1 biome count (BiomeKeys)");
+        assertEquals(67, ConfLayerDriver.vanillaBiomeNames().size(),
+                "vanilla 26.3 biome count (Biomes)");
         assertEquals(9, ConfLayerDriver.STATIC_LAYER_TABLE.size());
         Set<String> names = new HashSet<>();
         Set<String> paths = new HashSet<>();

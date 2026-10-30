@@ -34,7 +34,6 @@ import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer.PreparedFrame;
 import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer;
-import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
 import com.nvidia.rtxremix.minecraft.camera.CameraController;
 import com.nvidia.rtxremix.minecraft.logic.ConfLayerDriver;
 import com.nvidia.rtxremix.minecraft.logic.ZoneRegistry;
@@ -47,21 +46,23 @@ import com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter;
 import com.nvidia.rtxremix.minecraft.entity.RemixFirstPersonPass;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+import net.minecraft.client.renderer.state.level.BlockOutlineRenderState;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.ItemInHandRenderer;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
-import org.lwjgl.glfw.GLFWNativeWin32;
+import org.lwjgl.sdl.SDLProperties;
+import org.lwjgl.sdl.SDLVideo;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.slf4j.Logger;
@@ -147,7 +148,6 @@ public class RemixRenderer {
     // Particle rendering: atlas manager + per-frame renderer
     private ParticleAtlasManager particleAtlasManager;
     private RemixParticleRenderer particleRenderer;
-    private RemixWeatherRenderer weatherRenderer;
     private final ExecutorService particleExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "RTX Remix Particles");
         thread.setDaemon(true);
@@ -227,9 +227,9 @@ public class RemixRenderer {
             lastCameraMediumHandle = Long.MIN_VALUE;
 
             Minecraft client = Minecraft.getInstance();
-            long glfwHandle = client.getWindow().getWindow();
-            
-            windowHandle = getHwndFromGlfw(glfwHandle);
+            long sdlHandle = client.getWindow().handle();
+
+            windowHandle = getHwndFromSdl(sdlHandle);
             
             if (windowHandle == 0) {
                 throw new RuntimeException("Failed to get native window handle");
@@ -273,14 +273,14 @@ public class RemixRenderer {
             // RTXREMIX_WINDOW_POS="x,y" moves the window before startup() so the
             // swapchain is created on the monitor that will display it (benchmarks
             // use this to target a specific monitor, e.g. a 4K panel at a negative
-            // desktop coordinate). Must run on the render thread, which owns GLFW.
+            // desktop coordinate). Must run on the render thread, which owns the SDL window.
             String windowPos = System.getenv("RTXREMIX_WINDOW_POS");
             if (windowPos != null && !windowPos.isBlank()) {
                 String[] parts = windowPos.split(",");
                 try {
                     int x = Integer.parseInt(parts[0].trim());
                     int y = Integer.parseInt(parts[1].trim());
-                    org.lwjgl.glfw.GLFW.glfwSetWindowPos(glfwHandle, x, y);
+                    SDLVideo.SDL_SetWindowPosition(sdlHandle, x, y);
                     LOGGER.info("RTXREMIX_WINDOW_POS: moved window to ({}, {})", x, y);
                 } catch (RuntimeException e) {
                     LOGGER.warn("RTXREMIX_WINDOW_POS: could not apply '{}': {}", windowPos, e.getMessage());
@@ -336,7 +336,6 @@ public class RemixRenderer {
             blockDamagePass = new RemixBlockDamagePass();
 
             particleRenderer = new RemixParticleRenderer(this, particleAtlasManager);
-            weatherRenderer = new RemixWeatherRenderer();
             
             perfCamera = perfTimer.registerSection("Camera");
             perfLights = perfTimer.registerSection("Lights");
@@ -496,10 +495,11 @@ public class RemixRenderer {
     }
     
     /**
-     * Gets the Win32 HWND from a GLFW window handle.
+     * Gets the Win32 HWND from an SDL window handle.
      */
-    private long getHwndFromGlfw(long glfwHandle) {
-        return GLFWNativeWin32.glfwGetWin32Window(glfwHandle);
+    private long getHwndFromSdl(long sdlHandle) {
+        return SDLProperties.SDL_GetPointerProperty(
+                SDLVideo.SDL_GetWindowProperties(sdlHandle), SDLVideo.SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0L);
     }
     
     /**
@@ -543,7 +543,6 @@ public class RemixRenderer {
         if (particleRenderer != null) particleRenderer.cleanup();
         if (particleAtlasManager != null) particleAtlasManager.cleanup();
         entityAtlasPreloadPending = true;
-        if (weatherRenderer != null) weatherRenderer.cleanup();
         if (chunkManager != null) chunkManager.clear();
         if (textureManager != null) textureManager.reload();
         if (skyRenderer != null) skyRenderer.reloadResources();
@@ -558,7 +557,7 @@ public class RemixRenderer {
             Minecraft client = Minecraft.getInstance();
             if (client != null && client.levelRenderer != null) {
                 LongSet built = RtxRemixMod.builtSections(client);
-                client.levelRenderer.allChanged();
+                client.levelExtractor.allChanged();
                 RtxRemixMod.recaptureTerrainForRemix(client, built);
             }
             pendingTerrainRecaptureAfterTextureReload = false;
@@ -644,13 +643,13 @@ public class RemixRenderer {
      * Captures one entity at vanilla's own traversal point, in place of the render
      * that would have gone to OpenGL.
      *
-     * <p>Called from {@code WorldRendererMixin}'s wrap of
-     * {@code WorldRenderer.renderEntity}. Returning true tells the mixin to skip
+     * <p>Called from {@code LevelRendererMixin}'s wrap of the entity submit in
+     * {@code LevelRenderer.submitEntities}. Returning true tells the mixin to skip
      * vanilla's call, which is what reduces each entity to a single model
      * evaluation per frame. Returning false hands the entity back to vanilla, so
      * an uninitialised renderer or a disabled toggle still renders normally.
      */
-    public boolean renderEntityInPlace(Entity entity, float tickDelta) {
+    public boolean renderEntityInPlace(Entity entity, EntityRenderState extracted, float tickDelta) {
         if (!initialized || remixApi == null || entityPass == null || entitySubmitter == null) {
             return false;
         }
@@ -663,7 +662,7 @@ public class RemixRenderer {
             return false;
         }
         entityPass.beginFrame(entitySubmitter);
-        entityPass.captureAndSubmit(entity, dispatcher, tickDelta, entitySubmitter);
+        entityPass.captureAndSubmit(entity, extracted, dispatcher, tickDelta, entitySubmitter);
         return true;
     }
 
@@ -671,7 +670,8 @@ public class RemixRenderer {
      * Captures one block entity at vanilla's own dispatch point, in place of the
      * render that would have gone to OpenGL.
      *
-     * <p>Called from {@code BlockEntityRenderDispatcherMixin}. Returning true tells
+     * <p>Called from {@code LevelRendererMixin}'s wrap of the block-entity submit in
+     * {@code LevelRenderer.submitBlockEntities}. Returning true tells
      * the mixin to skip vanilla's call; returning false hands the block entity back
      * to vanilla, so an uninitialised renderer or a disabled toggle still renders
      * normally. A block entity dispatched while a capture is already open is left
@@ -692,13 +692,8 @@ public class RemixRenderer {
         if (EntityRenderContext.get().isActive()) {
             return false;
         }
-        Minecraft client = Minecraft.getInstance();
-        EntityRenderDispatcher dispatcher = client == null ? null : client.getEntityRenderDispatcher();
-        if (dispatcher == null) {
-            return false;
-        }
         entitySubmitter.beginFrame();
-        blockEntityPass.capture(be, call, dispatcher, entitySubmitter);
+        blockEntityPass.capture(be, call, entitySubmitter);
         return true;
     }
 
@@ -706,8 +701,8 @@ public class RemixRenderer {
      * Captures one block's breaking crack at vanilla's own render point, in place of
      * the render that would have gone to OpenGL.
      *
-     * <p>Called from {@code WorldRendererMixin}'s wrap of
-     * {@code BlockRenderManager.renderDamage}. Returning true tells the mixin to skip
+     * <p>Called from {@code LevelRendererMixin}'s wrap of
+     * {@code SubmitNodeCollector.submitBreakingBlockModel}. Returning true tells the mixin to skip
      * vanilla's call; returning false hands the crack back to vanilla, so an
      * uninitialised renderer or a disabled toggle still renders normally. The crack is
      * terrain decoration, so it follows the world toggle rather than the entity toggle.
@@ -784,8 +779,8 @@ public class RemixRenderer {
             }
             submitPendingParticleFrame();
 
-            Camera camera = client.gameRenderer.getMainCamera();
-            float tickDelta = client.getTimer().getGameTimeDeltaPartialTick(true);
+            Camera camera = client.gameRenderer.mainCamera();
+            float tickDelta = client.getDeltaTracker().getGameTimeDeltaPartialTick(true);
             particleFuture = startParticleRenderTask(tickDelta, ProfileScope.currentFrameIndex());
             
             perfTimer.begin(perfCamera);
@@ -795,7 +790,7 @@ public class RemixRenderer {
                 perfTimer.end(perfCamera);
             }
             
-            Vec3 cameraPos = camera.getPosition();
+            Vec3 cameraPos = camera.position();
 
             perfTimer.begin(perfLights);
             try (ProfileScope lightsScope = ProfileScope.begin("Lights")) {
@@ -1189,9 +1184,9 @@ public class RemixRenderer {
      */
     private void updateCamera(Camera camera, float tickDelta) {
         try {
-            Vec3 pos = camera.getPosition();
-            float pitch = camera.getXRot();
-            float yaw = camera.getYRot();
+            Vec3 pos = camera.position();
+            float pitch = camera.xRot();
+            float yaw = camera.yRot();
     
             float yawRad = (float) Math.toRadians(-yaw);
             float pitchRad = (float) Math.toRadians(pitch);
@@ -1209,16 +1204,10 @@ public class RemixRenderer {
             float upZ = rightX * forwardY - rightY * forwardX;
     
             Minecraft client = Minecraft.getInstance();
-            float worldFov = (float) client.gameRenderer.getFov(camera, tickDelta, true);
+            float worldFov = camera.getFov();
             int width = client.getWindow().getWidth();
             int height = client.getWindow().getHeight();
             float aspect = (float) width / (float) height;
-            if (weatherRenderer != null) {
-                weatherRenderer.updateCamera(
-                        camera,
-                        worldFov,
-                        aspect);
-            }
     
             CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
                 .position((float) pos.x, (float) pos.y, (float) pos.z)
@@ -1323,7 +1312,7 @@ public class RemixRenderer {
     
     /**
      * Presents the frame through Remix, which owns the swapchain for as long as the
-     * renderer is initialized: this method replaces the GLFW buffer swap, so returning
+     * renderer is initialized: this method replaces the SDL OpenGL buffer swap, so returning
      * without calling present leaves the window frozen on the last presented image.
      * A failed GL-to-Remix copy therefore still presents, and a failure is logged once
      * per run rather than once per frame.
@@ -1443,8 +1432,8 @@ public class RemixRenderer {
      * the same frame.
      */
     public void captureBlockOutline(
-            WorldRenderContext context,
-            WorldRenderContext.BlockOutlineContext outline) {
+            LevelRenderContext context,
+            BlockOutlineRenderState outline) {
         if (blockOutlinePass != null) {
             blockOutlinePass.captureBlockOutline(context, outline);
         }
@@ -1477,9 +1466,6 @@ public class RemixRenderer {
         }
         if (particleRenderer != null) {
             particleRenderer.cleanup();
-        }
-        if (weatherRenderer != null) {
-            weatherRenderer.cleanup();
         }
         if (skyRenderer != null) {
             skyRenderer.cleanup();
@@ -1538,10 +1524,6 @@ public class RemixRenderer {
             particleRenderer.cleanup();
             particleRenderer = null;
         }
-        if (weatherRenderer != null) {
-            weatherRenderer.cleanup();
-            weatherRenderer = null;
-        }
         if (particleAtlasManager != null) {
             particleAtlasManager.cleanup();
             particleAtlasManager = null;
@@ -1571,7 +1553,7 @@ public class RemixRenderer {
     }
 
     /**
-     * Completes native runtime shutdown after Minecraft has destroyed its GLFW window.
+     * Completes native runtime shutdown after Minecraft has destroyed its SDL window.
      */
     public void shutdownNativeRuntime() {
         shutdownRemixApi();
@@ -1643,10 +1625,6 @@ public class RemixRenderer {
         return textureManager;
     }
 
-    public RemixWeatherRenderer getWeatherRenderer() {
-        return weatherRenderer;
-    }
-    
     public PerformanceTimer getPerfTimer() {
         return perfTimer;
     }
@@ -1683,13 +1661,11 @@ public class RemixRenderer {
     }
 
     public void captureFirstPersonModel(
-            ItemInHandRenderer heldItemRenderer,
+            RemixFirstPersonPass.HandsRenderCall call,
             float tickDelta,
-            PoseStack matrices,
-            LocalPlayer player,
-            int light) {
+            LocalPlayer player) {
         if (firstPersonPass != null && initialized && RtxRemixMod.isRtxEnabled()) {
-            firstPersonPass.capture(heldItemRenderer, tickDelta, matrices, player, light);
+            firstPersonPass.capture(call, tickDelta, player);
         }
     }
 }

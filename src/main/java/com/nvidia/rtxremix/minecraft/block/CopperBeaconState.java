@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.block;
 
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.storage.ValueInput;
 
 /** Validation and serialization rules shared by Copper Beacon placement and persistence. */
 final class CopperBeaconState {
@@ -41,8 +42,14 @@ final class CopperBeaconState {
     }
 
     static Angles readAngles(CompoundTag nbt) {
-        float azimuth = nbt.getFloat(AZIMUTH_KEY);
-        float zenith = nbt.getFloat(ZENITH_KEY);
+        return sanitizedAngles(nbt.getFloatOr(AZIMUTH_KEY, 0.0f), nbt.getFloatOr(ZENITH_KEY, 0.0f));
+    }
+
+    static Angles readAngles(ValueInput input) {
+        return sanitizedAngles(input.getFloatOr(AZIMUTH_KEY, 0.0f), input.getFloatOr(ZENITH_KEY, 0.0f));
+    }
+
+    private static Angles sanitizedAngles(float azimuth, float zenith) {
         return new Angles(
                 Float.isFinite(azimuth) ? normalizeAzimuth(azimuth) : 0.0f,
                 Float.isFinite(zenith) ? clampZenith(zenith) : 0.0f);

@@ -27,7 +27,7 @@ class RecyclingMatrixStackTest {
 
         PoseStack vanilla = new PoseStack();
         vanilla.translate(pivotX / 16.0F, pivotY / 16.0F, pivotZ / 16.0F);
-        vanilla.mulPose(new Quaternionf().rotationZYX(roll, yaw, pitch));
+        vanilla.rotate(new Quaternionf().rotationZYX(roll, yaw, pitch));
         vanilla.scale(xScale, yScale, zScale);
 
         RecyclingMatrixStack recycling = new RecyclingMatrixStack();

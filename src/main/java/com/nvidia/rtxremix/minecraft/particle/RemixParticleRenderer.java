@@ -22,12 +22,16 @@ import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.mixin.BillboardParticleAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleManagerAccessor;
+import com.nvidia.rtxremix.minecraft.mixin.ParticleGroupAccessor;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.particle.ParticleGroup;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteBillboardParticleAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
-import net.minecraft.client.particle.TextureSheetParticle;
+import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.Mth;
 import org.slf4j.Logger;
@@ -119,26 +123,27 @@ public class RemixParticleRenderer {
         }
 
         ParticleManagerAccessor pmAccess = (ParticleManagerAccessor) client.particleEngine;
-        Map<ParticleRenderType, Queue<Particle>> particleMap = pmAccess.getParticles();
+        Map<ParticleRenderType, ParticleGroup<?>> particleMap = pmAccess.getParticles();
         if (particleMap == null || particleMap.isEmpty()) {
             return finishPreparation(frame);
         }
 
         BlockTextureManager blockTexMgr = renderer.getTextureManager();
-        var camRot = client.gameRenderer.getMainCamera().rotation();
+        var camRot = client.gameRenderer.mainCamera().rotation();
         float qx = camRot.x, qy = camRot.y, qz = camRot.z, qw = camRot.w;
         ParticleBillboardBasis billboardBasis = ParticleBillboardBasis.fromCamera(qx, qy, qz, qw);
 
-        for (var entry : particleMap.entrySet()) {
-            ParticleRenderType sheet = entry.getKey();
-            Queue<Particle> queue = entry.getValue();
-            if (queue == null || queue.isEmpty()) continue;
-            if (sheet == ParticleRenderType.NO_RENDER || sheet == ParticleRenderType.CUSTOM) {
-                continue;
-            }
+        // Since 26.x every billboard particle shares the SINGLE_QUADS group; the
+        // others (item pickup, elder guardian, no-render) are drawn as models or not
+        // at all. A particle's sprite atlas now says whether it is a terrain particle.
+        ParticleGroup<?> quads = particleMap.get(ParticleRenderType.SINGLE_QUADS);
+        Queue<? extends Particle> queue = quads == null ? null : ((ParticleGroupAccessor) quads).getParticles();
+        if (queue == null || queue.isEmpty()) {
+            return finishPreparation(frame);
+        }
 
-            boolean isTerrain = sheet == ParticleRenderType.TERRAIN_SHEET;
-            RemixMaterial material = resolveMaterial(sheet, blockTexMgr);
+        for (boolean isTerrain : TERRAIN_PASSES) {
+            RemixMaterial material = resolveMaterial(isTerrain, blockTexMgr);
             if (material == null || !material.isAlive()) continue;
 
             int categoryFlags = isTerrain ? 0 : InstanceCategoryBit.PARTICLE;
@@ -150,6 +155,15 @@ public class RemixParticleRenderer {
 
             for (Particle particle : queue) {
                 if (!(particle instanceof SingleQuadParticle)) continue;
+                TextureAtlasSprite particleSprite = ((SpriteBillboardParticleAccessor) particle).getSprite();
+                if (particleSprite == null) continue;
+                Identifier atlas = particleSprite.atlasLocation();
+                if (isTerrain != TextureAtlas.LOCATION_BLOCKS.equals(atlas)
+                        || TextureAtlas.LOCATION_ITEMS.equals(atlas)) {
+                    // Item-break particles sample the items atlas, which has no Remix
+                    // material yet (see port notes).
+                    continue;
+                }
 
                 ParticleAccessor pa = (ParticleAccessor) particle;
                 if (pa.getDead()) continue;
@@ -157,7 +171,7 @@ public class RemixParticleRenderer {
                 BillboardParticleAccessor billboard = (BillboardParticleAccessor) particle;
                 int boundsMin = 0;
                 int boundsMax = 0;
-                if (particle instanceof TextureSheetParticle) {
+                if (particle instanceof SingleQuadParticle) {
                     TextureAtlasSprite sprite = ((SpriteBillboardParticleAccessor) particle).getSprite();
                     if (sprite == null) continue;
                     float spriteMinU = sprite.getU0();
@@ -183,8 +197,8 @@ public class RemixParticleRenderer {
                 // Alpha stays the particle's own; a held puff is drawn at a lower
                 // alpha, see HeldItemSmoke.OPACITY for why the two are not one value.
                 int color = ParticleTint.isSoot(particle)
-                        ? packColor(ParticleTint.SOOT_GREY, ParticleTint.SOOT_GREY, ParticleTint.SOOT_GREY, pa.getAlpha())
-                        : packColor(pa.getRed(), pa.getGreen(), pa.getBlue(), pa.getAlpha());
+                        ? packColor(ParticleTint.SOOT_GREY, ParticleTint.SOOT_GREY, ParticleTint.SOOT_GREY, billboard.getAlpha())
+                        : packColor(billboard.getRed(), billboard.getGreen(), billboard.getBlue(), billboard.getAlpha());
                 writeParticleQuad(bucket.vertexBuffer, slot, pa, billboard,
                         tickDelta, billboardBasis, u0, v0, u1, v1, color, boundsMin, boundsMax);
                 bucket.dirty = true;
@@ -302,8 +316,10 @@ public class RemixParticleRenderer {
         meshUpdatesThisFrame = 0;
     }
 
-    private RemixMaterial resolveMaterial(ParticleRenderType sheet, BlockTextureManager blockTexMgr) {
-        if (sheet == ParticleRenderType.TERRAIN_SHEET) {
+    private static final boolean[] TERRAIN_PASSES = {true, false};
+
+    private RemixMaterial resolveMaterial(boolean isTerrain, BlockTextureManager blockTexMgr) {
+        if (isTerrain) {
             return blockTexMgr != null ? blockTexMgr.getAtlasMaterial(BlockTextureManager.L_CUTOUT) : null;
         }
         return atlasManager.getMaterial();
@@ -386,7 +402,7 @@ public class RemixParticleRenderer {
         double py = Mth.lerp(tickDelta, pa.getPrevPosY(), pa.getY());
         double pz = Mth.lerp(tickDelta, pa.getPrevPosZ(), pa.getZ());
 
-        float angle = Mth.lerp(tickDelta, pa.getPrevAngle(), pa.getAngle());
+        float angle = Mth.lerp(tickDelta, ba.getPrevAngle(), ba.getAngle());
         float scale = ba.getScale();
         float cosA = Mth.cos(angle);
         float sinA = Mth.sin(angle);

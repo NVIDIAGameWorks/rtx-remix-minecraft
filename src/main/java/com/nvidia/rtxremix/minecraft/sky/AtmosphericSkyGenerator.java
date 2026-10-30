@@ -4,13 +4,11 @@
  */
 package com.nvidia.rtxremix.minecraft.sky;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.nvidia.rtxremix.minecraft.light.LightManager.SkyLightState;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import net.minecraft.client.renderer.ShaderInstance;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL;
@@ -55,10 +53,15 @@ final class AtmosphericSkyGenerator {
     // dedicated units avoid synchronous binding queries on every sky update.
     private static final int FINAL_SKY_TEXTURE_UNIT = 14;
     private static final int TRANSMITTANCE_TEXTURE_UNIT = 15;
+    /** Pack parameters a texture readback depends on, saved and set tight around every readback. */
+    private static final int[] PACK_PARAMETERS = {
+            GL11.GL_PACK_ROW_LENGTH, GL11.GL_PACK_SKIP_ROWS, GL11.GL_PACK_SKIP_PIXELS, GL11.GL_PACK_ALIGNMENT};
+    private static final int[] TIGHT_PACK = {0, 0, 0, 4};
     private static final String SHADER_RESOURCE =
             "/assets/rtx-remix-renderer/shaders/sky_atmosphere.comp";
 
     private final float[] sunDirection = new float[3];
+    private final int[] savedPack = new int[PACK_PARAMETERS.length];
     private final float[] moonDirection = new float[3];
     private final int width;
     private final int upperHeight;
@@ -211,12 +214,13 @@ final class AtmosphericSkyGenerator {
             }
         }
 
-        ShaderInstance previousProgram;
+        // Since 26.x vanilla binds programs through its GL backend's cached state,
+        // so the program this dispatch displaces is read back from GL and restored
+        // exactly, which keeps that cache truthful.
+        int previousProgram;
         try (ProfileScope ignored =
                 ProfileScope.begin("Sky.ProceduralGeneration.StateSave")) {
-            previousProgram = RenderSystem.isOnRenderThread()
-                    ? RenderSystem.getShader()
-                    : null;
+            previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         }
         try {
             try (ProfileScope ignored =
@@ -260,11 +264,7 @@ final class AtmosphericSkyGenerator {
                     GL21.GL_PIXEL_PACK_BUFFER,
                     0);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            if (previousProgram != null) {
-                previousProgram.apply();
-            } else {
-                GL20.glUseProgram(0);
-            }
+            GL20.glUseProgram(previousProgram);
         }
     }
 
@@ -277,7 +277,12 @@ final class AtmosphericSkyGenerator {
         }
         int previousTexture =
                 GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int previousPackBuffer =
+                GL11.glGetInteger(GL21.GL_PIXEL_PACK_BUFFER_BINDING);
+        beginTightPack();
         try {
+            // A bound pack buffer would turn the destination address into a buffer offset.
+            GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0);
             destination.clear();
             destination.limit(requiredBytes);
             GL11.glBindTexture(
@@ -291,9 +296,30 @@ final class AtmosphericSkyGenerator {
                     destination);
             destination.position(0);
         } finally {
+            GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, previousPackBuffer);
+            endTightPack();
             GL11.glBindTexture(
                     GL11.GL_TEXTURE_2D,
                     previousTexture);
+        }
+    }
+
+    /**
+     * Since 26.x vanilla's GL backend sets {@code GL_PACK_ROW_LENGTH} for its own texture
+     * readbacks and leaves it set, so a readback here would use vanilla's row length, overrun
+     * the readback buffer and fail with an invalid PBO operation. The pack state is set to
+     * tightly packed rows for the readback and restored after it.
+     */
+    private void beginTightPack() {
+        for (int i = 0; i < PACK_PARAMETERS.length; i++) {
+            savedPack[i] = GL11.glGetInteger(PACK_PARAMETERS[i]);
+            GL11.glPixelStorei(PACK_PARAMETERS[i], TIGHT_PACK[i]);
+        }
+    }
+
+    private void endTightPack() {
+        for (int i = 0; i < PACK_PARAMETERS.length; i++) {
+            GL11.glPixelStorei(PACK_PARAMETERS[i], savedPack[i]);
         }
     }
 
@@ -414,12 +440,17 @@ final class AtmosphericSkyGenerator {
         GL11.glBindTexture(
                 GL11.GL_TEXTURE_2D,
                 finalSkyTexture);
-        GL11.glGetTexImage(
-                GL11.GL_TEXTURE_2D,
-                0,
-                GL11.GL_RGBA,
-                GL30.GL_HALF_FLOAT,
-                0L);
+        beginTightPack();
+        try {
+            GL11.glGetTexImage(
+                    GL11.GL_TEXTURE_2D,
+                    0,
+                    GL11.GL_RGBA,
+                    GL30.GL_HALF_FLOAT,
+                    0L);
+        } finally {
+            endTightPack();
+        }
         readbackFences[readbackWriteIndex] =
                 GL32.glFenceSync(
                         GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,

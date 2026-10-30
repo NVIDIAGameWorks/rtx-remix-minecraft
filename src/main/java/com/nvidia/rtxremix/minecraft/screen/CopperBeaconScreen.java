@@ -15,15 +15,17 @@ import java.util.Map;
 import java.util.function.DoubleUnaryOperator;
 import java.util.function.Function;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 
 /** Minecraft-style per-block controls for the Copper Beacon. */
@@ -38,16 +40,14 @@ public final class CopperBeaconScreen extends AbstractContainerScreen<CopperBeac
     private static final int RANGE_SLIDER_GAP = 6;
     private static final int RANGE_SLIDER_WIDTH =
             (PANEL_WIDTH - RANGE_SLIDER_GAP) / 2;
-    private static final ResourceLocation SLOT_TEXTURE = ResourceLocation.withDefaultNamespace("container/slot");
+    private static final Identifier SLOT_TEXTURE = Identifier.withDefaultNamespace("container/slot");
 
     private final Map<CopperBeaconUpdatePayload.Field, Float> pending =
             new EnumMap<>(CopperBeaconUpdatePayload.Field.class);
 
     public CopperBeaconScreen(
             CopperBeaconScreenHandler handler, Inventory inventory, Component title) {
-        super(handler, inventory, title);
-        imageWidth = CopperBeaconScreenHandler.WIDTH;
-        imageHeight = BACKGROUND_HEIGHT;
+        super(handler, inventory, title, CopperBeaconScreenHandler.WIDTH, BACKGROUND_HEIGHT);
         inventoryLabelX = CopperBeaconScreenHandler.PLAYER_INVENTORY_X;
         inventoryLabelY = CopperBeaconScreenHandler.PLAYER_INVENTORY_Y - 12;
         titleLabelX = 8;
@@ -152,9 +152,8 @@ public final class CopperBeaconScreen extends AbstractContainerScreen<CopperBeac
                         : CopperBeaconUpdatePayload.Field.PITCH_POSITION);
 
         addRenderableWidget(CycleButton
-                .<CopperBeaconAnimationMode>builder(CopperBeaconScreen::modeText)
+                .builder(CopperBeaconScreen::modeText, state.mode())
                 .withValues(CopperBeaconAnimationMode.values())
-                .withInitialValue(state.mode())
                 .create(
                         panelX,
                         panelY + 29,
@@ -290,17 +289,12 @@ public final class CopperBeaconScreen extends AbstractContainerScreen<CopperBeac
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        renderTooltip(context, mouseX, mouseY);
-    }
-
-    @Override
-    protected void renderBg(
-            GuiGraphics context, float delta, int mouseX, int mouseY) {
-        context.renderOutline(leftPos, topPos, imageWidth, imageHeight, 0xFF8B8B8B);
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        context.outline(leftPos, topPos, imageWidth, imageHeight, 0xFF8B8B8B);
         for (var slot : menu.slots) {
             context.blitSprite(
+                    RenderPipelines.GUI_TEXTURED,
                     SLOT_TEXTURE,
                     leftPos + slot.x - 1,
                     topPos + slot.y - 1,
@@ -310,36 +304,36 @@ public final class CopperBeaconScreen extends AbstractContainerScreen<CopperBeac
     }
 
     @Override
-    protected void renderLabels(GuiGraphics context, int mouseX, int mouseY) {
-        context.drawString(
+    protected void extractLabels(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        context.text(
                 font,
                 title,
                 titleLabelX,
                 titleLabelY,
                 0xFFE0E0E0,
                 false);
-        context.drawString(
+        context.text(
                 font,
                 playerInventoryTitle,
                 inventoryLabelX,
                 inventoryLabelY,
                 0xFFE0E0E0,
                 false);
-        context.drawString(
+        context.text(
                 font,
                 Component.translatable("container.rtx-remix-renderer.copper_beacon.yaw"),
                 OUTER_MARGIN,
                 55,
                 0xFFE0E0E0,
                 false);
-        context.drawString(
+        context.text(
                 font,
                 Component.translatable("container.rtx-remix-renderer.copper_beacon.pitch"),
                 OUTER_MARGIN + PANEL_WIDTH + PANEL_GAP,
                 55,
                 0xFFE0E0E0,
                 false);
-        context.drawString(
+        context.text(
                 font,
                 Component.translatable("container.rtx-remix-renderer.copper_beacon.dye"),
                 OUTER_MARGIN,
@@ -460,10 +454,9 @@ public final class CopperBeaconScreen extends AbstractContainerScreen<CopperBeac
         }
 
         @Override
-        public boolean mouseReleased(double mouseX, double mouseY, int button) {
-            boolean released = super.mouseReleased(mouseX, mouseY, button);
+        public void onRelease(MouseButtonEvent event) {
+            super.onRelease(event);
             release.run();
-            return released;
         }
     }
 }

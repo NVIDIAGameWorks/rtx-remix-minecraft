@@ -11,7 +11,7 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -24,8 +24,8 @@ class AtlasAnimationForwarderTest {
 
     @Test
     void addPatchIgnoresSpritesOutsideTheBlockAtlasAllowList() throws Exception {
-        ResourceLocation blockSprite = ResourceLocation.fromNamespaceAndPath("minecraft", "block/lava_still");
-        ResourceLocation guiSprite = ResourceLocation.fromNamespaceAndPath("minecraft", "gui/sprites/icon");
+        Identifier blockSprite = Identifier.fromNamespaceAndPath("minecraft", "block/lava_still");
+        Identifier guiSprite = Identifier.fromNamespaceAndPath("minecraft", "gui/sprites/icon");
 
         AtlasAnimationForwarder.init(Map.of(), Set.of(blockSprite));
         AtlasAnimationForwarder.beginAtlasUpload(BlockTextureManager.BLOCK_ATLAS_ID);
@@ -43,8 +43,8 @@ class AtlasAnimationForwarderTest {
 
     @Test
     void addPatchIgnoresAllowedSpriteIdsFromOtherAtlases() throws Exception {
-        ResourceLocation blockSprite = ResourceLocation.fromNamespaceAndPath("minecraft", "block/lava_still");
-        ResourceLocation particleAtlas = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/particles.png");
+        Identifier blockSprite = Identifier.fromNamespaceAndPath("minecraft", "block/lava_still");
+        Identifier particleAtlas = Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/particles.png");
 
         AtlasAnimationForwarder.init(Map.of(), Set.of(blockSprite));
         AtlasAnimationForwarder.beginAtlasUpload(particleAtlas);

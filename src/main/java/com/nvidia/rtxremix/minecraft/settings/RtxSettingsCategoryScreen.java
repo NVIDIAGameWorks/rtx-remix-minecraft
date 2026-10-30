@@ -58,7 +58,7 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
                                 this.font),
                         Button.builder(
                                         Component.translatable("rtxremix.settings.configure"),
-                                        button -> this.minecraft.setScreen(
+                                        button -> this.minecraft.gui.setScreen(
                                                 new RtxBlockLightsScreen(
                                                         this, settings, saveSettings)))
                                 .width(150)
@@ -98,7 +98,7 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
     }
 
     private void confirmReset() {
-        this.minecraft.setScreen(new ConfirmScreen(confirmed -> {
+        this.minecraft.gui.setScreen(new ConfirmScreen(confirmed -> {
             if (confirmed) {
                 resetCurrentScreen();
                 if (saveSettings != null) {
@@ -107,11 +107,11 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
                 if (commitTerrainEmission()) {
                     RtxRemixMod.rebuildTerrainForMaterialSettings();
                 }
-                this.minecraft.setScreen(
+                this.minecraft.gui.setScreen(
                         new RtxSettingsCategoryScreen(
                                 this.lastScreen, settings, saveSettings, category));
             } else {
-                this.minecraft.setScreen(this);
+                this.minecraft.gui.setScreen(this);
             }
         }, Component.translatable("rtxremix.settings.reset.confirm.title",
                         Component.translatable(category.labelKey())),
@@ -161,6 +161,6 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
         if (commitTerrainEmission()) {
             RtxRemixMod.rebuildTerrainForMaterialSettings();
         }
-        this.minecraft.setScreen(this.lastScreen);
+        this.minecraft.gui.setScreen(this.lastScreen);
     }
 }

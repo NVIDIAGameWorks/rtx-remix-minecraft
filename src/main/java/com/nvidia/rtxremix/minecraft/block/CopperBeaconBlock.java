@@ -4,19 +4,17 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import com.mojang.serialization.MapCodec;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ScheduledTickAccess;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.DirectionalBlock;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.RenderShape;
@@ -28,8 +26,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
-import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.redstone.Orientation;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -49,16 +49,14 @@ public class CopperBeaconBlock extends SpotLightBlock implements EntityBlock, Si
 
     /** Registry path, also used for the block item, models, and translation key. */
     public static final String ID = "copper_beacon";
-    public static final DirectionProperty MOUNT = DirectionProperty.create("mount");
+    public static final EnumProperty<Direction> MOUNT = EnumProperty.create("mount", Direction.class);
     public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
     public static final BooleanProperty WATERLOGGED = BlockStateProperties.WATERLOGGED;
 
     public static final LightEntry.ColorOverride BEAM_COLOR =
             LightEntry.ColorOverride.of(1.0f, 0.88f, 0.70f);
 
-    public static final MapCodec<CopperBeaconBlock> CODEC = simpleCodec(CopperBeaconBlock::new);
-
-    public static final CopperBeaconBlock INSTANCE = new CopperBeaconBlock(beaconSettings());
+    public static final CopperBeaconBlock INSTANCE = new CopperBeaconBlock(beaconSettings(ID));
 
     public CopperBeaconBlock(BlockBehaviour.Properties settings) {
         super(settings, BEAM_COLOR);
@@ -66,11 +64,6 @@ public class CopperBeaconBlock extends SpotLightBlock implements EntityBlock, Si
                 .setValue(MOUNT, Direction.UP)
                 .setValue(POWERED, false)
                 .setValue(WATERLOGGED, false));
-    }
-
-    @Override
-    protected MapCodec<? extends DirectionalBlock> codec() {
-        return CODEC;
     }
 
     @Override
@@ -122,7 +115,7 @@ public class CopperBeaconBlock extends SpotLightBlock implements EntityBlock, Si
             BlockPos pos,
             Player player,
             BlockHitResult hit) {
-        if (world.isClientSide) {
+        if (world.isClientSide()) {
             return InteractionResult.SUCCESS;
         }
         if (world.getBlockEntity(pos) instanceof CopperBeaconBlockEntity beacon) {
@@ -138,9 +131,9 @@ public class CopperBeaconBlock extends SpotLightBlock implements EntityBlock, Si
             Level world,
             BlockPos pos,
             Block sourceBlock,
-            BlockPos sourcePos,
-            boolean notify) {
-        if (world.isClientSide) {
+            @Nullable Orientation orientation,
+            boolean movedByPiston) {
+        if (world.isClientSide()) {
             return;
         }
         boolean powered = world.hasNeighborSignal(pos);
@@ -154,33 +147,23 @@ public class CopperBeaconBlock extends SpotLightBlock implements EntityBlock, Si
         world.setBlock(pos, state.setValue(POWERED, powered), Block.UPDATE_CLIENTS);
     }
 
-    @Override
-    protected void onRemove(
-            BlockState state,
-            Level world,
-            BlockPos pos,
-            BlockState newState,
-            boolean moved) {
-        if (!state.is(newState.getBlock())) {
-            if (world.getBlockEntity(pos) instanceof CopperBeaconBlockEntity beacon) {
-                Containers.dropContents(world, pos, beacon);
-            }
-        }
-        super.onRemove(state, world, pos, newState, moved);
-    }
+    // The dye slot drops on removal through BlockEntity.preRemoveSideEffects,
+    // which empties any block entity that is a Container.
 
     @Override
     protected BlockState updateShape(
             BlockState state,
-            Direction direction,
-            BlockState neighborState,
-            LevelAccessor world,
+            LevelReader world,
+            ScheduledTickAccess ticks,
             BlockPos pos,
-            BlockPos neighborPos) {
+            Direction direction,
+            BlockPos neighborPos,
+            BlockState neighborState,
+            RandomSource random) {
         if (state.getValue(WATERLOGGED)) {
-            world.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(world));
+            ticks.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(world));
         }
-        return super.updateShape(state, direction, neighborState, world, pos, neighborPos);
+        return super.updateShape(state, world, ticks, pos, direction, neighborPos, neighborState, random);
     }
 
     @Override

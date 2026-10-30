@@ -5,15 +5,15 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RemixEntitySubmitterAtlasSurfaceModeTest {
 
-    private static final ResourceLocation ENTITY_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/creeper/creeper.png");
+    private static final Identifier ENTITY_TEXTURE =
+            Identifier.fromNamespaceAndPath("minecraft", "textures/entity/creeper/creeper.png");
 
     @Test
     void aHeldTranslucentBlockKeepsItsTranslucentSurface() {

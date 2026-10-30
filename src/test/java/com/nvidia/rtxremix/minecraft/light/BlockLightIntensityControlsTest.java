@@ -6,7 +6,7 @@ package com.nvidia.rtxremix.minecraft.light;
 
 import java.util.Set;
 import java.util.stream.Collectors;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,7 +16,7 @@ class BlockLightIntensityControlsTest {
 
     @Test
     void catalogRejectsMissingBuiltInRules() {
-        Set<ResourceLocation> controlledRules = BlockLightIntensityControls.controls().stream()
+        Set<Identifier> controlledRules = BlockLightIntensityControls.controls().stream()
                 .map(BlockLightIntensityControls.Control::ruleId)
                 .collect(Collectors.toSet());
 
@@ -30,8 +30,8 @@ class BlockLightIntensityControlsTest {
     void configuredMultiplierScalesControlledRulesOnly() {
         BlockLightIntensityControls.Control control =
                 BlockLightIntensityControls.controls().getFirst();
-        ResourceLocation externalRule =
-                ResourceLocation.fromNamespaceAndPath("example", "rtx_remix/block_lights/custom.json");
+        Identifier externalRule =
+                Identifier.fromNamespaceAndPath("example", "rtx_remix/block_lights/custom.json");
         try {
             assertEquals(4.0f, BlockLightIntensityControls.apply(control.ruleId(), 4.0f));
 

@@ -10,14 +10,14 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /** One validated control edit from an open Copper Beacon screen. */
 public record CopperBeaconUpdatePayload(int syncId, Field field, float value)
         implements CustomPacketPayload {
 
     public static final Type<CopperBeaconUpdatePayload> ID = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, "copper_beacon_update"));
+            Identifier.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, "copper_beacon_update"));
     public static final StreamCodec<RegistryFriendlyByteBuf, CopperBeaconUpdatePayload> PACKET_CODEC =
             new StreamCodec<>() {
                 @Override
@@ -38,7 +38,7 @@ public record CopperBeaconUpdatePayload(int syncId, Field field, float value)
             };
 
     public static void register() {
-        PayloadTypeRegistry.playC2S().register(ID, PACKET_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ID, PACKET_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(ID, (payload, context) ->
                 context.server().execute(() -> {
                     if (context.player().containerMenu

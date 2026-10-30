@@ -1,32 +1,12 @@
-accessWidener	v2	named
-accessible	method	net/minecraft/client/renderer/GameRenderer	getFov	(Lnet/minecraft/client/Camera;FZ)D
+accessWidener	v2	official
 accessible	class	net/minecraft/client/OptionInstance$SliderableValueSet
 accessible	class	net/minecraft/client/model/geom/ModelPart$Polygon
 accessible	class	net/minecraft/client/model/geom/ModelPart$Vertex
 accessible	field	net/minecraft/client/model/geom/ModelPart$Cube	polygons	[Lnet/minecraft/client/model/geom/ModelPart$Polygon;
 accessible	field	net/minecraft/client/model/geom/ModelPart$Polygon	vertices	[Lnet/minecraft/client/model/geom/ModelPart$Vertex;
-accessible	field	net/minecraft/client/model/geom/ModelPart$Polygon	normal	Lorg/joml/Vector3f;
-accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	pos	Lorg/joml/Vector3f;
 accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	u	F
 accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	v	F
 accessible	field	net/minecraft/client/renderer/SpriteCoordinateExpander	delegate	Lcom/mojang/blaze3d/vertex/VertexConsumer;
-accessible	field	net/minecraft/client/renderer/SpriteCoordinateExpander	sprite	Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;
-accessible	method	net/minecraft/client/renderer/RenderType$CompositeRenderType	state	()Lnet/minecraft/client/renderer/RenderType$CompositeState;
-accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	textureState	Lnet/minecraft/client/renderer/RenderStateShard$EmptyTextureStateShard;
-accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	shaderState	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	transparencyState	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
-accessible	method	net/minecraft/client/renderer/RenderStateShard$TextureStateShard	cutoutTexture	()Ljava/util/Optional;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	ADDITIVE_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	TRANSLUCENT_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	CRUMBLING_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_BEACON_BEAM_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_ENTITY_SOLID_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_EYES_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_TEXT_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_TEXT_INTENSITY_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
-accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	depthTestState	Lnet/minecraft/client/renderer/RenderStateShard$DepthTestStateShard;
-accessible	field	net/minecraft/client/renderer/RenderStateShard	NO_DEPTH_TEST	Lnet/minecraft/client/renderer/RenderStateShard$DepthTestStateShard;
 accessible	class	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture
 accessible	class	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo
 accessible	field	net/minecraft/client/renderer/texture/SpriteContents	animatedTexture	Lnet/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture;
@@ -35,7 +15,6 @@ accessible	field	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo	
 accessible	field	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo	time	I
 accessible	class	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap
 accessible	class	net/minecraft/client/renderer/SectionOcclusionGraph$GraphStorage
-accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	<init>	(Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;Lnet/minecraft/core/Direction;I)V
 accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	setDirections	(BLnet/minecraft/core/Direction;)V
 accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasDirection	(Lnet/minecraft/core/Direction;)Z
 accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	addSourceDirection	(Lnet/minecraft/core/Direction;)V
@@ -45,7 +24,6 @@ accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	sectio
 accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	directions	B
 accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	step	I
 accessible	method	net/minecraft/client/renderer/ViewArea	getRenderSectionAt	(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
-accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap	<init>	(I)V
 accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap	nodes	[Lnet/minecraft/client/renderer/SectionOcclusionGraph$Node;
 accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	sourceDirections	B
 mutable	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	step	I
@@ -53,11 +31,16 @@ accessible	field	net/minecraft/world/level/lighting/DataLayerStorageMap	map	Lit/
 accessible	field	net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap	topSections	Lit/unimi/dsi/fastutil/longs/Long2IntOpenHashMap;
 accessible	field	net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap	currentLowestY	I
 accessible	class	net/minecraft/world/level/lighting/BlockLightSectionStorage$BlockDataLayerStorageMap
-accessible	class	net/minecraft/server/level/ServerChunkCache$ChunkAndHolder
-accessible	method	net/minecraft/server/level/ServerChunkCache$ChunkAndHolder	<init>	(Lnet/minecraft/world/level/chunk/LevelChunk;Lnet/minecraft/server/level/ChunkHolder;)V
-accessible	field	net/minecraft/server/level/ServerChunkCache$ChunkAndHolder	chunk	Lnet/minecraft/world/level/chunk/LevelChunk;
-accessible	class	net/minecraft/client/renderer/chunk/RenderChunk
 accessible	class	net/minecraft/world/level/chunk/PalettedContainer$Data
 accessible	field	net/minecraft/world/level/chunk/PalettedContainer	data	Lnet/minecraft/world/level/chunk/PalettedContainer$Data;
-accessible	class	net/minecraft/client/renderer/chunk/SectionRenderDispatcher$SectionTaskResult
-accessible	class	net/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection$RebuildTask
+accessible	method	com/mojang/blaze3d/platform/NativeImage	getPixelABGR	(II)I
+accessible	field	net/minecraft/client/renderer/rendertype/RenderType	state	Lnet/minecraft/client/renderer/rendertype/RenderSetup;
+accessible	field	net/minecraft/client/renderer/rendertype/RenderSetup	textures	Ljava/util/Map;
+accessible	class	net/minecraft/client/renderer/rendertype/RenderSetup$TextureBinding
+accessible	method	net/minecraft/client/renderer/rendertype/RenderSetup$TextureBinding	location	()Lnet/minecraft/resources/Identifier;
+accessible	field	net/minecraft/client/renderer/texture/TextureAtlasSprite	padding	I
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture	frameRowSize	I
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture	interpolateFrames	Z
+accessible	class	net/minecraft/client/gui/font/providers/BitmapProvider$Glyph
+accessible	class	net/minecraft/client/gui/font/providers/BitmapProvider$ImageDataHolder
+accessible	field	net/minecraft/client/gui/font/providers/BitmapProvider$ImageDataHolder	image	Lcom/mojang/blaze3d/platform/NativeImage;

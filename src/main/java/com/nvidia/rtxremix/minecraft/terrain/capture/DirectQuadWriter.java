@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * Writes block quad data directly into per-bucket interleaved
@@ -195,7 +195,7 @@ public final class DirectQuadWriter {
     private final float[] stageNy  = new float[MAX_BLOCK_QUADS];
     private final float[] stageNz  = new float[MAX_BLOCK_QUADS];
     private final int[]   stageColor = new int[MAX_BLOCK_QUADS];
-    private final ResourceLocation[] stageSpriteId = new ResourceLocation[MAX_BLOCK_QUADS];
+    private final Identifier[] stageSpriteId = new Identifier[MAX_BLOCK_QUADS];
     private final float[] stageSU0 = new float[MAX_BLOCK_QUADS];
     private final float[] stageSV0 = new float[MAX_BLOCK_QUADS];
     private final float[] stageSU1 = new float[MAX_BLOCK_QUADS];
@@ -249,7 +249,7 @@ public final class DirectQuadWriter {
      */
     public void stageQuad(float[] positions, float[] uvs,
                            float nx, float ny, float nz,
-                           int color, ResourceLocation spriteId,
+                           int color, Identifier spriteId,
                            float su0, float sv0, float su1, float sv1,
                            String renderLayer) {
         if (stageCount >= MAX_BLOCK_QUADS) return;
@@ -271,7 +271,7 @@ public final class DirectQuadWriter {
      */
     public void writeFluidQuad(float[] positions, float[] uvs,
                                 float nx, float ny, float nz,
-                                int color, ResourceLocation spriteId,
+                                int color, Identifier spriteId,
                                 float su0, float sv0, float su1, float sv1,
                                 String renderLayer, BlockTextureManager tex) {
 
@@ -502,7 +502,7 @@ public final class DirectQuadWriter {
         boolean hasCandidate = false;
         boolean hasBase = false;
         for (int i = 0; i < stageCount; i++) {
-            ResourceLocation spriteId = stageSpriteId[i];
+            Identifier spriteId = stageSpriteId[i];
             BlockTextureManager.SpriteEntry sprite = spriteId != null && tex != null
                     ? tex.getSpriteById(spriteId)
                     : null;

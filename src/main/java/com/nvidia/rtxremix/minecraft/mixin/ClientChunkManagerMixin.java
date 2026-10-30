@@ -14,12 +14,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.core.SectionPos;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LightLayer;
@@ -70,9 +67,7 @@ public abstract class ClientChunkManagerMixin {
     private void rtxremix$invalidateNeighboursOnInPlaceReload(
             int x,
             int z,
-            FriendlyByteBuf buf,
-            CompoundTag nbt,
-            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> consumer,
+            ClientboundLevelChunkPacketData chunkData,
             CallbackInfoReturnable<LevelChunk> cir) {
         if (!RtxRemixMod.isRtxEnabled()) {
             return;
@@ -98,9 +93,7 @@ public abstract class ClientChunkManagerMixin {
     private void rtxremix$beginApplyTiming(
             int x,
             int z,
-            FriendlyByteBuf buf,
-            CompoundTag nbt,
-            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> consumer,
+            ClientboundLevelChunkPacketData chunkData,
             CallbackInfoReturnable<LevelChunk> cir) {
         if (LocalChunkBatchPacing.ENABLED) {
             rtxremix$applyStartNanos = System.nanoTime();
@@ -111,9 +104,7 @@ public abstract class ClientChunkManagerMixin {
     private void rtxremix$endApplyTiming(
             int x,
             int z,
-            FriendlyByteBuf buf,
-            CompoundTag nbt,
-            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> consumer,
+            ClientboundLevelChunkPacketData chunkData,
             CallbackInfoReturnable<LevelChunk> cir) {
         if (LocalChunkBatchPacing.ENABLED) {
             LocalChunkBatchPacing.recordApplyNanos(System.nanoTime() - rtxremix$applyStartNanos);
@@ -137,7 +128,7 @@ public abstract class ClientChunkManagerMixin {
             return;
         }
         ClientChunkCache self = (ClientChunkCache) (Object) this;
-        rtxremix$unloadIsReal = self.getChunk(pos.x, pos.z, ChunkStatus.FULL, false) != null;
+        rtxremix$unloadIsReal = self.getChunk(pos.x(), pos.z(), ChunkStatus.FULL, false) != null;
         rtxremix$unloadStartNanos = System.nanoTime();
     }
 

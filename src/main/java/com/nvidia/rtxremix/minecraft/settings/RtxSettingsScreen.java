@@ -46,7 +46,7 @@ public final class RtxSettingsScreen extends Screen {
             }
             categories.addChild(Button.builder(
                             Component.translatable(category.labelKey()),
-                            button -> this.minecraft.setScreen(new RtxSettingsCategoryScreen(
+                            button -> this.minecraft.gui.setScreen(new RtxSettingsCategoryScreen(
                                     this, settings, saveSettings, category)))
                     .width(204)
                     .build());
@@ -74,7 +74,7 @@ public final class RtxSettingsScreen extends Screen {
                         Component.translatable("rtxremix.settings.openRemixMenu"),
                         // Queued so the click that pressed this button finishes
                         // dispatching before opening releases that same press.
-                        button -> this.minecraft.tell(() -> RtxRemixMod.openRemixMenu(
+                        button -> this.minecraft.execute(() -> RtxRemixMod.openRemixMenu(
                                 RemixInputGate.Menu.GRAPHICS_SETTINGS)))
                 .tooltip(Tooltip.create(Component.translatable("rtxremix.settings.openRemixMenu.tip")))
                 .width(204)
@@ -98,7 +98,7 @@ public final class RtxSettingsScreen extends Screen {
      * another dark layer over a duplicated set of widgets.
      */
     private void confirmReset() {
-        this.minecraft.setScreen(new ConfirmScreen(confirmed -> {
+        this.minecraft.gui.setScreen(new ConfirmScreen(confirmed -> {
             if (confirmed) {
                 boolean rebuildBlockLights =
                         settings.hasOverrides(SettingGroup.BLOCK_LIGHTS);
@@ -115,7 +115,7 @@ public final class RtxSettingsScreen extends Screen {
                     RtxRemixMod.rebuildLoadedTerrain();
                 }
             }
-            this.minecraft.setScreen(new RtxSettingsScreen(parent, settings, saveSettings));
+            this.minecraft.gui.setScreen(new RtxSettingsScreen(parent, settings, saveSettings));
         }, Component.translatable("rtxremix.settings.resetAll.confirm.title"),
                 Component.translatable("rtxremix.settings.resetAll.confirm.message")));
     }
@@ -125,6 +125,6 @@ public final class RtxSettingsScreen extends Screen {
         if (saveSettings != null) {
             saveSettings.run();
         }
-        this.minecraft.setScreen(this.parent);
+        this.minecraft.gui.setScreen(this.parent);
     }
 }

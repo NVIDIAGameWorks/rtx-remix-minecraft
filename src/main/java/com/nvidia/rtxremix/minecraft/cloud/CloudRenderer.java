@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.cloud;
 
+import com.nvidia.rtxremix.minecraft.sky.SkyAttributes;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
@@ -33,7 +34,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -48,8 +50,8 @@ import net.minecraft.world.phys.Vec3;
  * instead of publishing a mesh into the wrong scene.
  */
 public final class CloudRenderer {
-    private static final ResourceLocation VANILLA_CLOUD_TEXTURE =
-            ResourceLocation.withDefaultNamespace("textures/environment/clouds.png");
+    private static final Identifier VANILLA_CLOUD_TEXTURE =
+            Identifier.withDefaultNamespace("textures/environment/clouds.png");
     static final int PALETTE_SIZE = 32;
     static final long PALETTE_SEED = 0x434C_4F55_4450_5546L;
     private static final long MAINTENANCE_INTERVAL_TICKS = 40L;
@@ -126,8 +128,8 @@ public final class CloudRenderer {
         }
 
         Minecraft client = Minecraft.getInstance();
-        float cloudHeight = world.effects().getCloudHeight();
-        if (client.options.getCloudsType() == CloudStatus.OFF
+        float cloudHeight = SkyAttributes.cloudHeight(tickDelta);
+        if (client.options.cloudStatus().get() == CloudStatus.OFF
                 || Float.isNaN(cloudHeight)) {
             releaseResources();
             return;
@@ -135,7 +137,7 @@ public final class CloudRenderer {
         if (!shouldSuppressVanillaClouds()) {
             return;
         }
-        updateCloudColor(world.getCloudColor(tickDelta));
+        updateCloudColor(SkyAttributes.cloudColor(tickDelta));
 
         if (!proceduralClouds) {
             completedPaletteMeshes.clear();
@@ -391,7 +393,7 @@ public final class CloudRenderer {
                 for (int y = 0; y < vanillaTextureHeight; y++) {
                     for (int x = 0; x < vanillaTextureWidth; x++) {
                         vanillaOccupancy[y * vanillaTextureWidth + x] =
-                                ((image.getPixelRGBA(x, y) >>> 24) & 0xff) >= 128;
+                                ((image.getPixelABGR(x, y) >>> 24) & 0xff) >= 128;
                     }
                 }
             }
@@ -515,8 +517,8 @@ public final class CloudRenderer {
         materialColor = cloudColor;
     }
 
-    private void updateCloudColor(Vec3 color) {
-        int packedColor = packCloudColor(color.x, color.y, color.z);
+    private void updateCloudColor(int color) {
+        int packedColor = packCloudColor(ARGB.redFloat(color), ARGB.greenFloat(color), ARGB.blueFloat(color));
         cloudColor = packedColor;
         if (material == null || material.isDeleted() || materialColor == packedColor) {
             return;

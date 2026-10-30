@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * Pins the identity semantics the rigid mesh keys depend on. Every case here is
@@ -22,16 +22,16 @@ import net.minecraft.resources.ResourceLocation;
  */
 class RigidMeshKeyTest {
 
-    private static final ResourceLocation TEX_A = ResourceLocation.fromNamespaceAndPath("minecraft", "a");
-    private static final ResourceLocation TEX_B = ResourceLocation.fromNamespaceAndPath("minecraft", "b");
+    private static final Identifier TEX_A = Identifier.fromNamespaceAndPath("minecraft", "a");
+    private static final Identifier TEX_B = Identifier.fromNamespaceAndPath("minecraft", "b");
 
     private static RemixEntitySubmitter.CuboidMeshKey key(
-            ResourceLocation tex, int shellLayer, ModelPart.Polygon[] sides) {
+            Identifier tex, int shellLayer, ModelPart.Polygon[] sides) {
         return key(tex, shellLayer, sides, null);
     }
 
     private static RemixEntitySubmitter.CuboidMeshKey key(
-            ResourceLocation tex, int shellLayer, ModelPart.Polygon[] sides, TextureAtlasSprite sprite) {
+            Identifier tex, int shellLayer, ModelPart.Polygon[] sides, TextureAtlasSprite sprite) {
         return new RemixEntitySubmitter.CuboidMeshKey(
                 tex, RenderLayerUtils.SurfaceMode.OPAQUE, shellLayer, sides, sprite);
     }

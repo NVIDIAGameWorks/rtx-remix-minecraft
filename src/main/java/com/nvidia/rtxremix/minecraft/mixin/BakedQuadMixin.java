@@ -8,7 +8,7 @@ import com.nvidia.rtxremix.minecraft.entity.BakedQuadStaticGeometryCache;
 import org.spongepowered.asm.mixin.Mixin;
 
 import java.util.Arrays;
-import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.resources.model.geometry.BakedQuad;
 
 /** Stores the bake-time geometry digest used by Remix entity mesh pooling. */
 @Mixin(BakedQuad.class)

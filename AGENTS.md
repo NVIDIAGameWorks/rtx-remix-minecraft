@@ -4,7 +4,7 @@ Context for AI coding agents working in this repository.
 
 ## Project Overview
 
-`rtx-remix-minecraft` is a Fabric mod that renders Minecraft 1.21.1 through
+`rtx-remix-minecraft` is a Fabric mod that renders Minecraft 26.3 through
 NVIDIA RTX Remix. It captures terrain, entities, particles, sky, and clouds from
 the client and submits them to the Remix runtime as a path-traced scene. The
 Java facade and JNI bridge are tracked under `rtxremix-java/`; the native
@@ -27,7 +27,7 @@ subdirectory may carry its own `AGENTS.md`; read the nearest one as well.
 
 ## Build, Run, Package, Test
 
-Java 21, Windows, and the C++ toolchain are required. Gradle fetches a missing
+Java 25, Windows, and the C++ toolchain are required. Gradle fetches a missing
 Remix runtime automatically. [Getting Started](docs/GETTING_STARTED.md) covers local overrides.
 
 ```powershell
@@ -369,7 +369,7 @@ The wrapper's source of truth, in order, is:
 The root Gradle build compiles the Java sources directly and builds
 `remixbridge.dll` into `build/native/{win64|arm64}/`. There is no separate
 wrapper Java build or example launcher. The native build needs Visual Studio
-C++ tools and `JAVA_HOME` pointing to a 64-bit JDK 21. It uses the
+C++ tools and `JAVA_HOME` pointing to a 64-bit JDK 25. It uses the
 copied header unless `REMIX_INCLUDE` explicitly selects another directory.
 The supported targets are Windows x64 and ARM64; agent shells may be POSIX
 even though the Gradle wrapper and native compiler entry points are batch scripts.

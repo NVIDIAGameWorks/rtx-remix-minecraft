@@ -12,7 +12,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -131,7 +131,7 @@ class ChunkManagerLightBudgetTest {
         for (int i = 0; i < lights.length; i++) {
             entry.putLight(
                     new BlockLightKey(new BlockPos(i, 0, 0),
-                            ResourceLocation.fromNamespaceAndPath("test", "light_" + i), 0),
+                            Identifier.fromNamespaceAndPath("test", "light_" + i), 0),
                     new TerrainLight(lights[i]));
         }
     }
