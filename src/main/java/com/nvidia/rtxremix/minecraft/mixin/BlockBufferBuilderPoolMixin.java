@@ -5,7 +5,7 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.terrain.capture.SectionBuildConcurrency;
-import net.minecraft.client.render.chunk.BlockBufferBuilderPool;
+import net.minecraft.client.renderer.SectionBufferBuilderPool;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
  * sections that build concurrently. Vanilla passes the logical CPU count;
  * {@link SectionBuildConcurrency} decides how many of those to allocate.
  */
-@Mixin(BlockBufferBuilderPool.class)
+@Mixin(SectionBufferBuilderPool.class)
 public abstract class BlockBufferBuilderPoolMixin {
 
     @ModifyVariable(method = "allocate", at = @At("HEAD"), argsOnly = true)

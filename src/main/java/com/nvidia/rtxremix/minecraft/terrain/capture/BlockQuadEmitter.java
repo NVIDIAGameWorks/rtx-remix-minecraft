@@ -12,33 +12,32 @@ import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
 import net.fabricmc.fabric.api.renderer.v1.model.FabricBakedModel;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockRenderType;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColors;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.block.BlockRenderManager;
-import net.minecraft.client.render.model.BakedModel;
-import net.minecraft.client.render.model.BakedQuad;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.math.random.LocalRandom;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
-import net.minecraft.world.BlockRenderView;
-import net.minecraft.world.BlockView;
-
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -77,11 +76,11 @@ public final class BlockQuadEmitter {
             ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     private final RemixRenderContext renderContext = new RemixRenderContext();
-    private final LocalRandom random = new LocalRandom(42);
-    private final BlockPos.Mutable mutablePos = new BlockPos.Mutable();
-    private final BlockPos.Mutable neighborPos = new BlockPos.Mutable();
-    private final BlockPos.Mutable fluidPos = new BlockPos.Mutable();
-    private final BlockPos.Mutable fluidCheckPos = new BlockPos.Mutable();
+    private final SingleThreadedRandomSource random = new SingleThreadedRandomSource(42);
+    private final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
+    private final BlockPos.MutableBlockPos neighborPos = new BlockPos.MutableBlockPos();
+    private final BlockPos.MutableBlockPos fluidPos = new BlockPos.MutableBlockPos();
+    private final BlockPos.MutableBlockPos fluidCheckPos = new BlockPos.MutableBlockPos();
     private final DirectQuadWriter writer = new DirectQuadWriter();
     private final ModelSampling modelSampling = new ModelSampling();
     private final List<LightEntry> lights = new ArrayList<>();
@@ -99,7 +98,7 @@ public final class BlockQuadEmitter {
     private static final int WATER_TOP_CACHE_CELL_COUNT =
             WATER_TOP_CACHE_WIDTH * SECTION_SIZE * WATER_TOP_CACHE_WIDTH;
     // BlockState render type is immutable; cache by raw state id to avoid a per-block virtual call.
-    private static volatile BlockRenderType[] renderTypeByStateId = new BlockRenderType[0];
+    private static volatile RenderShape[] renderTypeByStateId = new RenderShape[0];
 
     private final float[] tempPositions = new float[12];
     private final float[] tempUvs = new float[8];
@@ -113,7 +112,7 @@ public final class BlockQuadEmitter {
     private final FluidState[] fluidStateCache = new FluidState[LOCAL_BLOCK_COUNT];
 
     /**
-     * Results of {@link Block#shouldDrawSide}, keyed like vanilla's own cache by (state,
+     * Results of {@link Block#shouldRenderFace}, keyed like vanilla's own cache by (state,
      * neighbour state, side) and therefore position-independent to the same degree. Vanilla's
      * cache allocates its lookup key on every opaque-neighbour face; this direct-mapped table
      * of packed state ids allocates nothing on a hit and defers to vanilla on a miss.
@@ -136,7 +135,7 @@ public final class BlockQuadEmitter {
      */
     private long modelRandomSeed = 42L;
 
-    private final Supplier<Random> randomSupplier = () -> {
+    private final Supplier<RandomSource> randomSupplier = () -> {
         random.setSeed(modelRandomSeed);
         return random;
     };
@@ -150,7 +149,7 @@ public final class BlockQuadEmitter {
      */
     private boolean active;
     private BlockTextureManager texManager;
-    private BlockRenderManager blockRenderManager;
+    private BlockRenderDispatcher blockRenderManager;
     private BlockColors blockColors;
     private int baseX, baseY, baseZ;
     private long topMask, bottomMask, eastMask, westMask, southMask, northMask;
@@ -161,7 +160,7 @@ public final class BlockQuadEmitter {
     private int tintValidMask;
     private int waterColorKnownMask;
     private FluidState waterTopCellCacheFluid;
-    private BlockRenderView waterTopCullWorld;
+    private BlockAndTintGetter waterTopCullWorld;
     private FluidState waterTopCullReferenceFluid;
     private int waterTopCullOriginX, waterTopCullOriginY, waterTopCullOriginZ;
 
@@ -192,9 +191,9 @@ public final class BlockQuadEmitter {
      * Initialises emission state for a new section. Called from the
      * SectionBuilderMixin HEAD inject before MC's block loop starts.
      */
-    public void beginSection(ChunkSectionPos sectionPos,
+    public void beginSection(SectionPos sectionPos,
                              BlockTextureManager tex,
-                             BlockRenderManager brm) {
+                             BlockRenderDispatcher brm) {
         if (!threadNamed.get()) {
             RemixAPI.tracyThreadName("Worker " + Thread.currentThread().getName());
             threadNamed.set(Boolean.TRUE);
@@ -205,11 +204,11 @@ public final class BlockQuadEmitter {
         this.active = true;
         this.texManager = tex;
         this.blockRenderManager = brm;
-        this.baseX = sectionPos.getMinX();
-        this.baseY = sectionPos.getMinY();
-        this.baseZ = sectionPos.getMinZ();
+        this.baseX = sectionPos.minBlockX();
+        this.baseY = sectionPos.minBlockY();
+        this.baseZ = sectionPos.minBlockZ();
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         this.blockColors = (client != null) ? client.getBlockColors() : null;
 
         writer.beginSection(baseX, baseY, baseZ);
@@ -230,24 +229,24 @@ public final class BlockQuadEmitter {
     public int getBlockCount() { return blockCount; }
     public int getFluidCount() { return fluidCount; }
 
-    public static BlockRenderType getRenderTypeCached(BlockState state) {
-        int id = Block.getRawIdFromState(state);
-        BlockRenderType[] cache = renderTypeByStateId;
+    public static RenderShape getRenderTypeCached(BlockState state) {
+        int id = Block.getId(state);
+        RenderShape[] cache = renderTypeByStateId;
         if (id < cache.length) {
-            BlockRenderType renderType = cache[id];
+            RenderShape renderType = cache[id];
             if (renderType != null) {
                 return renderType;
             }
         }
 
-        BlockRenderType renderType = state.getRenderType();
+        RenderShape renderType = state.getRenderShape();
         cache = ensureRenderTypeCacheCapacity(id);
         cache[id] = renderType;
         return renderType;
     }
 
-    private static BlockRenderType[] ensureRenderTypeCacheCapacity(int id) {
-        BlockRenderType[] cache = renderTypeByStateId;
+    private static RenderShape[] ensureRenderTypeCacheCapacity(int id) {
+        RenderShape[] cache = renderTypeByStateId;
         if (id < cache.length) {
             return cache;
         }
@@ -266,10 +265,10 @@ public final class BlockQuadEmitter {
      * Captures opacity bitmap, boundary face masks, and light-emitting
      * blocks. Called once per block from the isOpaqueFullCube redirect.
      */
-    public void processBlock(BlockState state, BlockView world, BlockPos pos, boolean opaque) {
-        int lx = ChunkSectionPos.getLocalCoord(pos.getX());
-        int ly = ChunkSectionPos.getLocalCoord(pos.getY());
-        int lz = ChunkSectionPos.getLocalCoord(pos.getZ());
+    public void processBlock(BlockState state, BlockGetter world, BlockPos pos, boolean opaque) {
+        int lx = SectionPos.sectionRelative(pos.getX());
+        int ly = SectionPos.sectionRelative(pos.getY());
+        int lz = SectionPos.sectionRelative(pos.getZ());
 
         int bitIdx = (ly << 8) | (lz << 4) | lx;
         cacheLocalBlockState(bitIdx, state);
@@ -304,7 +303,7 @@ public final class BlockQuadEmitter {
         // frames agree for every vanilla block; a modded or resource-pack rule
         // on an offset block would need the same offset passed into begin() and
         // into the LightEntry positions.
-        modelSampling.begin(blockRenderManager, state, state.getRenderingSeed(pos));
+        modelSampling.begin(blockRenderManager, state, state.getSeed(pos));
         List<LightEntry> resolvedLights = BlockLightRuleManager.resolve(state, pos, modelSampling);
         lights.addAll(resolvedLights);
     }
@@ -315,7 +314,7 @@ public final class BlockQuadEmitter {
      * a call the build then skips by reporting the block invisible. Bypasses
      * FRAPI/Indigo and writes directly to the DirectQuadWriter.
      */
-    public void emitBlock(BlockState state, BlockPos pos, BlockRenderView world) {
+    public void emitBlock(BlockState state, BlockPos pos, BlockAndTintGetter world) {
         blockCount++;
         mutablePos.set(pos);
         tintValidMask = 0;
@@ -323,11 +322,11 @@ public final class BlockQuadEmitter {
         // Vanilla derives model randomisation from the block position, in the
         // same BlockModelRenderer.render this emitter replaces. It also
         // re-seeds before every getQuads call, which the loops below match.
-        modelRandomSeed = state.getRenderingSeed(pos);
+        modelRandomSeed = state.getSeed(pos);
 
-        float lx = ChunkSectionPos.getLocalCoord(pos.getX());
-        float ly = ChunkSectionPos.getLocalCoord(pos.getY());
-        float lz = ChunkSectionPos.getLocalCoord(pos.getZ());
+        float lx = SectionPos.sectionRelative(pos.getX());
+        float ly = SectionPos.sectionRelative(pos.getY());
+        float lz = SectionPos.sectionRelative(pos.getZ());
 
         // Vanilla applies the per-position model offset (AbstractBlock.OffsetType
         // XZ/XYZ: flowers, saplings, grass, dripstone) inside
@@ -345,14 +344,14 @@ public final class BlockQuadEmitter {
         // This moves geometry only. Block lights are resolved in processBlock
         // against the unoffset grid position; see the note there before adding a
         // light rule to a block that offsets.
-        if (state.hasModelOffset()) {
-            Vec3d modelOffset = state.getModelOffset(world, pos);
+        if (state.hasOffsetFunction()) {
+            Vec3 modelOffset = state.getOffset(world, pos);
             lx += (float) modelOffset.x;
             ly += (float) modelOffset.y;
             lz += (float) modelOffset.z;
         }
 
-        BakedModel model = blockRenderManager.getModel(state);
+        BakedModel model = blockRenderManager.getBlockModel(state);
         String layerName = classifyBlockLayer(state);
 
         if (model instanceof FabricBakedModel fbm && !fbm.isVanillaAdapter()) {
@@ -366,11 +365,11 @@ public final class BlockQuadEmitter {
      * Emits fluid quads for the current block. Called from the
      * renderFluid redirect.
      */
-    public void emitFluid(BlockPos pos, BlockRenderView world, FluidState fluidState) {
+    public void emitFluid(BlockPos pos, BlockAndTintGetter world, FluidState fluidState) {
         fluidCount++;
-        int lx = ChunkSectionPos.getLocalCoord(pos.getX());
-        int ly = ChunkSectionPos.getLocalCoord(pos.getY());
-        int lz = ChunkSectionPos.getLocalCoord(pos.getZ());
+        int lx = SectionPos.sectionRelative(pos.getX());
+        int ly = SectionPos.sectionRelative(pos.getY());
+        int lz = SectionPos.sectionRelative(pos.getZ());
         cacheLocalFluidState(localIndex(lx, ly, lz), fluidState);
         emitFluidQuads(world, fluidState, lx, ly, lz);
     }
@@ -379,7 +378,7 @@ public final class BlockQuadEmitter {
      * Finalises the section, producing a {@link SectionBlockData} with
      * all accumulated mesh/light/mask data. Deactivates the emitter.
      */
-    public SectionBlockData finishSection(ChunkSectionPos sectionPos) {
+    public SectionBlockData finishSection(SectionPos sectionPos) {
         try (ProfileScope finishScope = ProfileScope.begin("finishSection")) {
             finishScope.blockCount(blockCount).fluidCount(fluidCount);
             SectionMeshData meshData = writer.buildMeshData();
@@ -394,7 +393,7 @@ public final class BlockQuadEmitter {
         }
     }
 
-    private void emitVanillaBlock(BlockRenderView world, BlockState state,
+    private void emitVanillaBlock(BlockAndTintGetter world, BlockState state,
                                    BakedModel model, String layerName,
                                    float lx, float ly, float lz) {
 
@@ -415,9 +414,9 @@ public final class BlockQuadEmitter {
     }
 
     private void stageBakedQuad(BakedQuad bq, String layerName,
-                                 BlockState state, BlockRenderView world,
+                                 BlockState state, BlockAndTintGetter world,
                                  float lx, float ly, float lz) {
-        int[] vd = bq.getVertexData();
+        int[] vd = bq.getVertices();
 
         for (int v = 0; v < 4; v++) {
             int off = v * 8;
@@ -443,32 +442,32 @@ public final class BlockQuadEmitter {
         }
 
         int color = 0xFFFFFFFF;
-        if (bq.getColorIndex() >= 0 && blockColors != null) {
-            int tint = getBlockTint(state, world, bq.getColorIndex());
+        if (bq.getTintIndex() >= 0 && blockColors != null) {
+            int tint = getBlockTint(state, world, bq.getTintIndex());
             int r = (tint >> 16) & 0xFF, g = (tint >> 8) & 0xFF, b = tint & 0xFF;
             color = 0xFF000000 | (r << 16) | (g << 8) | b;
         }
 
-        Sprite sprite = bq.getSprite();
-        Identifier spriteId = sprite != null ? sprite.getContents().getId() : null;
+        TextureAtlasSprite sprite = bq.getSprite();
+        ResourceLocation spriteId = sprite != null ? sprite.contents().name() : null;
         if (isWaterSprite(spriteId)) {
             emitBlockWaterQuad(nx, ny, nz, color, layerName);
             return;
         }
-        float su0 = sprite != null ? sprite.getMinU() : 0;
-        float sv0 = sprite != null ? sprite.getMinV() : 0;
-        float su1 = sprite != null ? sprite.getMaxU() : 1;
-        float sv1 = sprite != null ? sprite.getMaxV() : 1;
+        float su0 = sprite != null ? sprite.getU0() : 0;
+        float sv0 = sprite != null ? sprite.getV0() : 0;
+        float su1 = sprite != null ? sprite.getU1() : 1;
+        float sv1 = sprite != null ? sprite.getV1() : 1;
 
         writer.stageQuad(tempPositions, tempUvs, nx, ny, nz, color,
                 spriteId, su0, sv0, su1, sv1, layerName);
     }
 
-    private static final Identifier WATER_STILL_SPRITE = Identifier.ofVanilla("block/water_still");
-    private static final Identifier WATER_FLOW_SPRITE = Identifier.ofVanilla("block/water_flow");
+    private static final ResourceLocation WATER_STILL_SPRITE = ResourceLocation.withDefaultNamespace("block/water_still");
+    private static final ResourceLocation WATER_FLOW_SPRITE = ResourceLocation.withDefaultNamespace("block/water_flow");
 
     /** A block-model face painted with the water texture: the cauldron's water level is the vanilla case. */
-    static boolean isWaterSprite(Identifier spriteId) {
+    static boolean isWaterSprite(ResourceLocation spriteId) {
         return WATER_STILL_SPRITE.equals(spriteId) || WATER_FLOW_SPRITE.equals(spriteId);
     }
 
@@ -504,22 +503,22 @@ public final class BlockQuadEmitter {
     // --- FRAPI model path ---
 
     private BlockState frapiState;
-    private BlockRenderView frapiWorld;
+    private BlockAndTintGetter frapiWorld;
 
     private boolean frapiCullTest(Direction dir) {
         return !shouldDrawBlockSide(frapiWorld, frapiState, dir);
     }
 
-    private void emitFrapiBlock(BlockRenderView world, BlockState state,
+    private void emitFrapiBlock(BlockAndTintGetter world, BlockState state,
                                  BakedModel model, FabricBakedModel fbm,
                                  String layerName, float lx, float ly, float lz) {
 
         frapiState = state;
         frapiWorld = world;
 
-        renderContext.prepare(world, state, mutablePos.toImmutable(), this::frapiCullTest);
+        renderContext.prepare(world, state, mutablePos.immutable(), this::frapiCullTest);
 
-        fbm.emitBlockQuads(world, state, mutablePos.toImmutable(), randomSupplier, renderContext);
+        fbm.emitBlockQuads(world, state, mutablePos.immutable(), randomSupplier, renderContext);
 
         List<SectionBlockData.BlockQuad> frapiQuads = renderContext.harvest();
         for (SectionBlockData.BlockQuad fq : frapiQuads) {
@@ -541,17 +540,17 @@ public final class BlockQuadEmitter {
 
     // --- Fluid geometry ---
 
-    private void emitFluidQuads(BlockRenderView world, FluidState fluidState,
+    private void emitFluidQuads(BlockAndTintGetter world, FluidState fluidState,
                                  int lx, int ly, int lz) {
-        FluidRenderHandler handler = FluidRenderHandlerRegistry.INSTANCE.get(fluidState.getFluid());
+        FluidRenderHandler handler = FluidRenderHandlerRegistry.INSTANCE.get(fluidState.getType());
         if (handler == null) return;
 
         fluidPos.set(baseX + lx, baseY + ly, baseZ + lz);
 
-        Sprite[] fluidSprites = handler.getFluidSprites(world, fluidPos, fluidState);
+        TextureAtlasSprite[] fluidSprites = handler.getFluidSprites(world, fluidPos, fluidState);
         if (fluidSprites == null || fluidSprites.length < 2) return;
 
-        boolean isLava = fluidState.isIn(FluidTags.LAVA);
+        boolean isLava = fluidState.is(FluidTags.LAVA);
         boolean isWater = !isLava;
         String layer = isLava ? "solid" : "translucent";
         int fluidColor = isWater
@@ -568,23 +567,23 @@ public final class BlockQuadEmitter {
         float tileSize = BlockTextureManager.getWaterTileSize();
         int wx = baseX + lx, wy = baseY + ly, wz = baseZ + lz;
 
-        Sprite stillSprite = fluidSprites[0];
-        Sprite flowSprite = fluidSprites[1];
+        TextureAtlasSprite stillSprite = fluidSprites[0];
+        TextureAtlasSprite flowSprite = fluidSprites[1];
 
-        Identifier stillId = stillSprite.getContents().getId();
-        float su0 = stillSprite.getMinU(), sv0 = stillSprite.getMinV();
-        float su1 = stillSprite.getMaxU(), sv1 = stillSprite.getMaxV();
+        ResourceLocation stillId = stillSprite.contents().name();
+        float su0 = stillSprite.getU0(), sv0 = stillSprite.getV0();
+        float su1 = stillSprite.getU1(), sv1 = stillSprite.getV1();
 
-        Identifier flowId = flowSprite.getContents().getId();
-        float fu0 = flowSprite.getMinU(), fv0 = flowSprite.getMinV();
-        float fu1 = flowSprite.getMaxU(), fv1 = flowSprite.getMaxV();
+        ResourceLocation flowId = flowSprite.contents().name();
+        float fu0 = flowSprite.getU0(), fv0 = flowSprite.getV0();
+        float fu1 = flowSprite.getU1(), fv1 = flowSprite.getV1();
 
         fluidCheckPos.set(fluidPos.getX(), fluidPos.getY() + 1, fluidPos.getZ());
         FluidState aboveFluid = getCachedFluidState(world,
                 fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
-        boolean submerged = aboveFluid.getFluid().matchesType(fluidState.getFluid());
+        boolean submerged = aboveFluid.getType().isSame(fluidState.getType());
         boolean waterTopCovered = false;
-        if (isWater && !submerged && fluidState.isStill()) {
+        if (isWater && !submerged && fluidState.isSource()) {
             BlockState aboveState = getCachedBlockState(world,
                     fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
             float topCoverageHeight = Math.min(Math.min(h00, h10), Math.min(h01, h11));
@@ -612,7 +611,7 @@ public final class BlockQuadEmitter {
                 // Vanilla FluidRenderer: a still surface shows the still sprite in
                 // full; a moving one shows the centre quarter of the flowing sprite
                 // (two tiles across, so a quarter is one tile) rotated to the flow.
-                Vec3d flow = fluidState.getVelocity(world, fluidPos);
+                Vec3 flow = fluidState.getFlow(world, fluidPos);
                 if (flow.x == 0.0 && flow.z == 0.0) {
                     setUv4(tempUvs, su0, sv0, su1, sv0, su1, sv1, su0, sv1);
                     writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
@@ -622,15 +621,15 @@ public final class BlockQuadEmitter {
                     writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
                             stillId, su0, sv0, su1, sv1, layer, texManager);
                 } else {
-                    float angle = (float) MathHelper.atan2(flow.z, flow.x) - (float) (Math.PI / 2.0);
-                    float sin = MathHelper.sin(angle) * 0.25f;
-                    float cos = MathHelper.cos(angle) * 0.25f;
+                    float angle = (float) Mth.atan2(flow.z, flow.x) - (float) (Math.PI / 2.0);
+                    float sin = Mth.sin(angle) * 0.25f;
+                    float cos = Mth.cos(angle) * 0.25f;
                     // Vanilla's corners in its order (0,0) (0,1) (1,1) (1,0), reordered to
                     // this emitter's (0,0) (1,0) (1,1) (0,1).
-                    float c00u = flowSprite.getFrameU(0.5f - cos - sin), c00v = flowSprite.getFrameV(0.5f - cos + sin);
-                    float c01u = flowSprite.getFrameU(0.5f - cos + sin), c01v = flowSprite.getFrameV(0.5f + cos + sin);
-                    float c11u = flowSprite.getFrameU(0.5f + cos + sin), c11v = flowSprite.getFrameV(0.5f + cos - sin);
-                    float c10u = flowSprite.getFrameU(0.5f + cos - sin), c10v = flowSprite.getFrameV(0.5f - cos - sin);
+                    float c00u = flowSprite.getU(0.5f - cos - sin), c00v = flowSprite.getV(0.5f - cos + sin);
+                    float c01u = flowSprite.getU(0.5f - cos + sin), c01v = flowSprite.getV(0.5f + cos + sin);
+                    float c11u = flowSprite.getU(0.5f + cos + sin), c11v = flowSprite.getV(0.5f + cos - sin);
+                    float c10u = flowSprite.getU(0.5f + cos - sin), c10v = flowSprite.getV(0.5f - cos - sin);
                     setUv4(tempUvs, c00u, c00v, c10u, c10v, c11u, c11v, c01u, c01v);
                     writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
                             flowId, fu0, fv0, fu1, fv1, layer, texManager);
@@ -649,7 +648,7 @@ public final class BlockQuadEmitter {
                 fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
         BlockState belowState = getCachedBlockState(world,
                 fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
-        if (!belowFluid.getFluid().matchesType(fluidState.getFluid()) && !belowState.isOpaqueFullCube(world, fluidCheckPos)) {
+        if (!belowFluid.getType().isSame(fluidState.getType()) && !belowState.isSolidRender(world, fluidCheckPos)) {
             setPos4(tempPositions, lx, ly, lz + 1, lx + 1, ly, lz + 1,
                     lx + 1, ly, lz, lx, ly, lz);
             if (isWater) {
@@ -668,16 +667,16 @@ public final class BlockQuadEmitter {
         // Side faces
         for (Direction dir : HORIZONTAL_DIRECTIONS) {
             fluidCheckPos.set(
-                fluidPos.getX() + dir.getOffsetX(),
+                fluidPos.getX() + dir.getStepX(),
                 fluidPos.getY(),
-                fluidPos.getZ() + dir.getOffsetZ());
+                fluidPos.getZ() + dir.getStepZ());
             FluidState sideFluid = getCachedFluidState(world,
                     fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
             BlockState sideState = getCachedBlockState(world,
                     fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
 
-            if (sideFluid.getFluid().matchesType(fluidState.getFluid())) continue;
-            if (sideState.isOpaqueFullCube(world, fluidCheckPos)) continue;
+            if (sideFluid.getType().isSame(fluidState.getType())) continue;
+            if (sideState.isSolidRender(world, fluidCheckPos)) continue;
 
             float sideH0, sideH1;
             switch (dir) {
@@ -704,7 +703,7 @@ public final class BlockQuadEmitter {
                 default -> { continue; }
             }
 
-            float fnx = dir.getOffsetX(), fny = 0, fnz = dir.getOffsetZ();
+            float fnx = dir.getStepX(), fny = 0, fnz = dir.getStepZ();
             if (isWater) {
                 boolean xAxis = (dir == Direction.EAST || dir == Direction.WEST);
                 float sU0, sU1, sV0, sV1;
@@ -722,11 +721,11 @@ public final class BlockQuadEmitter {
                 // sprite, so U spans its left half and V runs from the fluid surface
                 // ((1 - height) / 2) down to the half-way line. The full sprite over a
                 // one-block face showed the texture at twice the density.
-                float sideU0 = flowSprite.getFrameU(0.0f);
-                float sideU1 = flowSprite.getFrameU(0.5f);
-                float sideVBottom = flowSprite.getFrameV(0.5f);
-                float sideVTop0 = flowSprite.getFrameV((1.0f - sideH0) * 0.5f);
-                float sideVTop1 = flowSprite.getFrameV((1.0f - sideH1) * 0.5f);
+                float sideU0 = flowSprite.getU(0.0f);
+                float sideU1 = flowSprite.getU(0.5f);
+                float sideVBottom = flowSprite.getV(0.5f);
+                float sideVTop0 = flowSprite.getV((1.0f - sideH0) * 0.5f);
+                float sideVTop1 = flowSprite.getV((1.0f - sideH1) * 0.5f);
                 setUv4(tempUvs, sideU0, sideVBottom, sideU1, sideVBottom, sideU1, sideVTop1, sideU0, sideVTop0);
                 writer.writeFluidQuad(tempPositions, tempUvs, fnx, fny, fnz, color,
                         flowId, fu0, fv0, fu1, fv1, layer, texManager);
@@ -734,17 +733,17 @@ public final class BlockQuadEmitter {
         }
     }
 
-    static boolean isFluidTopCoveredByCeiling(BlockView world, float fluidHeight,
+    static boolean isFluidTopCoveredByCeiling(BlockGetter world, float fluidHeight,
                                               BlockPos neighborPos, BlockState neighborState) {
         if (fluidHeight + WATER_HEIGHT_EPSILON < WATER_CEILING_CULL_MIN_HEIGHT
-                || !neighborState.isOpaque()) {
+                || !neighborState.canOcclude()) {
             return false;
         }
-        if (neighborState.isOpaqueFullCube(world, neighborPos)) {
+        if (neighborState.isSolidRender(world, neighborPos)) {
             return true;
         }
 
-        VoxelShape neighborShape = neighborState.getCullingShape(world, neighborPos);
+        VoxelShape neighborShape = neighborState.getOcclusionShape(world, neighborPos);
         return isFluidSideCovered(Direction.UP, 1.0f, true, neighborShape);
     }
 
@@ -759,18 +758,18 @@ public final class BlockQuadEmitter {
                                       boolean neighborOpaque, VoxelShape neighborShape) {
         if (!neighborOpaque) return false;
 
-        VoxelShape fluidShape = VoxelShapes.cuboid(0.0, 0.0, 0.0, 1.0, fluidHeight, 1.0);
-        return VoxelShapes.isSideCovered(fluidShape, neighborShape, direction);
+        VoxelShape fluidShape = Shapes.box(0.0, 0.0, 0.0, 1.0, fluidHeight, 1.0);
+        return Shapes.blockOccudes(fluidShape, neighborShape, direction);
     }
 
     private FluidTopOcclusion.Exposure classifyWaterTopExposure(
-            BlockRenderView world, FluidState referenceFluid, int worldX, int worldY, int worldZ) {
-        if (getCachedBlockState(world, worldX, worldY, worldZ).isOpaque()) {
+            BlockAndTintGetter world, FluidState referenceFluid, int worldX, int worldY, int worldZ) {
+        if (getCachedBlockState(world, worldX, worldY, worldZ).canOcclude()) {
             return FluidTopOcclusion.Exposure.EXPOSED;
         }
 
         if (waterTopCellCacheFluid == null
-                || !waterTopCellCacheFluid.getFluid().matchesType(referenceFluid.getFluid())) {
+                || !waterTopCellCacheFluid.getType().isSame(referenceFluid.getType())) {
             Arrays.fill(waterTopCellCache, FluidTopOcclusion.UNKNOWN);
             waterTopCellCacheFluid = referenceFluid;
         }
@@ -828,31 +827,31 @@ public final class BlockQuadEmitter {
         return (y * WATER_TOP_CACHE_WIDTH + z) * WATER_TOP_CACHE_WIDTH + x;
     }
 
-    private byte classifyWaterTopCell(BlockRenderView world, FluidState referenceFluid,
+    private byte classifyWaterTopCell(BlockAndTintGetter world, FluidState referenceFluid,
                                       int worldX, int worldY, int worldZ) {
         BlockState state = getCachedBlockState(world, worldX, worldY, worldZ);
-        if (state.isOpaque()) {
+        if (state.canOcclude()) {
             return FluidTopOcclusion.BLOCKED;
         }
 
         FluidState fluid = getCachedFluidState(world, worldX, worldY, worldZ);
-        if (!fluid.getFluid().matchesType(referenceFluid.getFluid()) || !fluid.isStill()) {
+        if (!fluid.getType().isSame(referenceFluid.getType()) || !fluid.isSource()) {
             return FluidTopOcclusion.EXPOSED;
         }
 
         FluidState aboveFluid = getCachedFluidState(world, worldX, worldY + 1, worldZ);
-        if (aboveFluid.getFluid().matchesType(referenceFluid.getFluid())) {
+        if (aboveFluid.getType().isSame(referenceFluid.getType())) {
             return FluidTopOcclusion.BLOCKED;
         }
 
         fluidCheckPos.set(worldX, worldY + 1, worldZ);
         BlockState aboveState = getCachedBlockState(world, worldX, worldY + 1, worldZ);
-        return isFluidTopCoveredByCeiling(world, fluid.getHeight(), fluidCheckPos, aboveState)
+        return isFluidTopCoveredByCeiling(world, fluid.getOwnHeight(), fluidCheckPos, aboveState)
                 ? FluidTopOcclusion.CONNECTED
                 : FluidTopOcclusion.EXPOSED;
     }
 
-    private float getFluidHeight(BlockRenderView world, FluidState referenceFluid,
+    private float getFluidHeight(BlockAndTintGetter world, FluidState referenceFluid,
                                   int worldX, int worldY, int worldZ) {
         float totalHeight = 0;
         int count = 0;
@@ -862,15 +861,15 @@ public final class BlockQuadEmitter {
                 fluidCheckPos.set(worldX + dx, worldY + 1, worldZ + dz);
                 FluidState aboveFluid = getCachedFluidState(world,
                         fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
-                if (aboveFluid.getFluid().matchesType(referenceFluid.getFluid())) {
+                if (aboveFluid.getType().isSame(referenceFluid.getType())) {
                     return 1.0f;
                 }
 
                 fluidCheckPos.set(worldX + dx, worldY, worldZ + dz);
                 FluidState fs = getCachedFluidState(world,
                         fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
-                if (fs.getFluid().matchesType(referenceFluid.getFluid())) {
-                    float h = fs.getHeight();
+                if (fs.getType().isSame(referenceFluid.getType())) {
+                    float h = fs.getOwnHeight();
                     totalHeight += h;
                     count++;
                 } else if (!getCachedBlockState(world,
@@ -883,7 +882,7 @@ public final class BlockQuadEmitter {
         return count > 0 ? totalHeight / count : 0.5f;
     }
 
-    private int getCachedWaterColor(FluidRenderHandler handler, BlockRenderView world,
+    private int getCachedWaterColor(FluidRenderHandler handler, BlockAndTintGetter world,
                                     FluidState fluidState, int lx, int ly, int lz) {
         int cell = ((ly >> 3) << 4) | ((lz >> 2) << 2) | (lx >> 2);
         int bit = 1 << cell;
@@ -896,13 +895,13 @@ public final class BlockQuadEmitter {
 
     // --- Helpers ---
 
-    private boolean shouldDrawBlockSide(BlockRenderView world, BlockState state, Direction side) {
-        int neighborX = mutablePos.getX() + side.getOffsetX();
-        int neighborY = mutablePos.getY() + side.getOffsetY();
-        int neighborZ = mutablePos.getZ() + side.getOffsetZ();
+    private boolean shouldDrawBlockSide(BlockAndTintGetter world, BlockState state, Direction side) {
+        int neighborX = mutablePos.getX() + side.getStepX();
+        int neighborY = mutablePos.getY() + side.getStepY();
+        int neighborZ = mutablePos.getZ() + side.getStepZ();
         BlockState neighbor = getCachedBlockState(world, neighborX, neighborY, neighborZ);
-        long key = ((long) Block.getRawIdFromState(state) << 35)
-                | ((long) Block.getRawIdFromState(neighbor) << 3)
+        long key = ((long) Block.getId(state) << 35)
+                | ((long) Block.getId(neighbor) << 3)
                 | side.ordinal();
         int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> (64 - FACE_CULL_CACHE_BITS));
         if (faceCullKeys[slot] == key && faceCullResults[slot] != FACE_CULL_UNKNOWN) {
@@ -910,13 +909,13 @@ public final class BlockQuadEmitter {
         }
 
         neighborPos.set(neighborX, neighborY, neighborZ);
-        boolean drawn = Block.shouldDrawSide(state, world, mutablePos, side, neighborPos);
+        boolean drawn = Block.shouldRenderFace(state, world, mutablePos, side, neighborPos);
         faceCullKeys[slot] = key;
         faceCullResults[slot] = drawn ? FACE_CULL_DRAWN : FACE_CULL_HIDDEN;
         return drawn;
     }
 
-    private BlockState getCachedBlockState(BlockView world, int worldX, int worldY, int worldZ) {
+    private BlockState getCachedBlockState(BlockGetter world, int worldX, int worldY, int worldZ) {
         int lx = worldX - baseX;
         int ly = worldY - baseY;
         int lz = worldZ - baseZ;
@@ -938,7 +937,7 @@ public final class BlockQuadEmitter {
         return state;
     }
 
-    private FluidState getCachedFluidState(BlockView world, int worldX, int worldY, int worldZ) {
+    private FluidState getCachedFluidState(BlockGetter world, int worldX, int worldY, int worldZ) {
         int lx = worldX - baseX;
         int ly = worldY - baseY;
         int lz = worldZ - baseZ;
@@ -973,7 +972,7 @@ public final class BlockQuadEmitter {
         return (ly << 8) | (lz << 4) | lx;
     }
 
-    private int getBlockTint(BlockState state, BlockRenderView world, int colorIndex) {
+    private int getBlockTint(BlockState state, BlockAndTintGetter world, int colorIndex) {
         if (colorIndex < 0 || colorIndex >= TINT_CACHE_SIZE) {
             return blockColors.getColor(state, world, mutablePos, colorIndex);
         }
@@ -997,13 +996,13 @@ public final class BlockQuadEmitter {
         // refract through it instead, so clear glass takes its own layer and a
         // translucent material with the frame as a diffuse layer.
         // Stained glass is already translucent and keeps vanilla's layer.
-        if (state.isOf(Blocks.GLASS) || state.isOf(Blocks.GLASS_PANE)) return "glass";
-        RenderLayer layer = RenderLayers.getBlockLayer(state);
-        if (layer == RenderLayer.getSolid()) return "solid";
-        if (layer == RenderLayer.getCutoutMipped()) return "cutout_mipped";
-        if (layer == RenderLayer.getCutout()) return "cutout";
-        if (layer == RenderLayer.getTranslucent()) return "translucent";
-        if (layer == RenderLayer.getTripwire()) return "cutout";
+        if (state.is(Blocks.GLASS) || state.is(Blocks.GLASS_PANE)) return "glass";
+        RenderType layer = ItemBlockRenderTypes.getChunkRenderType(state);
+        if (layer == RenderType.solid()) return "solid";
+        if (layer == RenderType.cutoutMipped()) return "cutout_mipped";
+        if (layer == RenderType.cutout()) return "cutout";
+        if (layer == RenderType.translucent()) return "translucent";
+        if (layer == RenderType.tripwire()) return "cutout";
         return "solid";
     }
 

@@ -5,17 +5,6 @@
 package com.nvidia.rtxremix.minecraft.light;
 
 import com.google.gson.JsonParser;
-import net.minecraft.registry.VersionedIdentifier;
-import net.minecraft.resource.InputSupplier;
-import net.minecraft.resource.Resource;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.resource.ResourcePack;
-import net.minecraft.resource.ResourcePackInfo;
-import net.minecraft.resource.ResourcePackSource;
-import net.minecraft.resource.ResourceType;
-import net.minecraft.resource.metadata.ResourceMetadataReader;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -39,6 +28,17 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.metadata.MetadataSectionSerializer;
+import net.minecraft.server.packs.repository.KnownPack;
+import net.minecraft.server.packs.repository.PackSource;
+import net.minecraft.server.packs.resources.IoSupplier;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -51,7 +51,7 @@ class BlockLightRuleManagerTest {
 
     @Test
     void parseJsonRulePreservesTheAuthoredRectSpec() throws Exception {
-        Identifier id = Identifier.of("custom", "rtx_remix/block_lights/daylight_panel.json");
+        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("custom", "rtx_remix/block_lights/daylight_panel.json");
         BlockLightRuleManager.Rule rule = BlockLightRuleManager.parseJsonRule(id, JsonParser.parseString("""
                 {
                   "blocks": ["minecraft:daylight_detector"],
@@ -106,7 +106,7 @@ class BlockLightRuleManagerTest {
 
     @Test
     void parseJsonRuleRejectsAnInvalidRadius() {
-        Identifier id = Identifier.of("custom", "rtx_remix/block_lights/bad.json");
+        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("custom", "rtx_remix/block_lights/bad.json");
 
         assertThrows(RuntimeException.class, () -> BlockLightRuleManager.parseJsonRule(id, JsonParser.parseString("""
                 {
@@ -121,7 +121,7 @@ class BlockLightRuleManagerTest {
 
     @Test
     void loadRulesReplacesASamePathResourceInPackOrder() throws Exception {
-        Identifier ruleId = Identifier.of("custom", "rtx_remix/block_lights/replaced.json");
+        ResourceLocation ruleId = ResourceLocation.fromNamespaceAndPath("custom", "rtx_remix/block_lights/replaced.json");
         Resource lowPriority = jsonResource("low", """
                 {
                   "blocks": ["minecraft:torch"],
@@ -138,7 +138,7 @@ class BlockLightRuleManagerTest {
 
         BlockLightRuleManager.Rule rule = BlockLightRuleManager.loadRules(manager, Map.of()).get(ruleId);
 
-        assertEquals(Set.of(Identifier.of("minecraft", "lantern")), parsedBlockIds(rule));
+        assertEquals(Set.of(ResourceLocation.fromNamespaceAndPath("minecraft", "lantern")), parsedBlockIds(rule));
     }
 
     @Test
@@ -218,7 +218,7 @@ class BlockLightRuleManagerTest {
         Future<?> reload = null;
         try {
             Object oldCatalog = activeCatalogField.get(null);
-            Identifier newRuleId = Identifier.of("test", "new-rule");
+            ResourceLocation newRuleId = ResourceLocation.fromNamespaceAndPath("test", "new-rule");
             BlockLightRuleManager.Rule newRule = BlockLightRuleManager.rule(
                     newRuleId, state -> false, (id, state, pos, sampler) -> List.of());
 
@@ -243,14 +243,14 @@ class BlockLightRuleManagerTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Set<Identifier> parsedBlockIds(BlockLightRuleManager.Rule rule) throws Exception {
+    private static Set<ResourceLocation> parsedBlockIds(BlockLightRuleManager.Rule rule) throws Exception {
         Method method = rule.getClass().getDeclaredMethod("blockIds");
         method.setAccessible(true);
-        return (Set<Identifier>) method.invoke(rule);
+        return (Set<ResourceLocation>) method.invoke(rule);
     }
 
     private static Resource jsonResource(String packId, String json) {
-        InputSupplier<InputStream> input = () -> new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
+        IoSupplier<InputStream> input = () -> new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
         return new Resource(new FakePack(packId), input);
     }
 
@@ -297,29 +297,29 @@ class BlockLightRuleManagerTest {
         private final CountDownLatch releaseFind = new CountDownLatch(1);
 
         @Override
-        public Set<String> getAllNamespaces() {
+        public Set<String> getNamespaces() {
             return Set.of();
         }
 
         @Override
-        public Optional<Resource> getResource(Identifier identifier) {
+        public Optional<Resource> getResource(ResourceLocation identifier) {
             return Optional.empty();
         }
 
         @Override
-        public List<Resource> getAllResources(Identifier id) {
+        public List<Resource> getResourceStack(ResourceLocation id) {
             return List.of();
         }
 
         @Override
-        public Map<Identifier, Resource> findResources(String startingPath,
-                                                       Predicate<Identifier> allowedPathPredicate) {
+        public Map<ResourceLocation, Resource> listResources(String startingPath,
+                                                       Predicate<ResourceLocation> allowedPathPredicate) {
             return Map.of();
         }
 
         @Override
-        public Map<Identifier, List<Resource>> findAllResources(String startingPath,
-                                                                Predicate<Identifier> allowedPathPredicate) {
+        public Map<ResourceLocation, List<Resource>> listResourceStacks(String startingPath,
+                                                                Predicate<ResourceLocation> allowedPathPredicate) {
             findEntered.countDown();
             try {
                 if (!releaseFind.await(5, TimeUnit.SECONDS)) {
@@ -333,35 +333,35 @@ class BlockLightRuleManagerTest {
         }
 
         @Override
-        public Stream<ResourcePack> streamResourcePacks() {
+        public Stream<PackResources> listPacks() {
             return Stream.empty();
         }
     }
 
-    private record FakeResourceManager(Map<Identifier, List<Resource>> resources) implements ResourceManager {
+    private record FakeResourceManager(Map<ResourceLocation, List<Resource>> resources) implements ResourceManager {
         @Override
-        public Set<String> getAllNamespaces() {
+        public Set<String> getNamespaces() {
             return Set.of("custom");
         }
 
         @Override
-        public Optional<Resource> getResource(Identifier identifier) {
+        public Optional<Resource> getResource(ResourceLocation identifier) {
             List<Resource> found = resources.get(identifier);
             return found == null || found.isEmpty() ? Optional.empty() : Optional.of(found.getLast());
         }
 
         @Override
-        public List<Resource> getAllResources(Identifier id) {
+        public List<Resource> getResourceStack(ResourceLocation id) {
             return resources.getOrDefault(id, List.of());
         }
 
         @Override
-        public Map<Identifier, Resource> findResources(String startingPath, Predicate<Identifier> allowedPathPredicate) {
+        public Map<ResourceLocation, Resource> listResources(String startingPath, Predicate<ResourceLocation> allowedPathPredicate) {
             return Map.of();
         }
 
         @Override
-        public Map<Identifier, List<Resource>> findAllResources(String startingPath, Predicate<Identifier> allowedPathPredicate) {
+        public Map<ResourceLocation, List<Resource>> listResourceStacks(String startingPath, Predicate<ResourceLocation> allowedPathPredicate) {
             return resources.entrySet().stream()
                     .filter(entry -> entry.getKey().getPath().startsWith(startingPath))
                     .filter(entry -> allowedPathPredicate.test(entry.getKey()))
@@ -369,39 +369,39 @@ class BlockLightRuleManagerTest {
         }
 
         @Override
-        public Stream<ResourcePack> streamResourcePacks() {
+        public Stream<PackResources> listPacks() {
             return Stream.empty();
         }
     }
 
-    private record FakePack(String id) implements ResourcePack {
+    private record FakePack(String id) implements PackResources {
         @Override
-        public InputSupplier<InputStream> openRoot(String... segments) {
+        public IoSupplier<InputStream> getRootResource(String... segments) {
             return null;
         }
 
         @Override
-        public InputSupplier<InputStream> open(ResourceType type, Identifier id) {
+        public IoSupplier<InputStream> getResource(PackType type, ResourceLocation id) {
             return null;
         }
 
         @Override
-        public void findResources(ResourceType type, String namespace, String prefix, ResultConsumer consumer) {
+        public void listResources(PackType type, String namespace, String prefix, ResourceOutput consumer) {
         }
 
         @Override
-        public Set<String> getNamespaces(ResourceType type) {
+        public Set<String> getNamespaces(PackType type) {
             return Set.of();
         }
 
         @Override
-        public <T> T parseMetadata(ResourceMetadataReader<T> metaReader) throws IOException {
+        public <T> T getMetadataSection(MetadataSectionSerializer<T> metaReader) throws IOException {
             return null;
         }
 
         @Override
-        public ResourcePackInfo getInfo() {
-            return new ResourcePackInfo(id, Text.literal(id), ResourcePackSource.NONE, Optional.<VersionedIdentifier>empty());
+        public PackLocationInfo location() {
+            return new PackLocationInfo(id, Component.literal(id), PackSource.DEFAULT, Optional.<KnownPack>empty());
         }
 
         @Override

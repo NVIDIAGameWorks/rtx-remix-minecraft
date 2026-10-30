@@ -23,13 +23,13 @@ import com.nvidia.rtxremix.minecraft.mixin.BillboardParticleAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleManagerAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteBillboardParticleAccessor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.particle.BillboardParticle;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
-import net.minecraft.client.particle.ParticleTextureSheet;
-import net.minecraft.client.particle.SpriteBillboardParticle;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.client.particle.TextureSheetParticle;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.util.Mth;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,31 +113,31 @@ public class RemixParticleRenderer {
         long frame = ++frameCounter;
         resetFrameStats();
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.particleManager == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.particleEngine == null) {
             return finishPreparation(frame);
         }
 
-        ParticleManagerAccessor pmAccess = (ParticleManagerAccessor) client.particleManager;
-        Map<ParticleTextureSheet, Queue<Particle>> particleMap = pmAccess.getParticles();
+        ParticleManagerAccessor pmAccess = (ParticleManagerAccessor) client.particleEngine;
+        Map<ParticleRenderType, Queue<Particle>> particleMap = pmAccess.getParticles();
         if (particleMap == null || particleMap.isEmpty()) {
             return finishPreparation(frame);
         }
 
         BlockTextureManager blockTexMgr = renderer.getTextureManager();
-        var camRot = client.gameRenderer.getCamera().getRotation();
+        var camRot = client.gameRenderer.getMainCamera().rotation();
         float qx = camRot.x, qy = camRot.y, qz = camRot.z, qw = camRot.w;
         ParticleBillboardBasis billboardBasis = ParticleBillboardBasis.fromCamera(qx, qy, qz, qw);
 
         for (var entry : particleMap.entrySet()) {
-            ParticleTextureSheet sheet = entry.getKey();
+            ParticleRenderType sheet = entry.getKey();
             Queue<Particle> queue = entry.getValue();
             if (queue == null || queue.isEmpty()) continue;
-            if (sheet == ParticleTextureSheet.NO_RENDER || sheet == ParticleTextureSheet.CUSTOM) {
+            if (sheet == ParticleRenderType.NO_RENDER || sheet == ParticleRenderType.CUSTOM) {
                 continue;
             }
 
-            boolean isTerrain = sheet == ParticleTextureSheet.TERRAIN_SHEET;
+            boolean isTerrain = sheet == ParticleRenderType.TERRAIN_SHEET;
             RemixMaterial material = resolveMaterial(sheet, blockTexMgr);
             if (material == null || !material.isAlive()) continue;
 
@@ -149,7 +149,7 @@ public class RemixParticleRenderer {
             if (bucket == null) continue;
 
             for (Particle particle : queue) {
-                if (!(particle instanceof BillboardParticle)) continue;
+                if (!(particle instanceof SingleQuadParticle)) continue;
 
                 ParticleAccessor pa = (ParticleAccessor) particle;
                 if (pa.getDead()) continue;
@@ -157,13 +157,13 @@ public class RemixParticleRenderer {
                 BillboardParticleAccessor billboard = (BillboardParticleAccessor) particle;
                 int boundsMin = 0;
                 int boundsMax = 0;
-                if (particle instanceof SpriteBillboardParticle) {
-                    Sprite sprite = ((SpriteBillboardParticleAccessor) particle).getSprite();
+                if (particle instanceof TextureSheetParticle) {
+                    TextureAtlasSprite sprite = ((SpriteBillboardParticleAccessor) particle).getSprite();
                     if (sprite == null) continue;
-                    float spriteMinU = sprite.getMinU();
-                    float spriteMinV = sprite.getMinV();
-                    float spriteMaxU = sprite.getMaxU();
-                    float spriteMaxV = sprite.getMaxV();
+                    float spriteMinU = sprite.getU0();
+                    float spriteMinV = sprite.getV0();
+                    float spriteMaxU = sprite.getU1();
+                    float spriteMaxV = sprite.getV1();
                     boundsMin = HardcodedVertex.packHalf2x16(
                             Math.min(spriteMinU, spriteMaxU),
                             Math.min(spriteMinV, spriteMaxV));
@@ -302,8 +302,8 @@ public class RemixParticleRenderer {
         meshUpdatesThisFrame = 0;
     }
 
-    private RemixMaterial resolveMaterial(ParticleTextureSheet sheet, BlockTextureManager blockTexMgr) {
-        if (sheet == ParticleTextureSheet.TERRAIN_SHEET) {
+    private RemixMaterial resolveMaterial(ParticleRenderType sheet, BlockTextureManager blockTexMgr) {
+        if (sheet == ParticleRenderType.TERRAIN_SHEET) {
             return blockTexMgr != null ? blockTexMgr.getAtlasMaterial(BlockTextureManager.L_CUTOUT) : null;
         }
         return atlasManager.getMaterial();
@@ -382,14 +382,14 @@ public class RemixParticleRenderer {
                                           float tickDelta, ParticleBillboardBasis basis,
                                           float u0, float v0, float u1, float v1, int color,
                                           int boundsMin, int boundsMax) {
-        double px = MathHelper.lerp(tickDelta, pa.getPrevPosX(), pa.getX());
-        double py = MathHelper.lerp(tickDelta, pa.getPrevPosY(), pa.getY());
-        double pz = MathHelper.lerp(tickDelta, pa.getPrevPosZ(), pa.getZ());
+        double px = Mth.lerp(tickDelta, pa.getPrevPosX(), pa.getX());
+        double py = Mth.lerp(tickDelta, pa.getPrevPosY(), pa.getY());
+        double pz = Mth.lerp(tickDelta, pa.getPrevPosZ(), pa.getZ());
 
-        float angle = MathHelper.lerp(tickDelta, pa.getPrevAngle(), pa.getAngle());
+        float angle = Mth.lerp(tickDelta, pa.getPrevAngle(), pa.getAngle());
         float scale = ba.getScale();
-        float cosA = MathHelper.cos(angle);
-        float sinA = MathHelper.sin(angle);
+        float cosA = Mth.cos(angle);
+        float sinA = Mth.sin(angle);
 
         float s00 = (cosA * basis.r00 + sinA * basis.r10) * scale;
         float s01 = (cosA * basis.r01 + sinA * basis.r11) * scale;
@@ -484,10 +484,10 @@ public class RemixParticleRenderer {
 
     /** Packs RGBA floats into D3DCOLOR (ARGB) uint32 matching Remix's native vertex format. */
     private static int packColor(float r, float g, float b, float a) {
-        int ri = (int) (MathHelper.clamp(r, 0f, 1f) * 255f) & 0xFF;
-        int gi = (int) (MathHelper.clamp(g, 0f, 1f) * 255f) & 0xFF;
-        int bi = (int) (MathHelper.clamp(b, 0f, 1f) * 255f) & 0xFF;
-        int ai = (int) (MathHelper.clamp(a, 0f, 1f) * 255f) & 0xFF;
+        int ri = (int) (Mth.clamp(r, 0f, 1f) * 255f) & 0xFF;
+        int gi = (int) (Mth.clamp(g, 0f, 1f) * 255f) & 0xFF;
+        int bi = (int) (Mth.clamp(b, 0f, 1f) * 255f) & 0xFF;
+        int ai = (int) (Mth.clamp(a, 0f, 1f) * 255f) & 0xFF;
         return (ai << 24) | (ri << 16) | (gi << 8) | bi;
     }
 

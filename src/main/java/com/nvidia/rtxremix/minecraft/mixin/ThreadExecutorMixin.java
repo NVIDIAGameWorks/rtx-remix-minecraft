@@ -5,7 +5,7 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import net.minecraft.util.thread.ThreadExecutor;
+import net.minecraft.util.thread.BlockableEventLoop;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,15 +18,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * around it. Runs on whichever thread owns the executor, and does nothing unless
  * a client task drain is already open on that thread.
  */
-@Mixin(ThreadExecutor.class)
+@Mixin(BlockableEventLoop.class)
 public abstract class ThreadExecutorMixin {
     @Shadow
-    public abstract String getName();
+    public abstract String name();
 
     @Shadow
-    public abstract int getTaskCount();
+    public abstract int getPendingTasksCount();
 
-    @Inject(method = "executeTask", at = @At("HEAD"))
+    @Inject(method = "doRunTask", at = @At("HEAD"))
     private void rtxremix$beforeExecuteTask(Runnable task, CallbackInfo ci) {
         // This fires for every task on every ThreadExecutor, the integrated
         // server's included. getTaskCount() is ConcurrentLinkedQueue.size(), so
@@ -35,10 +35,10 @@ public abstract class ThreadExecutorMixin {
         if (!ProfileScope.isClientTaskDrainActive()) {
             return;
         }
-        ProfileScope.beginThreadExecutorTask(getName(), getTaskCount(), task);
+        ProfileScope.beginThreadExecutorTask(name(), getPendingTasksCount(), task);
     }
 
-    @Inject(method = "executeTask", at = @At("RETURN"))
+    @Inject(method = "doRunTask", at = @At("RETURN"))
     private void rtxremix$afterExecuteTask(Runnable task, CallbackInfo ci) {
         ProfileScope.endThreadExecutorTask();
     }

@@ -12,8 +12,8 @@ import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectCollection;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.world.chunk.ChunkNibbleArray;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.chunk.DataLayer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -53,7 +53,7 @@ public final class ServerLightSnapshot {
     /** Layers stacked before they are merged into one; bounds the lookups a miss costs. */
     static final int MAX_LAYERS = 4;
 
-    private Long2ObjectOpenHashMap<ChunkNibbleArray> base;
+    private Long2ObjectOpenHashMap<DataLayer> base;
     @Nullable
     private Layer top;
     private int deltaEntries;
@@ -66,7 +66,7 @@ public final class ServerLightSnapshot {
     private int columnSize;
 
     /** The maps a pass published: the section view, and for sky light the column view. */
-    public record Published(Long2ObjectOpenHashMap<ChunkNibbleArray> sections, @Nullable Long2IntOpenHashMap columns) {
+    public record Published(Long2ObjectOpenHashMap<DataLayer> sections, @Nullable Long2IntOpenHashMap columns) {
     }
 
     /**
@@ -77,7 +77,7 @@ public final class ServerLightSnapshot {
      * @param liveColumns sky light's live column-to-top-section map, or null for block light
      */
     public Published publish(
-            Long2ObjectOpenHashMap<ChunkNibbleArray> live,
+            Long2ObjectOpenHashMap<DataLayer> live,
             @Nullable Long2IntOpenHashMap liveColumns,
             LongSet dirtySections) {
         int pendingDeltas = deltaEntries + dirtySections.size();
@@ -100,7 +100,7 @@ public final class ServerLightSnapshot {
         int newColumnSize = columnSize;
         for (LongIterator dirty = dirtySections.iterator(); dirty.hasNext(); ) {
             long section = dirty.nextLong();
-            ChunkNibbleArray current = live.get(section);
+            DataLayer current = live.get(section);
             if (current != null) {
                 layer.changed.put(section, current);
                 if (!previous.containsKey(section)) {
@@ -111,7 +111,7 @@ public final class ServerLightSnapshot {
                 newSize--;
             }
             if (columnLayer != null) {
-                long column = ChunkSectionPos.withZeroY(section);
+                long column = SectionPos.getZeroNode(section);
                 if (!columnLayer.changed.containsKey(column) && !columnLayer.removed.contains(column)) {
                     boolean had = previousColumns.containsKey(column);
                     if (liveColumns.containsKey(column)) {
@@ -150,7 +150,7 @@ public final class ServerLightSnapshot {
         @Nullable
         final Layer parent;
         final int depth;
-        final Long2ObjectOpenHashMap<ChunkNibbleArray> changed;
+        final Long2ObjectOpenHashMap<DataLayer> changed;
         final LongOpenHashSet removed = new LongOpenHashSet();
 
         Layer(@Nullable Layer parent, int expectedChanges) {
@@ -177,7 +177,7 @@ public final class ServerLightSnapshot {
             // The fast iterator reuses one entry; the plain one allocates an entry per
             // element, and a merge walks every accumulated delta.
             for (var entries = changed.long2ObjectEntrySet().fastIterator(); entries.hasNext(); ) {
-                Long2ObjectMap.Entry<ChunkNibbleArray> entry = entries.next();
+                Long2ObjectMap.Entry<DataLayer> entry = entries.next();
                 into.changed.put(entry.getLongKey(), entry.getValue());
                 into.removed.remove(entry.getLongKey());
             }
@@ -195,13 +195,13 @@ public final class ServerLightSnapshot {
      * path fails loudly, because a caller holding this instead of a clone would otherwise
      * mutate or enumerate a shared structure.
      */
-    static final class View extends Long2ObjectOpenHashMap<ChunkNibbleArray> {
-        private final Long2ObjectOpenHashMap<ChunkNibbleArray> base;
+    static final class View extends Long2ObjectOpenHashMap<DataLayer> {
+        private final Long2ObjectOpenHashMap<DataLayer> base;
         @Nullable
         private final Layer top;
         private final int size;
 
-        View(Long2ObjectOpenHashMap<ChunkNibbleArray> base, @Nullable Layer top, int size) {
+        View(Long2ObjectOpenHashMap<DataLayer> base, @Nullable Layer top, int size) {
             super(0);
             this.base = base;
             this.top = top;
@@ -209,12 +209,12 @@ public final class ServerLightSnapshot {
         }
 
         @Override
-        public ChunkNibbleArray get(long section) {
+        public DataLayer get(long section) {
             for (Layer layer = top; layer != null; layer = layer.parent) {
                 if (!layer.removed.isEmpty() && layer.removed.contains(section)) {
                     return null;
                 }
-                ChunkNibbleArray current = layer.changed.get(section);
+                DataLayer current = layer.changed.get(section);
                 if (current != null) {
                     return current;
                 }
@@ -246,12 +246,12 @@ public final class ServerLightSnapshot {
         }
 
         @Override
-        public ChunkNibbleArray put(long section, ChunkNibbleArray value) {
+        public DataLayer put(long section, DataLayer value) {
             throw readOnly();
         }
 
         @Override
-        public ChunkNibbleArray remove(long section) {
+        public DataLayer remove(long section) {
             throw readOnly();
         }
 
@@ -261,12 +261,12 @@ public final class ServerLightSnapshot {
         }
 
         @Override
-        public Long2ObjectOpenHashMap<ChunkNibbleArray> clone() {
+        public Long2ObjectOpenHashMap<DataLayer> clone() {
             throw readOnly();
         }
 
         @Override
-        public Long2ObjectMap.FastEntrySet<ChunkNibbleArray> long2ObjectEntrySet() {
+        public Long2ObjectMap.FastEntrySet<DataLayer> long2ObjectEntrySet() {
             throw readOnly();
         }
 
@@ -276,7 +276,7 @@ public final class ServerLightSnapshot {
         }
 
         @Override
-        public ObjectCollection<ChunkNibbleArray> values() {
+        public ObjectCollection<DataLayer> values() {
             throw readOnly();
         }
     }

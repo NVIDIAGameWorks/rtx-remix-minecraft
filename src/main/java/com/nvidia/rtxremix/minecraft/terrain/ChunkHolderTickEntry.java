@@ -4,10 +4,10 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain;
 
-import net.minecraft.server.world.ServerChunkManager;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 /** A chunk holder's cached entry for the server's per-tick chunk list; see {@code ChunkHolderMixin}. */
 public interface ChunkHolderTickEntry {
-    ServerChunkManager.ChunkWithHolder rtxremix$tickEntry(WorldChunk chunk);
+    ServerChunkCache.ChunkAndHolder rtxremix$tickEntry(LevelChunk chunk);
 }

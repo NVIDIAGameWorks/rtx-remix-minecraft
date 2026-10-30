@@ -4,14 +4,13 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Camera;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Applies a render-only offset to the hidden local-player model so first-person
@@ -28,14 +27,14 @@ final class FirstPersonShadowModelPlacement {
 
     private static final double DIRECTION_EPSILON_SQ = 1.0e-10;
 
-    private Vec3d offset = Vec3d.ZERO;
-    private Vec3d velocity = Vec3d.ZERO;
+    private Vec3 offset = Vec3.ZERO;
+    private Vec3 velocity = Vec3.ZERO;
 
-    Vec3d resolve(ClientWorld world, Camera camera, Entity player,
+    Vec3 resolve(ClientLevel world, Camera camera, Entity player,
                   List<LightConstraint> lights, float dtSeconds) {
-        Vec3d headCenter = camera.getPos();
-        Vec3d target = lights.isEmpty()
-                ? Vec3d.ZERO
+        Vec3 headCenter = camera.getPosition();
+        Vec3 target = lights.isEmpty()
+                ? Vec3.ZERO
                 : chooseTargetOffset(world, camera, player, headCenter, lights, offset);
 
         SpringStep spring = advanceSpring(
@@ -44,8 +43,8 @@ final class FirstPersonShadowModelPlacement {
                 target,
                 dtSeconds,
                 SPRING_ANGULAR_FREQUENCY);
-        Vec3d collisionSafeOffset = clampToBlockCollisions(world, player, spring.position);
-        boolean constrained = collisionSafeOffset.squaredDistanceTo(spring.position)
+        Vec3 collisionSafeOffset = clampToBlockCollisions(world, player, spring.position);
+        boolean constrained = collisionSafeOffset.distanceToSqr(spring.position)
                 > DIRECTION_EPSILON_SQ;
 
         // Clearance is unilateral: a new occlusion constraint pushes the
@@ -60,7 +59,7 @@ final class FirstPersonShadowModelPlacement {
         }
 
         if (constrained) {
-            velocity = Vec3d.ZERO;
+            velocity = Vec3.ZERO;
         } else {
             velocity = spring.velocity;
         }
@@ -69,46 +68,46 @@ final class FirstPersonShadowModelPlacement {
     }
 
     void clear() {
-        offset = Vec3d.ZERO;
-        velocity = Vec3d.ZERO;
+        offset = Vec3.ZERO;
+        velocity = Vec3.ZERO;
     }
 
-    private static Vec3d chooseTargetOffset(
-            ClientWorld world, Camera camera, Entity player, Vec3d headCenter,
-            List<LightConstraint> lights, Vec3d currentOffset) {
-        List<Vec3d> directions = new ArrayList<>(lights.size() + 7);
-        Vec3d currentDirection = horizontal(currentOffset);
-        if (currentDirection.lengthSquared() > DIRECTION_EPSILON_SQ) {
+    private static Vec3 chooseTargetOffset(
+            ClientLevel world, Camera camera, Entity player, Vec3 headCenter,
+            List<LightConstraint> lights, Vec3 currentOffset) {
+        List<Vec3> directions = new ArrayList<>(lights.size() + 7);
+        Vec3 currentDirection = horizontal(currentOffset);
+        if (currentDirection.lengthSqr() > DIRECTION_EPSILON_SQ) {
             addUniqueDirection(directions, currentDirection.normalize());
         }
 
-        Vec3d averageAway = Vec3d.ZERO;
+        Vec3 averageAway = Vec3.ZERO;
         for (LightConstraint light : lights) {
-            Vec3d away = horizontal(headCenter.subtract(light.position));
-            if (away.lengthSquared() > DIRECTION_EPSILON_SQ) {
+            Vec3 away = horizontal(headCenter.subtract(light.position));
+            if (away.lengthSqr() > DIRECTION_EPSILON_SQ) {
                 away = away.normalize();
                 addUniqueDirection(directions, away);
                 averageAway = averageAway.add(away);
             }
         }
-        if (averageAway.lengthSquared() > DIRECTION_EPSILON_SQ) {
+        if (averageAway.lengthSqr() > DIRECTION_EPSILON_SQ) {
             addUniqueDirection(directions, averageAway.normalize());
         }
-        Vec3d backward = HeldLightPlacement.horizontalForward(camera.getYaw()).negate();
+        Vec3 backward = HeldLightPlacement.horizontalForward(camera.getYRot()).reverse();
         addUniqueDirection(directions, backward);
 
         // A wall can block the preferred backward displacement without
         // blocking either direction along its face. These alternatives keep
         // the hidden model away from the light through concave corners.
-        Vec3d tangent = new Vec3d(-backward.z, 0.0, backward.x);
+        Vec3 tangent = new Vec3(-backward.z, 0.0, backward.x);
         addUniqueDirection(directions, backward.add(tangent).normalize());
         addUniqueDirection(directions, backward.subtract(tangent).normalize());
         addUniqueDirection(directions, tangent);
-        addUniqueDirection(directions, tangent.negate());
+        addUniqueDirection(directions, tangent.reverse());
 
-        List<Vec3d> candidates = new ArrayList<>(directions.size() + 1);
+        List<Vec3> candidates = new ArrayList<>(directions.size() + 1);
         candidates.add(clampToBlockCollisions(world, player, currentOffset));
-        for (Vec3d direction : directions) {
+        for (Vec3 direction : directions) {
             double requiredLength = 0.0;
             for (LightConstraint light : lights) {
                 double requiredCenterDistance = HEAD_KEEP_OUT_RADIUS
@@ -121,35 +120,35 @@ final class FirstPersonShadowModelPlacement {
                                 requiredCenterDistance));
             }
 
-            Vec3d desired = direction.multiply(Math.min(requiredLength, MAX_MODEL_OFFSET));
+            Vec3 desired = direction.scale(Math.min(requiredLength, MAX_MODEL_OFFSET));
             candidates.add(clampToBlockCollisions(world, player, desired));
         }
         return selectContinuousCandidate(currentOffset, headCenter, lights, candidates);
     }
 
-    static Vec3d selectContinuousCandidate(
-            Vec3d currentOffset, Vec3d headCenter,
-            List<LightConstraint> lights, List<Vec3d> candidates) {
+    static Vec3 selectContinuousCandidate(
+            Vec3 currentOffset, Vec3 headCenter,
+            List<LightConstraint> lights, List<Vec3> candidates) {
         GapDeficit optimum = new GapDeficit(
                 Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
-        for (Vec3d candidate : candidates) {
+        for (Vec3 candidate : candidates) {
             GapDeficit deficit = gapDeficit(headCenter.add(candidate), lights);
             if (isBetter(deficit, optimum)) {
                 optimum = deficit;
             }
         }
 
-        Vec3d selected = candidates.getFirst();
+        Vec3 selected = candidates.getFirst();
         double selectedMotion = Double.POSITIVE_INFINITY;
         double totalHysteresis = TARGET_CLEARANCE_HYSTERESIS * lights.size();
-        for (Vec3d candidate : candidates) {
+        for (Vec3 candidate : candidates) {
             GapDeficit deficit = gapDeficit(headCenter.add(candidate), lights);
             if (deficit.max > optimum.max + TARGET_CLEARANCE_HYSTERESIS
                     || deficit.total > optimum.total + totalHysteresis) {
                 continue;
             }
 
-            double motion = candidate.squaredDistanceTo(currentOffset);
+            double motion = candidate.distanceToSqr(currentOffset);
             if (motion < selectedMotion) {
                 selected = candidate;
                 selectedMotion = motion;
@@ -159,18 +158,18 @@ final class FirstPersonShadowModelPlacement {
     }
 
     static double requiredTranslation(
-            Vec3d headCenterFromLight, Vec3d direction, double requiredCenterDistance) {
-        double distanceSquared = headCenterFromLight.lengthSquared();
+            Vec3 headCenterFromLight, Vec3 direction, double requiredCenterDistance) {
+        double distanceSquared = headCenterFromLight.lengthSqr();
         double requiredSquared = requiredCenterDistance * requiredCenterDistance;
         if (distanceSquared >= requiredSquared) {
             return 0.0;
         }
-        double projection = headCenterFromLight.dotProduct(direction);
+        double projection = headCenterFromLight.dot(direction);
         double discriminant = projection * projection - distanceSquared + requiredSquared;
         return Math.max(0.0, -projection + Math.sqrt(Math.max(0.0, discriminant)));
     }
 
-    static float clearanceRadianceScale(Vec3d displacedHeadCenter, LightConstraint light) {
+    static float clearanceRadianceScale(Vec3 displacedHeadCenter, LightConstraint light) {
         double surfaceGap = displacedHeadCenter.distanceTo(light.position)
                 - HEAD_KEEP_OUT_RADIUS
                 - light.emitterRadius;
@@ -179,7 +178,7 @@ final class FirstPersonShadowModelPlacement {
     }
 
     static SpringStep advanceSpring(
-            Vec3d position, Vec3d velocity, Vec3d target,
+            Vec3 position, Vec3 velocity, Vec3 target,
             float dtSeconds, double angularFrequency) {
         double dt = Math.clamp(
                 dtSeconds, 0.0f, HeldLightPlacement.MAX_FRAME_DT_SECONDS);
@@ -189,45 +188,45 @@ final class FirstPersonShadowModelPlacement {
         }
 
         double decay = Math.exp(-omega * dt);
-        Vec3d displacement = position.subtract(target);
-        Vec3d temporary = velocity.add(displacement.multiply(omega)).multiply(dt);
-        Vec3d nextPosition = target.add(displacement.add(temporary).multiply(decay));
-        Vec3d nextVelocity = velocity.subtract(temporary.multiply(omega)).multiply(decay);
+        Vec3 displacement = position.subtract(target);
+        Vec3 temporary = velocity.add(displacement.scale(omega)).scale(dt);
+        Vec3 nextPosition = target.add(displacement.add(temporary).scale(decay));
+        Vec3 nextVelocity = velocity.subtract(temporary.scale(omega)).scale(decay);
         return new SpringStep(nextPosition, nextVelocity);
     }
 
-    private static Vec3d clampToBlockCollisions(
-            ClientWorld world, Entity player, Vec3d desiredOffset) {
-        if (desiredOffset.lengthSquared() <= DIRECTION_EPSILON_SQ) {
-            return Vec3d.ZERO;
+    private static Vec3 clampToBlockCollisions(
+            ClientLevel world, Entity player, Vec3 desiredOffset) {
+        if (desiredOffset.lengthSqr() <= DIRECTION_EPSILON_SQ) {
+            return Vec3.ZERO;
         }
 
-        Box modelBounds = player.getBoundingBox().contract(COLLISION_EPSILON);
-        Box desiredBounds = modelBounds.offset(desiredOffset);
-        Box queryBounds = new Box(
+        AABB modelBounds = player.getBoundingBox().deflate(COLLISION_EPSILON);
+        AABB desiredBounds = modelBounds.move(desiredOffset);
+        AABB queryBounds = new AABB(
                 Math.min(modelBounds.minX, desiredBounds.minX) - COLLISION_EPSILON,
                 Math.min(modelBounds.minY, desiredBounds.minY) - COLLISION_EPSILON,
                 Math.min(modelBounds.minZ, desiredBounds.minZ) - COLLISION_EPSILON,
                 Math.max(modelBounds.maxX, desiredBounds.maxX) + COLLISION_EPSILON,
                 Math.max(modelBounds.maxY, desiredBounds.maxY) + COLLISION_EPSILON,
                 Math.max(modelBounds.maxZ, desiredBounds.maxZ) + COLLISION_EPSILON);
-        List<Box> nearbyBlocks = new ArrayList<>();
+        List<AABB> nearbyBlocks = new ArrayList<>();
         world.getBlockCollisions(player, queryBounds).forEach(
-                shape -> nearbyBlocks.addAll(shape.getBoundingBoxes()));
+                shape -> nearbyBlocks.addAll(shape.toAabbs()));
         return slideAgainstBlocks(modelBounds, desiredOffset, nearbyBlocks);
     }
 
-    static Vec3d slideAgainstBlocks(
-            Box modelBounds, Vec3d desiredOffset, List<Box> nearbyBlocks) {
+    static Vec3 slideAgainstBlocks(
+            AABB modelBounds, Vec3 desiredOffset, List<AABB> nearbyBlocks) {
         double xFirstX = clampX(modelBounds, desiredOffset.x, nearbyBlocks);
-        Box afterX = modelBounds.offset(xFirstX, 0.0, 0.0);
+        AABB afterX = modelBounds.move(xFirstX, 0.0, 0.0);
         double xFirstZ = clampZ(afterX, desiredOffset.z, nearbyBlocks);
-        Vec3d xFirst = new Vec3d(xFirstX, desiredOffset.y, xFirstZ);
+        Vec3 xFirst = new Vec3(xFirstX, desiredOffset.y, xFirstZ);
 
         double zFirstZ = clampZ(modelBounds, desiredOffset.z, nearbyBlocks);
-        Box afterZ = modelBounds.offset(0.0, 0.0, zFirstZ);
+        AABB afterZ = modelBounds.move(0.0, 0.0, zFirstZ);
         double zFirstX = clampX(afterZ, desiredOffset.x, nearbyBlocks);
-        Vec3d zFirst = new Vec3d(zFirstX, desiredOffset.y, zFirstZ);
+        Vec3 zFirst = new Vec3(zFirstX, desiredOffset.y, zFirstZ);
 
         return horizontalErrorSquared(xFirst, desiredOffset)
                 <= horizontalErrorSquared(zFirst, desiredOffset)
@@ -235,9 +234,9 @@ final class FirstPersonShadowModelPlacement {
                 : zFirst;
     }
 
-    private static double clampX(Box bounds, double desiredX, List<Box> blocks) {
+    private static double clampX(AABB bounds, double desiredX, List<AABB> blocks) {
         double allowedX = desiredX;
-        for (Box block : blocks) {
+        for (AABB block : blocks) {
             if (!overlaps(bounds.minY, bounds.maxY, block.minY, block.maxY)
                     || !overlaps(bounds.minZ, bounds.maxZ, block.minZ, block.maxZ)) {
                 continue;
@@ -251,9 +250,9 @@ final class FirstPersonShadowModelPlacement {
         return allowedX;
     }
 
-    private static double clampZ(Box bounds, double desiredZ, List<Box> blocks) {
+    private static double clampZ(AABB bounds, double desiredZ, List<AABB> blocks) {
         double allowedZ = desiredZ;
-        for (Box block : blocks) {
+        for (AABB block : blocks) {
             if (!overlaps(bounds.minY, bounds.maxY, block.minY, block.maxY)
                     || !overlaps(bounds.minX, bounds.maxX, block.minX, block.maxX)) {
                 continue;
@@ -267,7 +266,7 @@ final class FirstPersonShadowModelPlacement {
         return allowedZ;
     }
 
-    private static double horizontalErrorSquared(Vec3d candidate, Vec3d desired) {
+    private static double horizontalErrorSquared(Vec3 candidate, Vec3 desired) {
         double xError = candidate.x - desired.x;
         double zError = candidate.z - desired.z;
         return xError * xError + zError * zError;
@@ -279,7 +278,7 @@ final class FirstPersonShadowModelPlacement {
     }
 
     private static GapDeficit gapDeficit(
-            Vec3d displacedHeadCenter, List<LightConstraint> lights) {
+            Vec3 displacedHeadCenter, List<LightConstraint> lights) {
         double max = 0.0;
         double total = 0.0;
         for (LightConstraint light : lights) {
@@ -298,26 +297,26 @@ final class FirstPersonShadowModelPlacement {
                 || (candidate.max == reference.max && candidate.total < reference.total);
     }
 
-    private static Vec3d horizontal(Vec3d vector) {
-        return new Vec3d(vector.x, 0.0, vector.z);
+    private static Vec3 horizontal(Vec3 vector) {
+        return new Vec3(vector.x, 0.0, vector.z);
     }
 
-    private static void addUniqueDirection(List<Vec3d> directions, Vec3d direction) {
-        for (Vec3d existing : directions) {
-            if (existing.dotProduct(direction) > 0.999) {
+    private static void addUniqueDirection(List<Vec3> directions, Vec3 direction) {
+        for (Vec3 existing : directions) {
+            if (existing.dot(direction) > 0.999) {
                 return;
             }
         }
         directions.add(direction);
     }
 
-    record LightConstraint(Vec3d position, double emitterRadius, double targetGap) {
-        LightConstraint(Vec3d position, double emitterRadius) {
+    record LightConstraint(Vec3 position, double emitterRadius, double targetGap) {
+        LightConstraint(Vec3 position, double emitterRadius) {
             this(position, emitterRadius, TARGET_LIGHT_GAP);
         }
     }
 
-    record SpringStep(Vec3d position, Vec3d velocity) {
+    record SpringStep(Vec3 position, Vec3 velocity) {
     }
 
     private record GapDeficit(double max, double total) {

@@ -6,34 +6,34 @@ package com.nvidia.rtxremix.minecraft.block;
 
 import com.mojang.serialization.MapCodec;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockEntityProvider;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.block.BlockRenderType;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FacingBlock;
-import net.minecraft.block.Waterloggable;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.fluid.Fluids;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.DirectionProperty;
-import net.minecraft.state.property.BooleanProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.ItemScatterer;
-import net.minecraft.util.BlockMirror;
-import net.minecraft.util.BlockRotation;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.WorldAccess;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.Containers;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.DirectionalBlock;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.SimpleWaterloggedBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -45,157 +45,157 @@ import org.jetbrains.annotations.Nullable;
  *
  * @see SpotLightBlock
  */
-public class CopperBeaconBlock extends SpotLightBlock implements BlockEntityProvider, Waterloggable {
+public class CopperBeaconBlock extends SpotLightBlock implements EntityBlock, SimpleWaterloggedBlock {
 
     /** Registry path, also used for the block item, models, and translation key. */
     public static final String ID = "copper_beacon";
-    public static final DirectionProperty MOUNT = DirectionProperty.of("mount");
-    public static final BooleanProperty POWERED = Properties.POWERED;
-    public static final BooleanProperty WATERLOGGED = Properties.WATERLOGGED;
+    public static final DirectionProperty MOUNT = DirectionProperty.create("mount");
+    public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
+    public static final BooleanProperty WATERLOGGED = BlockStateProperties.WATERLOGGED;
 
     public static final LightEntry.ColorOverride BEAM_COLOR =
             LightEntry.ColorOverride.of(1.0f, 0.88f, 0.70f);
 
-    public static final MapCodec<CopperBeaconBlock> CODEC = createCodec(CopperBeaconBlock::new);
+    public static final MapCodec<CopperBeaconBlock> CODEC = simpleCodec(CopperBeaconBlock::new);
 
     public static final CopperBeaconBlock INSTANCE = new CopperBeaconBlock(beaconSettings());
 
-    public CopperBeaconBlock(AbstractBlock.Settings settings) {
+    public CopperBeaconBlock(BlockBehaviour.Properties settings) {
         super(settings, BEAM_COLOR);
-        setDefaultState(getDefaultState()
-                .with(MOUNT, Direction.UP)
-                .with(POWERED, false)
-                .with(WATERLOGGED, false));
+        registerDefaultState(defaultBlockState()
+                .setValue(MOUNT, Direction.UP)
+                .setValue(POWERED, false)
+                .setValue(WATERLOGGED, false));
     }
 
     @Override
-    protected MapCodec<? extends FacingBlock> getCodec() {
+    protected MapCodec<? extends DirectionalBlock> codec() {
         return CODEC;
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
-        super.appendProperties(builder);
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
         builder.add(MOUNT, POWERED, WATERLOGGED);
     }
 
     @Nullable
     @Override
-    public BlockState getPlacementState(ItemPlacementContext context) {
-        Direction mount = context.getSide();
-        World world = context.getWorld();
-        BlockPos pos = context.getBlockPos();
-        return getDefaultState()
-                .with(MOUNT, mount)
-                .with(FACING, placementForward(context, mount))
-                .with(POWERED, world.isReceivingRedstonePower(pos))
-                .with(WATERLOGGED, world.getFluidState(pos).getFluid() == Fluids.WATER);
+    public BlockState getStateForPlacement(BlockPlaceContext context) {
+        Direction mount = context.getClickedFace();
+        Level world = context.getLevel();
+        BlockPos pos = context.getClickedPos();
+        return defaultBlockState()
+                .setValue(MOUNT, mount)
+                .setValue(FACING, placementForward(context, mount))
+                .setValue(POWERED, world.hasNeighborSignal(pos))
+                .setValue(WATERLOGGED, world.getFluidState(pos).getType() == Fluids.WATER);
     }
 
-    static Direction placementForward(ItemPlacementContext context, Direction mount) {
+    static Direction placementForward(BlockPlaceContext context, Direction mount) {
         return CopperBeaconState.orthogonalForward(
-                context.getPlayerLookDirection().getOpposite(),
-                context.getHorizontalPlayerFacing().getOpposite(),
+                context.getNearestLookingDirection().getOpposite(),
+                context.getHorizontalDirection().getOpposite(),
                 mount);
     }
 
     @Override
-    protected BlockState rotate(BlockState state, BlockRotation rotation) {
-        return super.rotate(state, rotation).with(MOUNT, rotation.rotate(state.get(MOUNT)));
+    protected BlockState rotate(BlockState state, Rotation rotation) {
+        return super.rotate(state, rotation).setValue(MOUNT, rotation.rotate(state.getValue(MOUNT)));
     }
 
     @Override
-    protected BlockState mirror(BlockState state, BlockMirror mirror) {
-        return super.mirror(state, mirror).with(MOUNT, mirror.apply(state.get(MOUNT)));
+    protected BlockState mirror(BlockState state, Mirror mirror) {
+        return super.mirror(state, mirror).setValue(MOUNT, mirror.mirror(state.getValue(MOUNT)));
     }
 
     @Nullable
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new CopperBeaconBlockEntity(pos, state);
     }
 
     @Override
-    protected ActionResult onUse(
+    protected InteractionResult useWithoutItem(
             BlockState state,
-            World world,
+            Level world,
             BlockPos pos,
-            PlayerEntity player,
+            Player player,
             BlockHitResult hit) {
-        if (world.isClient) {
-            return ActionResult.SUCCESS;
+        if (world.isClientSide) {
+            return InteractionResult.SUCCESS;
         }
         if (world.getBlockEntity(pos) instanceof CopperBeaconBlockEntity beacon) {
-            player.openHandledScreen(beacon);
-            return ActionResult.CONSUME;
+            player.openMenu(beacon);
+            return InteractionResult.CONSUME;
         }
-        return ActionResult.PASS;
+        return InteractionResult.PASS;
     }
 
     @Override
-    protected void neighborUpdate(
+    protected void neighborChanged(
             BlockState state,
-            World world,
+            Level world,
             BlockPos pos,
             Block sourceBlock,
             BlockPos sourcePos,
             boolean notify) {
-        if (world.isClient) {
+        if (world.isClientSide) {
             return;
         }
-        boolean powered = world.isReceivingRedstonePower(pos);
-        if (powered == state.get(POWERED)) {
+        boolean powered = world.hasNeighborSignal(pos);
+        if (powered == state.getValue(POWERED)) {
             return;
         }
         BlockEntity blockEntity = world.getBlockEntity(pos);
         if (blockEntity instanceof CopperBeaconBlockEntity beacon) {
-            beacon.onPoweredChanged(powered, world.getTime());
+            beacon.onPoweredChanged(powered, world.getGameTime());
         }
-        world.setBlockState(pos, state.with(POWERED, powered), Block.NOTIFY_LISTENERS);
+        world.setBlock(pos, state.setValue(POWERED, powered), Block.UPDATE_CLIENTS);
     }
 
     @Override
-    protected void onStateReplaced(
+    protected void onRemove(
             BlockState state,
-            World world,
+            Level world,
             BlockPos pos,
             BlockState newState,
             boolean moved) {
-        if (!state.isOf(newState.getBlock())) {
+        if (!state.is(newState.getBlock())) {
             if (world.getBlockEntity(pos) instanceof CopperBeaconBlockEntity beacon) {
-                ItemScatterer.spawn(world, pos, beacon);
+                Containers.dropContents(world, pos, beacon);
             }
         }
-        super.onStateReplaced(state, world, pos, newState, moved);
+        super.onRemove(state, world, pos, newState, moved);
     }
 
     @Override
-    protected BlockState getStateForNeighborUpdate(
+    protected BlockState updateShape(
             BlockState state,
             Direction direction,
             BlockState neighborState,
-            WorldAccess world,
+            LevelAccessor world,
             BlockPos pos,
             BlockPos neighborPos) {
-        if (state.get(WATERLOGGED)) {
-            world.scheduleFluidTick(pos, Fluids.WATER, Fluids.WATER.getTickRate(world));
+        if (state.getValue(WATERLOGGED)) {
+            world.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(world));
         }
-        return super.getStateForNeighborUpdate(state, direction, neighborState, world, pos, neighborPos);
+        return super.updateShape(state, direction, neighborState, world, pos, neighborPos);
     }
 
     @Override
     protected FluidState getFluidState(BlockState state) {
-        return state.get(WATERLOGGED) ? Fluids.WATER.getStill(false) : super.getFluidState(state);
+        return state.getValue(WATERLOGGED) ? Fluids.WATER.getSource(false) : super.getFluidState(state);
     }
 
     @Override
-    protected BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.MODEL;
+    protected RenderShape getRenderShape(BlockState state) {
+        return RenderShape.MODEL;
     }
 
     @Override
-    protected VoxelShape getOutlineShape(
-            BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        return CopperBeaconShapes.forMount(state.get(MOUNT));
+    protected VoxelShape getShape(
+            BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
+        return CopperBeaconShapes.forMount(state.getValue(MOUNT));
     }
 }

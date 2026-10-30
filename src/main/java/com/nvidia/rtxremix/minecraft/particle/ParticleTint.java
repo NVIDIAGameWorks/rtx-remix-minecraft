@@ -4,8 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.particle;
 
-import net.minecraft.client.particle.FireSmokeParticle;
 import net.minecraft.client.particle.Particle;
+import net.minecraft.client.particle.SmokeParticle;
 
 /**
  * Vertex tint a particle is drawn with when vanilla's colour is the wrong one
@@ -33,13 +33,13 @@ public final class ParticleTint {
 
     /**
      * Whether the particle is one vanilla tints as a dark speck: a
-     * {@link FireSmokeParticle} ({@code smoke} and {@code large_smoke}), which
+     * {@link SmokeParticle} ({@code smoke} and {@code large_smoke}), which
      * {@code AscendingParticle} colours random * 0.3 grey.
      * {@code CampfireSmokeParticle} is deliberately outside: vanilla draws it
      * white over mid-grey sprites, so it has no dark tint to reproduce and
      * keeps its sprite colour.
      */
     public static boolean isSoot(Particle particle) {
-        return particle instanceof FireSmokeParticle;
+        return particle instanceof SmokeParticle;
     }
 }

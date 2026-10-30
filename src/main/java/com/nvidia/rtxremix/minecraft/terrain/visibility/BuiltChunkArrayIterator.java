@@ -5,19 +5,18 @@
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-
 import java.util.NoSuchElementException;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 
 /**
  * Reusable iterator for a compact render-thread BuiltChunk buffer.
  */
-public final class BuiltChunkArrayIterator implements ObjectListIterator<ChunkBuilder.BuiltChunk> {
-    private ChunkBuilder.BuiltChunk[] chunks;
+public final class BuiltChunkArrayIterator implements ObjectListIterator<SectionRenderDispatcher.RenderSection> {
+    private SectionRenderDispatcher.RenderSection[] chunks;
     private int size;
     private int index;
 
-    public BuiltChunkArrayIterator reset(ChunkBuilder.BuiltChunk[] chunks, int size) {
+    public BuiltChunkArrayIterator reset(SectionRenderDispatcher.RenderSection[] chunks, int size) {
         this.chunks = chunks;
         this.size = size;
         this.index = 0;
@@ -30,7 +29,7 @@ public final class BuiltChunkArrayIterator implements ObjectListIterator<ChunkBu
     }
 
     @Override
-    public ChunkBuilder.BuiltChunk next() {
+    public SectionRenderDispatcher.RenderSection next() {
         if (!hasNext()) {
             throw new NoSuchElementException();
         }
@@ -43,7 +42,7 @@ public final class BuiltChunkArrayIterator implements ObjectListIterator<ChunkBu
     }
 
     @Override
-    public ChunkBuilder.BuiltChunk previous() {
+    public SectionRenderDispatcher.RenderSection previous() {
         if (!hasPrevious()) {
             throw new NoSuchElementException();
         }

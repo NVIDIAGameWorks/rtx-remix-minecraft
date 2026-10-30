@@ -4,14 +4,14 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /** Canonical identities for built-in block-light rules. */
 final class BlockLightRuleIds {
 
     private BlockLightRuleIds() {}
 
-    static Identifier builtIn(String path) {
+    static ResourceLocation builtIn(String path) {
         return BlockLightRuleManager.id("rtxremix", path + ".json");
     }
 }

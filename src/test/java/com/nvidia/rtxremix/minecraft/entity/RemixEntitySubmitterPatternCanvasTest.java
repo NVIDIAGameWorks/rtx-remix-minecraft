@@ -6,8 +6,8 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.CanvasReader;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import static com.nvidia.rtxremix.minecraft.entity.RemixBlockEntityPass.STATIC_WORLD_CANVASES;
@@ -31,12 +31,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RemixEntitySubmitterPatternCanvasTest {
 
-    private static final Identifier BANNER_ATLAS =
-            Identifier.of("minecraft", "textures/atlas/banner_patterns.png");
-    private static final Identifier SHIELD_ATLAS =
-            Identifier.of("minecraft", "textures/atlas/shield_patterns.png");
-    private static final Identifier CREEPER =
-            Identifier.of("minecraft", "textures/entity/creeper/creeper.png");
+    private static final ResourceLocation BANNER_ATLAS =
+            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/banner_patterns.png");
+    private static final ResourceLocation SHIELD_ATLAS =
+            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/shield_patterns.png");
+    private static final ResourceLocation CREEPER =
+            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/creeper/creeper.png");
     private static final int WHITE = 0xFFFFFFFF;
 
     // Bones as a capture records them: every cuboid render pushes its own, so the
@@ -45,9 +45,9 @@ class RemixEntitySubmitterPatternCanvasTest {
     private static final int BACKING = 0, BASE_PASS = 1, PATTERN_PASS = 2, OTHER_HAND = 3;
     private static final float[] BONES = bones(pose(0.5f), pose(0.5f), pose(0.5f), pose(-0.5f));
 
-    private final ModelPart.Quad[] flag = new ModelPart.Quad[6];
-    private final ModelPart.Quad[] pole = new ModelPart.Quad[6];
-    private final ModelPart.Quad[] plate = new ModelPart.Quad[6];
+    private final ModelPart.Polygon[] flag = new ModelPart.Polygon[6];
+    private final ModelPart.Polygon[] pole = new ModelPart.Polygon[6];
+    private final ModelPart.Polygon[] plate = new ModelPart.Polygon[6];
 
     @Test
     void aTextureOffThePatternAtlasesHasNoRole() {
@@ -153,7 +153,7 @@ class RemixEntitySubmitterPatternCanvasTest {
     void theBackingClothIsTheBaseCuboidDrawnAgainAtTheBasePoseOnTheSolidLayer() {
         CanvasReader reader = reader();
         reader.collectBases(BANNER_ATLAS, TRANSLUCENT,
-                layer(new ModelPart.Quad[][] {flag, flag}, BASE_PASS, PATTERN_PASS));
+                layer(new ModelPart.Polygon[][] {flag, flag}, BASE_PASS, PATTERN_PASS));
         reader.beginLayer(BANNER_ATLAS, OPAQUE);
 
         assertTrue(reader.isBacking(reader.next(flag, BACKING), flag, BACKING));
@@ -167,7 +167,7 @@ class RemixEntitySubmitterPatternCanvasTest {
         // cuboid; only the pose tells the plain shield's plate from the backing.
         CanvasReader reader = reader();
         reader.collectBases(SHIELD_ATLAS, TRANSLUCENT,
-                layer(new ModelPart.Quad[][] {plate, plate}, BASE_PASS, PATTERN_PASS));
+                layer(new ModelPart.Polygon[][] {plate, plate}, BASE_PASS, PATTERN_PASS));
         reader.beginLayer(SHIELD_ATLAS, OPAQUE);
 
         assertFalse(reader.isBacking(reader.next(plate, OTHER_HAND), plate, OTHER_HAND));
@@ -189,7 +189,7 @@ class RemixEntitySubmitterPatternCanvasTest {
         // to match, and a texture off the pattern atlases has no canvas.
         CanvasReader reader = reader();
         reader.collectBases(BANNER_ATLAS, TRANSLUCENT,
-                layer(new ModelPart.Quad[][] {flag}, BASE_PASS));
+                layer(new ModelPart.Polygon[][] {flag}, BASE_PASS));
 
         assertFalse(reader.isBacking(BASE, flag, BASE_PASS));
         assertFalse(reader.isBacking(PATTERN, flag, PATTERN_PASS));
@@ -201,7 +201,7 @@ class RemixEntitySubmitterPatternCanvasTest {
     void solidLayersHoldNoBases() {
         CanvasReader reader = reader();
         reader.collectBases(BANNER_ATLAS, OPAQUE,
-                layer(new ModelPart.Quad[][] {flag}, BACKING));
+                layer(new ModelPart.Polygon[][] {flag}, BACKING));
         reader.beginLayer(BANNER_ATLAS, OPAQUE);
         assertFalse(reader.isBacking(reader.next(flag, BACKING), flag, BACKING));
     }
@@ -210,7 +210,7 @@ class RemixEntitySubmitterPatternCanvasTest {
     void beginningAnEntityForgetsThePreviousEntitysBases() {
         CanvasReader reader = reader();
         reader.collectBases(BANNER_ATLAS, TRANSLUCENT,
-                layer(new ModelPart.Quad[][] {flag}, BASE_PASS));
+                layer(new ModelPart.Polygon[][] {flag}, BASE_PASS));
 
         reader.beginEntity(BONES);
         reader.beginLayer(BANNER_ATLAS, OPAQUE);
@@ -224,7 +224,7 @@ class RemixEntitySubmitterPatternCanvasTest {
     }
 
     /** A captured layer holding the given cuboids, in order, each on its bone. */
-    private static RemixCapturingConsumer layer(ModelPart.Quad[][] sides, int... bones) {
+    private static RemixCapturingConsumer layer(ModelPart.Polygon[][] sides, int... bones) {
         RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
         for (int i = 0; i < sides.length; i++) {
             consumer.replayCuboidPart(sides[i], WHITE, bones[i], null);

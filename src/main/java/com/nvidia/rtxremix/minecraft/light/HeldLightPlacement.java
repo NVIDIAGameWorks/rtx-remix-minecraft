@@ -4,15 +4,14 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.shape.VoxelShape;
-
 import java.util.EnumMap;
+import net.minecraft.client.Camera;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * Places local first-person item lights on the camera centerline while keeping
@@ -30,10 +29,10 @@ final class HeldLightPlacement {
     private final EnumMap<EquipmentSlot, Double> previousDistances =
             new EnumMap<>(EquipmentSlot.class);
 
-    Vec3d resolve(ClientWorld world, Camera camera, Entity source,
+    Vec3 resolve(ClientLevel world, Camera camera, Entity source,
                   EquipmentSlot slot, double emitterRadius, float dtSeconds) {
-        Vec3d origin = camera.getPos();
-        Vec3d forward = horizontalForward(camera.getYaw());
+        Vec3 origin = camera.getPosition();
+        Vec3 forward = horizontalForward(camera.getYRot());
         double expansion = Math.max(0.0, emitterRadius) + WALL_CLEARANCE;
         double targetDistance = collisionLimitedDistance(
                 world,
@@ -47,7 +46,7 @@ final class HeldLightPlacement {
                 ? targetDistance
                 : advanceDistance(previousDistance, targetDistance, dtSeconds);
         previousDistances.put(slot, distance);
-        return origin.add(forward.multiply(distance));
+        return origin.add(forward.scale(distance));
     }
 
     void reset(EquipmentSlot slot) {
@@ -58,20 +57,20 @@ final class HeldLightPlacement {
         previousDistances.clear();
     }
 
-    static Vec3d horizontalForward(float yawDegrees) {
+    static Vec3 horizontalForward(float yawDegrees) {
         double yawRadians = Math.toRadians(yawDegrees);
-        return new Vec3d(-Math.sin(yawRadians), 0.0, Math.cos(yawRadians));
+        return new Vec3(-Math.sin(yawRadians), 0.0, Math.cos(yawRadians));
     }
 
     static double collisionLimitedDistance(
-            ClientWorld world,
+            ClientLevel world,
             Entity source,
-            Vec3d origin,
-            Vec3d direction,
+            Vec3 origin,
+            Vec3 direction,
             double preferredDistance,
             double expansion) {
-        Vec3d preferredPosition = origin.add(direction.multiply(preferredDistance));
-        Box queryBox = new Box(
+        Vec3 preferredPosition = origin.add(direction.scale(preferredDistance));
+        AABB queryBox = new AABB(
                 Math.min(origin.x, preferredPosition.x) - expansion,
                 Math.min(origin.y, preferredPosition.y) - expansion,
                 Math.min(origin.z, preferredPosition.z) - expansion,
@@ -87,19 +86,19 @@ final class HeldLightPlacement {
     }
 
     static double collisionLimitedDistance(
-            Vec3d origin,
-            Vec3d direction,
+            Vec3 origin,
+            Vec3 direction,
             double preferredDistance,
             Iterable<VoxelShape> collisions,
             double expansion) {
         double nearest = Math.max(0.0, preferredDistance);
         for (VoxelShape collision : collisions) {
-            for (Box box : collision.getBoundingBoxes()) {
+            for (AABB box : collision.toAabbs()) {
                 double entry = rayBoxEntryDistance(
                         origin,
                         direction,
                         nearest,
-                        box.expand(Math.max(0.0, expansion)));
+                        box.inflate(Math.max(0.0, expansion)));
                 if (entry < nearest) {
                     nearest = entry;
                 }
@@ -117,10 +116,10 @@ final class HeldLightPlacement {
     }
 
     static double rayBoxEntryDistance(
-            Vec3d origin,
-            Vec3d direction,
+            Vec3 origin,
+            Vec3 direction,
             double maxDistance,
-            Box box) {
+            AABB box) {
         double tMin = 0.0;
         double tMax = Math.max(0.0, maxDistance);
 

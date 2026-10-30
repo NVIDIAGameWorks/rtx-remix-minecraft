@@ -6,12 +6,6 @@ package com.nvidia.rtxremix.minecraft.logic;
 
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.RemixException;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import net.minecraft.world.biome.BiomeKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +24,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Drives the minecraft-logic conf option-layers directly: one runtime layer
@@ -300,12 +300,12 @@ public final class ConfLayerDriver {
      */
     static List<String> vanillaBiomeNames() {
         List<String> names = new ArrayList<>();
-        for (Field field : BiomeKeys.class.getFields()) {
-            if (!Modifier.isStatic(field.getModifiers()) || field.getType() != RegistryKey.class) {
+        for (Field field : Biomes.class.getFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) || field.getType() != ResourceKey.class) {
                 continue;
             }
             try {
-                names.add(((RegistryKey<?>) field.get(null)).getValue().getPath());
+                names.add(((ResourceKey<?>) field.get(null)).location().getPath());
             } catch (IllegalAccessException e) {
                 throw new AssertionError("BiomeKeys public field not readable: " + field.getName(), e);
             }
@@ -711,7 +711,7 @@ public final class ConfLayerDriver {
      * Computes per-layer targets, eases smoothed layers toward them, and
      * sends changed strengths to the runtime.
      */
-    public void update(ClientWorld world, Vec3d cameraPos, boolean underwater,
+    public void update(ClientLevel world, Vec3 cameraPos, boolean underwater,
                        float viewDistanceStrength, float tickDelta, ZoneRegistry zones) {
         if (!active) {
             return;
@@ -722,8 +722,8 @@ public final class ConfLayerDriver {
         setTarget(LogicChannels.VIEW_DISTANCE, Math.clamp(viewDistanceStrength, 0.0f, 1.0f));
         // Time layers follow the shared Overworld clock only; other dimensions
         // contribute no time-of-day strength.
-        TimeLayerStrengths time = World.OVERWORLD.equals(world.getRegistryKey())
-                ? timeLayerStrengths(world.getTimeOfDay())
+        TimeLayerStrengths time = Level.OVERWORLD.equals(world.dimension())
+                ? timeLayerStrengths(world.getDayTime())
                 : TimeLayerStrengths.ZERO;
         setTarget(LogicChannels.TIME_DAWN, time.dawn());
         setTarget(LogicChannels.TIME_DAY, time.day());
@@ -734,9 +734,9 @@ public final class ConfLayerDriver {
         // Resolve the camera-position biome once (vanilla namespace only) and
         // target its authored layer when one was discovered. An unconfigured
         // or modded biome targets every discovered biome layer back to 0.
-        String biomeLayerName = world.getBiome(BlockPos.ofFloored(cameraPos)).getKey()
-                .filter(key -> "minecraft".equals(key.getValue().getNamespace()))
-                .map(key -> LogicChannels.BIOME_PREFIX + key.getValue().getPath())
+        String biomeLayerName = world.getBiome(BlockPos.containing(cameraPos)).unwrapKey()
+                .filter(key -> "minecraft".equals(key.location().getNamespace()))
+                .map(key -> LogicChannels.BIOME_PREFIX + key.location().getPath())
                 .orElse(null);
         for (LayerState layer : biomeLayers) {
             layer.target = layer.spec.name().equals(biomeLayerName) ? 1.0f : 0.0f;
@@ -772,9 +772,9 @@ public final class ConfLayerDriver {
      * either gradient moved since the previous frame, the leading edge of a
      * weather transition.
      */
-    private boolean targetWeather(ClientWorld world, float tickDelta) {
-        float rain = world.getRainGradient(tickDelta);
-        float thunder = world.getThunderGradient(tickDelta);
+    private boolean targetWeather(ClientLevel world, float tickDelta) {
+        float rain = world.getRainLevel(tickDelta);
+        float thunder = world.getThunderLevel(tickDelta);
         boolean moving = moved(lastRainGradient, rain) || moved(lastThunderGradient, thunder);
         lastRainGradient = rain;
         lastThunderGradient = thunder;

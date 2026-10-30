@@ -4,13 +4,13 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nvidia.rtxremix.minecraft.entity.EntityRenderContext;
 import com.nvidia.rtxremix.minecraft.entity.RemixCapturingConsumer;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.SpriteTexturedVertexConsumer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.renderer.SpriteCoordinateExpander;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -23,20 +23,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * capture as the immutable object it is rather than as expanded vertices.
  *
  * <p>When the active {@link VertexConsumer} is a {@link RemixCapturingConsumer}
- * inside a Remix entity pass, directly or behind a {@link SpriteTexturedVertexConsumer},
+ * inside a Remix entity pass, directly or behind a {@link SpriteCoordinateExpander},
  * the cuboid's sides, sprite, folded tint and pose are handed to the consumer, which
  * registers the pivot in the {@link EntityRenderContext} and records a rigid part
  * keyed by the cuboid's identity; the vanilla vertex write is cancelled.
  */
-@Mixin(ModelPart.Cuboid.class)
+@Mixin(ModelPart.Cube.class)
 public class CuboidMixin {
 
     @Shadow
     @Final
-    private ModelPart.Quad[] sides;
+    private ModelPart.Polygon[] polygons;
 
-    @Inject(method = "renderCuboid", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$onRenderCuboid(MatrixStack.Entry entry, VertexConsumer vertexConsumer,
+    @Inject(method = "compile", at = @At("HEAD"), cancellable = true)
+    private void rtxremix$onRenderCuboid(PoseStack.Pose entry, VertexConsumer vertexConsumer,
                                           int light, int overlay, int color,
                                           CallbackInfo ci) {
         // Sprite-atlas models (chests, beds, banners, shields, pots) draw through a
@@ -47,8 +47,8 @@ public class CuboidMixin {
         // part's identity. A wrapper around anything else, such as the glint union
         // ItemRenderer builds, is left to vanilla.
         VertexConsumer target = vertexConsumer;
-        Sprite sprite = null;
-        if (target instanceof SpriteTexturedVertexConsumer wrapped) {
+        TextureAtlasSprite sprite = null;
+        if (target instanceof SpriteCoordinateExpander wrapped) {
             sprite = wrapped.sprite;
             target = wrapped.delegate;
         }
@@ -67,9 +67,9 @@ public class CuboidMixin {
         // would reuse another cuboid's geometry.
         // Folded before capture: the tint is an instance property downstream, so a
         // damage or priming flash is a per-instance update, never a new mesh.
-        consumer.acceptCuboid(this.sides,
+        consumer.acceptCuboid(this.polygons,
                 RemixCapturingConsumer.applyEntityOverlay(color, overlay),
-                entry.getPositionMatrix(),
+                entry.pose(),
                 sprite);
 
         ci.cancel();

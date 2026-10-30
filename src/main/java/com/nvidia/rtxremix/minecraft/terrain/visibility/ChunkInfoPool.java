@@ -4,12 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfo;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-import net.minecraft.util.math.Direction;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import net.minecraft.client.renderer.SectionOcclusionGraph.Node;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.core.Direction;
 
 /**
  * One {@code ChunkInfo} per section slot, reused from walk to walk instead of allocated per
@@ -24,12 +24,12 @@ import java.util.Arrays;
  * info the second time, as vanilla would.
  */
 public final class ChunkInfoPool {
-    private final ChunkInfo[] infos;
+    private final Node[] infos;
     private final int[] claimed;
     private int walk = 1;
 
     public ChunkInfoPool(int chunkCount) {
-        infos = new ChunkInfo[Math.max(1, chunkCount)];
+        infos = new Node[Math.max(1, chunkCount)];
         claimed = new int[Math.max(1, chunkCount)];
     }
 
@@ -42,24 +42,24 @@ public final class ChunkInfoPool {
     }
 
     /** The info for {@code chunk} in this walk, initialised as vanilla's constructor would. */
-    public ChunkInfo acquire(ChunkBuilder.BuiltChunk chunk, @Nullable Direction direction, int propagationLevel) {
+    public Node acquire(SectionRenderDispatcher.RenderSection chunk, @Nullable Direction direction, int propagationLevel) {
         int index = chunk.index;
         if (index < 0 || index >= infos.length || claimed[index] == walk) {
-            return new ChunkInfo(chunk, direction, propagationLevel);
+            return new Node(chunk, direction, propagationLevel);
         }
         claimed[index] = walk;
-        ChunkInfo info = infos[index];
-        if (info == null || info.chunk != chunk) {
-            info = new ChunkInfo(chunk, direction, propagationLevel);
+        Node info = infos[index];
+        if (info == null || info.section != chunk) {
+            info = new Node(chunk, direction, propagationLevel);
             infos[index] = info;
             return info;
         }
-        info.direction = 0;
+        info.sourceDirections = 0;
         if (direction != null) {
-            info.addDirection(direction);
+            info.addSourceDirection(direction);
         }
-        info.cullingState = 0;
-        info.propagationLevel = propagationLevel;
+        info.directions = 0;
+        info.step = propagationLevel;
         return info;
     }
 }

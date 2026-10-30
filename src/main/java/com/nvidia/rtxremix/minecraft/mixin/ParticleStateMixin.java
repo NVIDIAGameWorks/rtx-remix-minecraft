@@ -7,15 +7,15 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.nvidia.rtxremix.minecraft.profiling.ParticleTickProfiler;
 import com.nvidia.rtxremix.minecraft.particle.RemixParticleStateAccess;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.minecraft.block.BlockState;
-import net.minecraft.entity.Entity;
 import net.minecraft.client.particle.Particle;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -29,8 +29,8 @@ public abstract class ParticleStateMixin implements RemixParticleStateAccess {
     private static final int rtxremix$FAST_AIR_COLLISION_MAX_BLOCKS = Math.max(1,
             Integer.getInteger("rtxremix.particles.fastAirCollisionMaxBlocks", 8));
     private static final double rtxremix$COLLISION_EPSILON = 1.0E-7D;
-    private static final ThreadLocal<BlockPos.Mutable> rtxremix$COLLISION_POS =
-            ThreadLocal.withInitial(BlockPos.Mutable::new);
+    private static final ThreadLocal<BlockPos.MutableBlockPos> rtxremix$COLLISION_POS =
+            ThreadLocal.withInitial(BlockPos.MutableBlockPos::new);
 
     private Object rtxremix$particleBucket;
     private int rtxremix$particleSlot = -1;
@@ -39,14 +39,14 @@ public abstract class ParticleStateMixin implements RemixParticleStateAccess {
         method = "move(DDD)V",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/entity/Entity;adjustMovementForCollisions(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Box;Lnet/minecraft/world/World;Ljava/util/List;)Lnet/minecraft/util/math/Vec3d;"
+            target = "Lnet/minecraft/world/entity/Entity;collideBoundingBox(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/AABB;Lnet/minecraft/world/level/Level;Ljava/util/List;)Lnet/minecraft/world/phys/Vec3;"
         )
     )
-    private Vec3d rtxremix$adjustMovementForParticleCollision(
+    private Vec3 rtxremix$adjustMovementForParticleCollision(
             Entity entity,
-            Vec3d movement,
-            Box box,
-            World world,
+            Vec3 movement,
+            AABB box,
+            Level world,
             List<VoxelShape> collisions) {
         if (rtxremix$canFastPathAirCollision(world, box, movement, collisions)) {
             ParticleTickProfiler.recordSkippedCollisionCheck();
@@ -55,7 +55,7 @@ public abstract class ParticleStateMixin implements RemixParticleStateAccess {
 
         ParticleTickProfiler.beginCollisionCheck();
         try {
-            return Entity.adjustMovementForCollisions(entity, movement, box, world, collisions);
+            return Entity.collideBoundingBox(entity, movement, box, world, collisions);
         } finally {
             ParticleTickProfiler.endCollisionCheck();
         }
@@ -82,9 +82,9 @@ public abstract class ParticleStateMixin implements RemixParticleStateAccess {
     }
 
     private static boolean rtxremix$canFastPathAirCollision(
-            World world,
-            Box box,
-            Vec3d movement,
+            Level world,
+            AABB box,
+            Vec3 movement,
             List<VoxelShape> collisions) {
         if (!rtxremix$FAST_AIR_COLLISION
                 || !rtxremix$isRtxParticleOptimizationActive()
@@ -99,15 +99,15 @@ public abstract class ParticleStateMixin implements RemixParticleStateAccess {
         double minZ = movement.z < 0.0D ? box.minZ + movement.z : box.minZ;
         double maxZ = movement.z > 0.0D ? box.maxZ + movement.z : box.maxZ;
 
-        int blockMinX = MathHelper.floor(minX - rtxremix$COLLISION_EPSILON);
-        int blockMaxX = MathHelper.floor(maxX + rtxremix$COLLISION_EPSILON);
-        int blockMinY = MathHelper.floor(minY - rtxremix$COLLISION_EPSILON);
-        int blockMaxY = MathHelper.floor(maxY + rtxremix$COLLISION_EPSILON);
-        int blockMinZ = MathHelper.floor(minZ - rtxremix$COLLISION_EPSILON);
-        int blockMaxZ = MathHelper.floor(maxZ + rtxremix$COLLISION_EPSILON);
+        int blockMinX = Mth.floor(minX - rtxremix$COLLISION_EPSILON);
+        int blockMaxX = Mth.floor(maxX + rtxremix$COLLISION_EPSILON);
+        int blockMinY = Mth.floor(minY - rtxremix$COLLISION_EPSILON);
+        int blockMaxY = Mth.floor(maxY + rtxremix$COLLISION_EPSILON);
+        int blockMinZ = Mth.floor(minZ - rtxremix$COLLISION_EPSILON);
+        int blockMaxZ = Mth.floor(maxZ + rtxremix$COLLISION_EPSILON);
 
         int checked = 0;
-        BlockPos.Mutable pos = rtxremix$COLLISION_POS.get();
+        BlockPos.MutableBlockPos pos = rtxremix$COLLISION_POS.get();
         for (int x = blockMinX; x <= blockMaxX; x++) {
             for (int y = blockMinY; y <= blockMaxY; y++) {
                 for (int z = blockMinZ; z <= blockMaxZ; z++) {

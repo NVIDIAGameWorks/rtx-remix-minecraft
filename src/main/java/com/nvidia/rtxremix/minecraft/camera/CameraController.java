@@ -4,15 +4,15 @@
  */
 package com.nvidia.rtxremix.minecraft.camera;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.network.ServerInfo;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,7 +117,7 @@ public final class CameraController {
     /**
      * Advances camera recording from the client tick clock.
      */
-    public void onClientTick(MinecraftClient client) {
+    public void onClientTick(Minecraft client) {
         long now = nowNanos();
 
         if (state == State.RECORDING) {
@@ -136,7 +136,7 @@ public final class CameraController {
             }
             recordingHudTicks++;
             if (client.player != null && recordingHudTicks % 20 == 0) {
-                client.player.sendMessage(Text.literal("[Camera] " + status()), true);
+                client.player.displayClientMessage(Component.literal("[Camera] " + status()), true);
             }
         }
 
@@ -152,7 +152,7 @@ public final class CameraController {
     /**
      * Advances interactive playback from a render-frame callback.
      */
-    public void onFrameStart(MinecraftClient client) {
+    public void onFrameStart(Minecraft client) {
         long now = nowNanos();
 
         // Frame callbacks are also useful for observing a pause promptly when
@@ -246,33 +246,33 @@ public final class CameraController {
      * Derives a path-safe key for an ordinary single-player or multiplayer
      * world. Managed fixtures use {@link #fixtureName(String, String)} instead.
      */
-    public static String deriveWorldKey(MinecraftClient client) {
+    public static String deriveWorldKey(Minecraft client) {
         if (client == null) {
             return "unknown-world";
         }
 
-        MinecraftServer server = client.getServer();
+        MinecraftServer server = client.getSingleplayerServer();
         if (server != null) {
-            Path saveRoot = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().normalize();
+            Path saveRoot = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
             Path saveFolder = saveRoot.getFileName();
             String identity = saveFolder == null
-                    ? server.getSaveProperties().getLevelName()
+                    ? server.getWorldData().getLevelName()
                     : saveFolder.toString();
             return safePathComponent(identity, "singleplayer-world");
         }
 
-        ServerInfo serverInfo = client.getCurrentServerEntry();
+        ServerData serverInfo = client.getCurrentServer();
         if (serverInfo != null) {
-            String serverIdentity = serverInfo.address;
+            String serverIdentity = serverInfo.ip;
             if (serverIdentity == null || serverIdentity.isBlank()) {
                 serverIdentity = serverInfo.name;
             }
             return "server-" + safePathComponent(serverIdentity, "multiplayer-world");
         }
 
-        if (client.world != null) {
+        if (client.level != null) {
             return "world-" + safePathComponent(
-                    client.world.getRegistryKey().getValue().toString(),
+                    client.level.dimension().location().toString(),
                     "unknown-dimension"
             );
         }
@@ -312,7 +312,7 @@ public final class CameraController {
             return fail("Camera recording is not armed. Run /rtx camera record <name> first.");
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (!isActive(client)) {
             return fail("Cannot start camera recording while the game is paused or no player/world is loaded.");
         }
@@ -344,7 +344,7 @@ public final class CameraController {
             return fail("No camera recording is in progress.");
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (!hasPlayerAndWorld(client)) {
             return fail("Cannot save camera recording until a player and world are available.");
         }
@@ -484,11 +484,11 @@ public final class CameraController {
             return fail("Cannot play a camera while recording is armed or active; cancel it first.");
         }
         PlaybackMode selectedMode = Objects.requireNonNull(mode, "mode");
-        if (!loadNamedPath(name, MinecraftClient.getInstance())) {
+        if (!loadNamedPath(name, Minecraft.getInstance())) {
             return lastError;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         playbackTimeline.start(selectedMode, 0L);
         playbackLastNanos = nowNanos();
         // Anchor on the first eligible world render so t=0 is actually
@@ -511,7 +511,7 @@ public final class CameraController {
                     : "No camera playback is active.");
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         long now = nowNanos();
         if (hasPlayerAndWorld(client)) {
             applyLoadedPath(client, positionMs());
@@ -531,7 +531,7 @@ public final class CameraController {
                     : "No paused camera playback is available.");
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         playbackTimeline.reanchor(true);
         playbackLastNanos = nowNanos();
         state = State.PLAYING;
@@ -560,7 +560,7 @@ public final class CameraController {
         playbackTimeline.reset(clampedTimeMs);
         playbackLastNanos = nowNanos();
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (hasPlayerAndWorld(client)) {
             applyLoadedPath(client, clampedTimeMs);
         }
@@ -632,7 +632,7 @@ public final class CameraController {
             fail("Cannot load a benchmark camera while recording is armed or active.");
             return false;
         }
-        if (!loadNamedPath(name, MinecraftClient.getInstance())) {
+        if (!loadNamedPath(name, Minecraft.getInstance())) {
             return false;
         }
 
@@ -652,7 +652,7 @@ public final class CameraController {
             return false;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (!hasPlayerAndWorld(client)) {
             fail("Cannot apply benchmark camera time because no player/world is loaded.");
             return false;
@@ -681,8 +681,8 @@ public final class CameraController {
     }
 
     public String setTimeOfDay(long timeOfDay) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
             return fail("No world loaded.");
         }
 
@@ -693,13 +693,13 @@ public final class CameraController {
     }
 
     public Long adjustTimeOfDay(long deltaTicks) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
             fail("No world loaded.");
             return null;
         }
 
-        long normalized = normalizeTimeOfDay(client.world.getTimeOfDay() + deltaTicks);
+        long normalized = normalizeTimeOfDay(client.level.getDayTime() + deltaTicks);
         applyTimeOfDay(client, normalized);
         clearError();
         return normalized;
@@ -720,7 +720,7 @@ public final class CameraController {
      * @return feedback for the player
      */
     public String markStillShot(String setName, String shotName, StillShotScene scene) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (!hasPlayerAndWorld(client)) {
             return fail("No world loaded.");
         }
@@ -733,11 +733,11 @@ public final class CameraController {
         if (shots == null) {
             return lastError;
         }
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         StillShot shot = new StillShot(
                 name, player.getX(), player.getY(), player.getZ(),
-                MathHelper.wrapDegrees(player.getYaw()), player.getPitch(),
-                normalizeTimeOfDay(client.world.getTimeOfDay()),
+                Mth.wrapDegrees(player.getYRot()), player.getXRot(),
+                normalizeTimeOfDay(client.level.getDayTime()),
                 scene.weather(), scene.rtxEnabled(), scene.proceduralClouds());
         boolean replaced = shots.removeIf(existing -> existing.name().equalsIgnoreCase(name));
         shots.add(shot);
@@ -752,7 +752,7 @@ public final class CameraController {
 
     /** Removes one shot from the named set and writes the set. */
     public String removeStillShot(String setName, String shotName) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (!hasPlayerAndWorld(client)) {
             return fail("No world loaded.");
         }
@@ -778,7 +778,7 @@ public final class CameraController {
 
     /** Lists the named set, one line per shot, or explains why it could not be read. */
     public String describeStillShots(String setName) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (!hasPlayerAndWorld(client)) {
             return fail("No world loaded.");
         }
@@ -811,7 +811,7 @@ public final class CameraController {
      * error here: a capture with nothing to capture is a mistake worth saying.
      */
     public List<StillShot> loadStillShots(String setName) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         String set = normalizeCameraName(setName);
         if (set == null) {
             return null;
@@ -833,13 +833,13 @@ public final class CameraController {
      * A capture pass calls this every frame: a pose applied once drifts with
      * gravity and the day cycle while the scene settles.
      */
-    public void holdStillShot(MinecraftClient client, StillShot shot) {
+    public void holdStillShot(Minecraft client, StillShot shot) {
         if (!hasPlayerAndWorld(client)) {
             return;
         }
-        ClientPlayerEntity player = client.player;
-        player.refreshPositionAndAngles(shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
-        player.setVelocity(0.0, 0.0, 0.0);
+        LocalPlayer player = client.player;
+        player.moveTo(shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
+        player.setDeltaMovement(0.0, 0.0, 0.0);
         applyTimeOfDay(client, shot.timeOfDay());
     }
 
@@ -848,24 +848,24 @@ public final class CameraController {
      * and sends the chunks around it; the client-side hold alone would leave
      * the server's view of the player, and so its chunk filter, behind.
      */
-    public void teleportToStillShot(MinecraftClient client, StillShot shot) {
-        MinecraftServer server = client.getServer();
+    public void teleportToStillShot(Minecraft client, StillShot shot) {
+        MinecraftServer server = client.getSingleplayerServer();
         if (server == null || client.player == null) {
             return;
         }
-        UUID uuid = client.player.getUuid();
+        UUID uuid = client.player.getUUID();
         server.execute(() -> {
-            ServerPlayerEntity serverPlayer = server.getPlayerManager().getPlayer(uuid);
+            ServerPlayer serverPlayer = server.getPlayerList().getPlayer(uuid);
             if (serverPlayer == null) {
                 return;
             }
-            serverPlayer.teleport(serverPlayer.getServerWorld(),
+            serverPlayer.teleportTo(serverPlayer.serverLevel(),
                     shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
-            serverPlayer.setVelocity(0.0, 0.0, 0.0);
+            serverPlayer.setDeltaMovement(0.0, 0.0, 0.0);
         });
     }
 
-    private List<StillShot> readStillShots(MinecraftClient client, String set) {
+    private List<StillShot> readStillShots(Minecraft client, String set) {
         StorageTargets targets = storageTargets(client);
         Path runtimeFile = stillShotFile(targets, set);
         Path managedFile = managedStillShotFile(targets, set);
@@ -890,7 +890,7 @@ public final class CameraController {
     }
 
     /** Writes the set to the runtime file and, when managed, the shot directory; returns where. */
-    private String writeStillShots(MinecraftClient client, String set, List<StillShot> shots) {
+    private String writeStillShots(Minecraft client, String set, List<StillShot> shots) {
         StorageTargets targets = storageTargets(client);
         String json = StillShotCodec.toJson(shots);
         Path runtimeFile = stillShotFile(targets, set);
@@ -953,7 +953,7 @@ public final class CameraController {
         return lastError;
     }
 
-    private boolean loadNamedPath(String name, MinecraftClient client) {
+    private boolean loadNamedPath(String name, Minecraft client) {
         String normalizedName = normalizeCameraName(name);
         if (normalizedName == null) {
             return false;
@@ -1027,9 +1027,9 @@ public final class CameraController {
         }
     }
 
-    private StorageTargets storageTargets(MinecraftClient client) {
-        MinecraftClient resolvedClient = client != null ? client : MinecraftClient.getInstance();
-        Path runDirectory = resolvedClient.runDirectory.toPath().toAbsolutePath().normalize();
+    private StorageTargets storageTargets(Minecraft client) {
+        Minecraft resolvedClient = client != null ? client : Minecraft.getInstance();
+        Path runDirectory = resolvedClient.gameDirectory.toPath().toAbsolutePath().normalize();
         String worldKey = managedTarget == null
                 ? deriveWorldKey(resolvedClient)
                 : managedTarget.storageKey();
@@ -1122,7 +1122,7 @@ public final class CameraController {
         return currentState;
     }
 
-    private void captureExactFinalWaypoint(MinecraftClient client) {
+    private void captureExactFinalWaypoint(Minecraft client) {
         long elapsedMs = recordingElapsedMs();
         storeRecordingWaypoint(
                 recordedWaypoints,
@@ -1171,54 +1171,54 @@ public final class CameraController {
     }
 
     private static CameraPath.Waypoint captureWaypoint(
-            ClientPlayerEntity player,
+            LocalPlayer player,
             long timeMs,
-            MinecraftClient client
+            Minecraft client
     ) {
-        Long timeOfDay = client.world == null
+        Long timeOfDay = client.level == null
                 ? null
-                : normalizeTimeOfDay(client.world.getTimeOfDay());
+                : normalizeTimeOfDay(client.level.getDayTime());
         return new CameraPath.Waypoint(
                 timeMs,
                 player.getX(),
                 player.getY(),
                 player.getZ(),
-                player.getYaw(),
-                player.getPitch(),
+                player.getYRot(),
+                player.getXRot(),
                 timeOfDay
         );
     }
 
-    private void applyLoadedPath(MinecraftClient client, long timeMs) {
+    private void applyLoadedPath(Minecraft client, long timeMs) {
         CameraPath.Sample sample = loadedPath.sampleAt(timeMs);
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         // Playback already supplies a fully interpolated render-frame pose.
         // Keep Minecraft's previous/current entity transforms identical so
         // Camera.update() does not interpolate that pose a second time against
         // the 20 Hz client-tick history.
-        player.refreshPositionAndAngles(
+        player.moveTo(
                 sample.x(),
                 sample.y(),
                 sample.z(),
                 sample.yaw(),
                 sample.pitch()
         );
-        player.setVelocity(0.0, 0.0, 0.0);
+        player.setDeltaMovement(0.0, 0.0, 0.0);
         if (sample.timeOfDay() != null) {
             applyTimeOfDay(client, sample.timeOfDay());
         }
     }
 
-    private static void applyTimeOfDay(MinecraftClient client, long timeOfDay) {
+    private static void applyTimeOfDay(Minecraft client, long timeOfDay) {
         long normalized = normalizeTimeOfDay(timeOfDay);
-        if (client.world != null) {
-            client.world.setTimeOfDay(normalized);
+        if (client.level != null) {
+            client.level.setDayTime(normalized);
         }
 
-        MinecraftServer server = client.getServer();
+        MinecraftServer server = client.getSingleplayerServer();
         if (server != null) {
-            for (ServerWorld world : server.getWorlds()) {
-                world.setTimeOfDay(normalized);
+            for (ServerLevel world : server.getAllLevels()) {
+                world.setDayTime(normalized);
             }
         }
     }
@@ -1227,28 +1227,28 @@ public final class CameraController {
         return Math.floorMod(timeOfDay, MINECRAFT_DAY_TICKS);
     }
 
-    private static boolean isActive(MinecraftClient client) {
+    private static boolean isActive(Minecraft client) {
         return hasPlayerAndWorld(client) && !isPausedOrWillPause(client);
     }
 
-    private static boolean hasPlayerAndWorld(MinecraftClient client) {
-        return client != null && client.player != null && client.world != null;
+    private static boolean hasPlayerAndWorld(Minecraft client) {
+        return client != null && client.player != null && client.level != null;
     }
 
     /**
      * Includes a pausing screen or overlay that Minecraft has opened during
-     * this render. {@link MinecraftClient#isPaused()} is a cached value that is
+     * this render. {@link Minecraft#isPaused()} is a cached value that is
      * not recomputed until the end of {@code MinecraftClient.render}; relying
      * on it alone would advance playback once after the pause menu appears.
      */
-    private static boolean isPausedOrWillPause(MinecraftClient client) {
-        MinecraftServer server = client.getServer();
-        boolean screenPauses = client.currentScreen != null && client.currentScreen.shouldPause();
-        boolean overlayPauses = client.getOverlay() != null && client.getOverlay().pausesGame();
+    private static boolean isPausedOrWillPause(Minecraft client) {
+        MinecraftServer server = client.getSingleplayerServer();
+        boolean screenPauses = client.screen != null && client.screen.isPauseScreen();
+        boolean overlayPauses = client.getOverlay() != null && client.getOverlay().isPauseScreen();
         return isPausedOrWillPause(
                 client.isPaused(),
-                client.isIntegratedServerRunning(),
-                server != null && server.isRemote(),
+                client.hasSingleplayerServer(),
+                server != null && server.isPublished(),
                 screenPauses,
                 overlayPauses
         );

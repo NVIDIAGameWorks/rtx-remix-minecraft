@@ -6,12 +6,12 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.block.entity.BlockEntityRenderDispatcher;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 
 /**
@@ -33,15 +33,15 @@ import org.spongepowered.asm.mixin.Mixin;
 public abstract class BlockEntityRenderDispatcherMixin {
 
     @WrapMethod(
-        method = "render(Lnet/minecraft/block/entity/BlockEntity;FLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;)V"
+        method = "render(Lnet/minecraft/world/level/block/entity/BlockEntity;FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;)V"
     )
     private <E extends BlockEntity> void rtxremix$captureBlockEntityInPlace(
-            E be, float tickDelta, MatrixStack matrices,
-            VertexConsumerProvider provider, Operation<Void> original) {
+            E be, float tickDelta, PoseStack matrices,
+            MultiBufferSource provider, Operation<Void> original) {
         RtxRemixMod mod = RtxRemixMod.getInstance();
         RemixRenderer renderer = mod == null ? null : mod.getRenderer();
         boolean captured = renderer != null
-                && be.hasWorld()
+                && be.hasLevel()
                 && renderer.renderBlockEntityInPlace(be,
                         (captureMatrices, captureProvider) ->
                                 original.call(be, tickDelta, captureMatrices, captureProvider));

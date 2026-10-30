@@ -5,19 +5,19 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.entity.PlayerNameText;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
 
 /** Caches the player's name text, rebuilt only when the profile name changes; see {@link PlayerNameText}. */
-@Mixin(PlayerEntity.class)
+@Mixin(Player.class)
 public abstract class PlayerEntityNameMixin implements PlayerNameText {
     private String rtxremix$cachedName;
-    private Text rtxremix$cachedText;
+    private Component rtxremix$cachedText;
 
     @Override
-    public Text rtxremix$nameText() {
-        PlayerEntity self = (PlayerEntity) (Object) this;
+    public Component rtxremix$nameText() {
+        Player self = (Player) (Object) this;
         String name = self.getGameProfile().getName();
         if (rtxremix$cachedText == null || !name.equals(rtxremix$cachedName)) {
             rtxremix$cachedName = name;

@@ -4,9 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
-import net.minecraft.util.Identifier;
-
 import java.util.Map;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Emission the mod adds on top of what the resource pack authors, for the blocks that
@@ -28,9 +27,9 @@ public final class BuiltinEmission {
      */
     private static final float LANTERN_GAIN = 2.5f;
 
-    private static final Map<Identifier, Float> GAIN = Map.of(
-            Identifier.ofVanilla("block/lantern"), LANTERN_GAIN,
-            Identifier.ofVanilla("block/soul_lantern"), LANTERN_GAIN);
+    private static final Map<ResourceLocation, Float> GAIN = Map.of(
+            ResourceLocation.withDefaultNamespace("block/lantern"), LANTERN_GAIN,
+            ResourceLocation.withDefaultNamespace("block/soul_lantern"), LANTERN_GAIN);
 
     /** Emission factor at a point of a sprite, {@code u} and {@code v} in [0, 1) across the sprite. */
     @FunctionalInterface
@@ -63,20 +62,20 @@ public final class BuiltinEmission {
         return SEA_PICKLE_TIP_PEAK * fromTip * fromTip;
     };
 
-    private static final Map<Identifier, Mask> MASK = Map.of(
-            Identifier.ofVanilla("block/sea_pickle"), SEA_PICKLE);
+    private static final Map<ResourceLocation, Mask> MASK = Map.of(
+            ResourceLocation.withDefaultNamespace("block/sea_pickle"), SEA_PICKLE);
 
     private BuiltinEmission() {
     }
 
     /** Multiplier for the sprite's authored emission factor; 1 for every sprite not listed. */
-    public static float gain(Identifier spriteId) {
+    public static float gain(ResourceLocation spriteId) {
         Float gain = GAIN.get(spriteId);
         return gain != null ? gain : 1.0f;
     }
 
     /** Emission for a sprite the pack leaves unauthored, or null when the mod adds none. */
-    public static Mask mask(Identifier spriteId) {
+    public static Mask mask(ResourceLocation spriteId) {
         return MASK.get(spriteId);
     }
 }

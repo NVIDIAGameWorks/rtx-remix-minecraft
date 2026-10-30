@@ -7,26 +7,26 @@ package com.nvidia.rtxremix.minecraft.block;
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import com.nvidia.rtxremix.minecraft.light.BeaconBeam;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.DyeItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Set;
@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Persistent optics, dye inventory, and articulated motion for one Copper Beacon. */
 public final class CopperBeaconBlockEntity extends BlockEntity
-        implements Inventory, ExtendedScreenHandlerFactory<CopperBeaconScreenData> {
+        implements Container, ExtendedScreenHandlerFactory<CopperBeaconScreenData> {
 
     private static final Set<CopperBeaconBlockEntity> LOADED =
             ConcurrentHashMap.newKeySet();
@@ -59,7 +59,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     private static final String DYE_KEY = "dye";
 
     public static final BlockEntityType<CopperBeaconBlockEntity> TYPE =
-            BlockEntityType.Builder.create(
+            BlockEntityType.Builder.of(
                     CopperBeaconBlockEntity::new, CopperBeaconBlock.INSTANCE).build();
 
     private float intensityMultiplier = DEFAULT_INTENSITY_MULTIPLIER;
@@ -80,29 +80,29 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     @Override
-    public void setWorld(World world) {
-        super.setWorld(world);
+    public void setLevel(Level world) {
+        super.setLevel(world);
         LOADED.add(this);
     }
 
     @Override
-    public void markRemoved() {
+    public void setRemoved() {
         LOADED.remove(this);
-        super.markRemoved();
+        super.setRemoved();
     }
 
     @Override
-    public void cancelRemoval() {
-        super.cancelRemoval();
-        if (world != null) {
+    public void clearRemoved() {
+        super.clearRemoved();
+        if (level != null) {
             LOADED.add(this);
         }
     }
 
     static void register() {
         Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
-                Identifier.of(RtxRemixCommonMod.MOD_ID, CopperBeaconBlock.ID),
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
+                ResourceLocation.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, CopperBeaconBlock.ID),
                 TYPE);
     }
 
@@ -209,7 +209,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     public int getLensTint() {
         return dye.getItem() instanceof DyeItem dyeItem
                 ? CopperBeaconState.applySaturation(
-                        dyeItem.getColor().getEntityColor(), saturation)
+                        dyeItem.getDyeColor().getTextureDiffuseColor(), saturation)
                 : 0xFFFFFFFF;
     }
 
@@ -222,7 +222,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
             return;
         }
         redstoneControlled = controlled;
-        if (controlled && !getCachedState().get(CopperBeaconBlock.POWERED)) {
+        if (controlled && !getBlockState().getValue(CopperBeaconBlock.POWERED)) {
             frozenTick = currentTick();
         }
         markDirtyAndSync();
@@ -260,7 +260,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
                         && stack.getItem() instanceof DyeItem
                 ? stack.copyWithCount(1)
                 : ItemStack.EMPTY;
-        if (!ItemStack.areEqual(dye, replacement)) {
+        if (!ItemStack.matches(dye, replacement)) {
             dye = replacement;
             markDirtyAndSync();
         }
@@ -268,13 +268,13 @@ public final class CopperBeaconBlockEntity extends BlockEntity
 
     public boolean isActive() {
         return CopperBeaconState.isActive(
-                redstoneControlled, getCachedState().get(CopperBeaconBlock.POWERED));
+                redstoneControlled, getBlockState().getValue(CopperBeaconBlock.POWERED));
     }
 
     public double animationTick(float tickDelta) {
         return CopperBeaconState.animationTick(
                 redstoneControlled,
-                getCachedState().get(CopperBeaconBlock.POWERED),
+                getBlockState().getValue(CopperBeaconBlock.POWERED),
                 currentTick(),
                 tickDelta,
                 frozenTick);
@@ -297,7 +297,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     private double animationTick(double presentedWorldTick) {
-        return redstoneControlled && !getCachedState().get(CopperBeaconBlock.POWERED)
+        return redstoneControlled && !getBlockState().getValue(CopperBeaconBlock.POWERED)
                 ? frozenTick
                 : presentedWorldTick;
     }
@@ -310,23 +310,23 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     @Override
-    public CopperBeaconScreenData getScreenOpeningData(ServerPlayerEntity player) {
-        return new CopperBeaconScreenData(pos);
+    public CopperBeaconScreenData getScreenOpeningData(ServerPlayer player) {
+        return new CopperBeaconScreenData(worldPosition);
     }
 
     @Override
-    public Text getDisplayName() {
-        return Text.translatable("container.rtx-remix-renderer.copper_beacon");
+    public Component getDisplayName() {
+        return Component.translatable("container.rtx-remix-renderer.copper_beacon");
     }
 
     @Override
-    public ScreenHandler createMenu(
-            int syncId, PlayerInventory playerInventory, PlayerEntity player) {
+    public AbstractContainerMenu createMenu(
+            int syncId, Inventory playerInventory, Player player) {
         return new CopperBeaconScreenHandler(syncId, playerInventory, this);
     }
 
     @Override
-    public int size() {
+    public int getContainerSize() {
         return 1;
     }
 
@@ -336,12 +336,12 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     @Override
-    public ItemStack getStack(int slot) {
+    public ItemStack getItem(int slot) {
         return slot == 0 ? dye : ItemStack.EMPTY;
     }
 
     @Override
-    public ItemStack removeStack(int slot, int amount) {
+    public ItemStack removeItem(int slot, int amount) {
         if (slot != 0 || amount <= 0 || dye.isEmpty()) {
             return ItemStack.EMPTY;
         }
@@ -352,7 +352,7 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     @Override
-    public ItemStack removeStack(int slot) {
+    public ItemStack removeItemNoUpdate(int slot) {
         if (slot != 0 || dye.isEmpty()) {
             return ItemStack.EMPTY;
         }
@@ -363,30 +363,30 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     @Override
-    public void setStack(int slot, ItemStack stack) {
+    public void setItem(int slot, ItemStack stack) {
         if (slot == 0) {
             setDye(stack);
         }
     }
 
     @Override
-    public boolean canPlayerUse(PlayerEntity player) {
+    public boolean stillValid(Player player) {
         return !isRemoved()
-                && world == player.getWorld()
-                && world.getBlockEntity(pos) == this
-                && player.squaredDistanceTo(
-                        pos.getX() + 0.5,
-                        pos.getY() + 0.5,
-                        pos.getZ() + 0.5) <= 64.0;
+                && level == player.level()
+                && level.getBlockEntity(worldPosition) == this
+                && player.distanceToSqr(
+                        worldPosition.getX() + 0.5,
+                        worldPosition.getY() + 0.5,
+                        worldPosition.getZ() + 0.5) <= 64.0;
     }
 
     @Override
-    public boolean isValid(int slot, ItemStack stack) {
+    public boolean canPlaceItem(int slot, ItemStack stack) {
         return slot == 0 && stack.getItem() instanceof DyeItem;
     }
 
     @Override
-    public void clear() {
+    public void clearContent() {
         if (!dye.isEmpty()) {
             dye = ItemStack.EMPTY;
             markDirtyAndSync();
@@ -394,27 +394,27 @@ public final class CopperBeaconBlockEntity extends BlockEntity
     }
 
     @Override
-    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.writeNbt(nbt, registryLookup);
+    protected void saveAdditional(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        super.saveAdditional(nbt, registryLookup);
         nbt.putFloat(INTENSITY_KEY, intensityMultiplier);
         nbt.putFloat(CONE_ANGLE_KEY, coneAngle);
         nbt.putFloat(SATURATION_KEY, saturation);
         nbt.putBoolean(REDSTONE_CONTROLLED_KEY, redstoneControlled);
         nbt.putLong(FROZEN_TICK_KEY, frozenTick);
-        NbtCompound yawNbt = new NbtCompound();
+        CompoundTag yawNbt = new CompoundTag();
         yaw.writeNbt(yawNbt);
         nbt.put(YAW_KEY, yawNbt);
-        NbtCompound pitchNbt = new NbtCompound();
+        CompoundTag pitchNbt = new CompoundTag();
         pitch.writeNbt(pitchNbt);
         nbt.put(PITCH_KEY, pitchNbt);
         if (!dye.isEmpty()) {
-            nbt.put(DYE_KEY, dye.encode(registryLookup));
+            nbt.put(DYE_KEY, dye.save(registryLookup));
         }
     }
 
     @Override
-    protected void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.readNbt(nbt, registryLookup);
+    protected void loadAdditional(CompoundTag nbt, HolderLookup.Provider registryLookup) {
+        super.loadAdditional(nbt, registryLookup);
         intensityMultiplier = finiteClamped(
                 nbt.contains(INTENSITY_KEY)
                         ? nbt.getFloat(INTENSITY_KEY)
@@ -459,33 +459,33 @@ public final class CopperBeaconBlockEntity extends BlockEntity
                     0L);
         }
         dye = nbt.get(DYE_KEY) != null
-                ? ItemStack.fromNbt(registryLookup, nbt.getCompound(DYE_KEY)).orElse(ItemStack.EMPTY)
+                ? ItemStack.parse(registryLookup, nbt.getCompound(DYE_KEY)).orElse(ItemStack.EMPTY)
                 : ItemStack.EMPTY;
     }
 
     @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registryLookup) {
-        return createNbt(registryLookup);
+    public CompoundTag getUpdateTag(HolderLookup.Provider registryLookup) {
+        return saveWithoutMetadata(registryLookup);
     }
 
     @Nullable
     @Override
-    public BlockEntityUpdateS2CPacket toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
+    public ClientboundBlockEntityDataPacket getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
     }
 
     private long currentTick() {
-        return world == null ? 0L : world.getTime();
+        return level == null ? 0L : level.getGameTime();
     }
 
     private long axisSeed(long salt) {
-        return pos.asLong() ^ salt;
+        return worldPosition.asLong() ^ salt;
     }
 
     private void markDirtyAndSync() {
-        markDirty();
-        if (world instanceof ServerWorld serverWorld) {
-            serverWorld.getChunkManager().markForUpdate(pos);
+        setChanged();
+        if (level instanceof ServerLevel serverWorld) {
+            serverWorld.getChunkSource().blockChanged(worldPosition);
         }
     }
 
