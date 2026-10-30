@@ -4,14 +4,13 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.client.render.chunk.ChunkBuilder;
-import net.minecraft.util.math.Box;
-
 import java.util.LinkedHashSet;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.Predicate;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.world.phys.AABB;
 
 /**
  * A published coarse frustum index over the sections vanilla's visibility graph has reached.
@@ -33,9 +32,9 @@ public final class BuiltChunkFrustumIndex {
     private static final int IN_USE = 1;
     private static final int RETIRED = 2;
 
-    private static final HierarchicalFrustumCuller.EntryBounds<ChunkBuilder.BuiltChunk> CHUNK_BOUNDS =
+    private static final HierarchicalFrustumCuller.EntryBounds<SectionRenderDispatcher.RenderSection> CHUNK_BOUNDS =
             (chunk, out) -> {
-                Box bounds = chunk.getBoundingBox();
+                AABB bounds = chunk.getBoundingBox();
                 out[0] = bounds.minX;
                 out[1] = bounds.minY;
                 out[2] = bounds.minZ;
@@ -46,7 +45,7 @@ public final class BuiltChunkFrustumIndex {
 
     private final Object state;
     private final LinkedHashSet<?> chunks;
-    private final HierarchicalFrustumCuller<ChunkBuilder.BuiltChunk> culler;
+    private final HierarchicalFrustumCuller<SectionRenderDispatcher.RenderSection> culler;
     private final IntConsumer rebucketMovedSlot;
     private final AtomicInteger use = new AtomicInteger(FRESH);
     private long reconciledSequence;
@@ -54,7 +53,7 @@ public final class BuiltChunkFrustumIndex {
     BuiltChunkFrustumIndex(
             Object state,
             LinkedHashSet<?> chunks,
-            HierarchicalFrustumCuller<ChunkBuilder.BuiltChunk> culler,
+            HierarchicalFrustumCuller<SectionRenderDispatcher.RenderSection> culler,
             long reconciledSequence) {
         this.state = state;
         this.chunks = chunks;
@@ -85,7 +84,7 @@ public final class BuiltChunkFrustumIndex {
      * Takes the culler back for reuse, or null while a use is in progress or once another
      * caller already took it. A retired index refuses every later acquire.
      */
-    public HierarchicalFrustumCuller<ChunkBuilder.BuiltChunk> tryRetire() {
+    public HierarchicalFrustumCuller<SectionRenderDispatcher.RenderSection> tryRetire() {
         return use.compareAndSet(FRESH, RETIRED) ? culler : null;
     }
 
@@ -95,12 +94,12 @@ public final class BuiltChunkFrustumIndex {
     }
 
     /** Indexes a section the graph reached after publication, using its current bounds. */
-    public void add(ChunkBuilder.BuiltChunk chunk) {
+    public void add(SectionRenderDispatcher.RenderSection chunk) {
         add(culler, chunk);
     }
 
-    static void add(HierarchicalFrustumCuller<ChunkBuilder.BuiltChunk> culler, ChunkBuilder.BuiltChunk chunk) {
-        Box bounds = chunk.getBoundingBox();
+    static void add(HierarchicalFrustumCuller<SectionRenderDispatcher.RenderSection> culler, SectionRenderDispatcher.RenderSection chunk) {
+        AABB bounds = chunk.getBoundingBox();
         culler.add(chunk, chunk.index,
                 bounds.minX, bounds.minY, bounds.minZ,
                 bounds.maxX, bounds.maxY, bounds.maxZ);
@@ -123,8 +122,8 @@ public final class BuiltChunkFrustumIndex {
 
     /** Emits the sections a frustum can see, in graph order; see {@link HierarchicalFrustumCuller#forEachVisible}. */
     public void forEachVisible(HierarchicalFrustumCuller.BoxClassifier cellClassifier,
-                               Predicate<? super ChunkBuilder.BuiltChunk> chunkTest,
-                               Consumer<? super ChunkBuilder.BuiltChunk> consumer) {
+                               Predicate<? super SectionRenderDispatcher.RenderSection> chunkTest,
+                               Consumer<? super SectionRenderDispatcher.RenderSection> consumer) {
         culler.forEachVisible(cellClassifier, chunkTest, consumer);
     }
 }

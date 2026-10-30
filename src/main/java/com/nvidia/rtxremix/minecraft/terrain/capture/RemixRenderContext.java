@@ -9,15 +9,15 @@ import net.fabricmc.fabric.api.renderer.v1.mesh.MutableQuadView;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadView;
 import net.fabricmc.fabric.api.renderer.v1.render.RenderContext;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.model.BakedModel;
-import net.minecraft.client.render.model.BakedQuad;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.world.BlockRenderView;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
@@ -43,12 +43,12 @@ final class RemixRenderContext implements RenderContext {
     private final Deque<QuadTransform> transformStack = new ArrayDeque<>();
     private final List<SectionBlockData.BlockQuad> captured = new ArrayList<>();
 
-    private BlockRenderView world;
+    private BlockAndTintGetter world;
     private BlockState state;
     private BlockPos pos;
     private Predicate<Direction> cullTest;
 
-    void prepare(BlockRenderView world, BlockState state, BlockPos pos,
+    void prepare(BlockAndTintGetter world, BlockState state, BlockPos pos,
                  Predicate<Direction> cullTest) {
         this.world = world;
         this.state = state;
@@ -117,8 +117,8 @@ final class RemixRenderContext implements RenderContext {
                 // instance of a multi-variant block on the same variant, which
                 // is the bug the seed plumbing exists to fix; this path is
                 // deprecated but still reachable, so it has to agree.
-                long seed = state.getRenderingSeed(RemixRenderContext.this.pos);
-                Random random = Random.create(seed);
+                long seed = state.getSeed(RemixRenderContext.this.pos);
+                RandomSource random = RandomSource.create(seed);
 
                 for (Direction dir : Direction.values()) {
                     // Re-seeded per direction, as vanilla does and as the loops
@@ -159,7 +159,7 @@ final class RemixRenderContext implements RenderContext {
         private int colorIndexVal = -1;
         private int tagVal;
 
-        private Sprite bakedSprite;
+        private TextureAtlasSprite bakedSprite;
         private final Vector3f faceNormalCache = new Vector3f();
         private boolean faceNormalDirty = true;
 
@@ -206,14 +206,14 @@ final class RemixRenderContext implements RenderContext {
 
             int capturedColor = colors[0];
 
-            Identifier spriteId = null;
+            ResourceLocation spriteId = null;
             float su0 = 0, sv0 = 0, su1 = 1, sv1 = 1;
             if (bakedSprite != null) {
-                spriteId = bakedSprite.getContents().getId();
-                su0 = bakedSprite.getMinU();
-                sv0 = bakedSprite.getMinV();
-                su1 = bakedSprite.getMaxU();
-                sv1 = bakedSprite.getMaxV();
+                spriteId = bakedSprite.contents().name();
+                su0 = bakedSprite.getU0();
+                sv0 = bakedSprite.getV0();
+                su1 = bakedSprite.getU1();
+                sv1 = bakedSprite.getV1();
             }
 
             captured.add(new SectionBlockData.BlockQuad(
@@ -343,13 +343,13 @@ final class RemixRenderContext implements RenderContext {
         }
 
         @Override
-        public QuadEmitter spriteBake(Sprite sprite, int bakeFlags) {
+        public QuadEmitter spriteBake(TextureAtlasSprite sprite, int bakeFlags) {
             this.bakedSprite = sprite;
 
-            float sprMinU = sprite.getMinU();
-            float sprMaxU = sprite.getMaxU();
-            float sprMinV = sprite.getMinV();
-            float sprMaxV = sprite.getMaxV();
+            float sprMinU = sprite.getU0();
+            float sprMaxU = sprite.getU1();
+            float sprMinV = sprite.getV0();
+            float sprMaxV = sprite.getV1();
 
             boolean lockUv    = (bakeFlags & MutableQuadView.BAKE_LOCK_UV)    != 0;
             boolean flipU     = (bakeFlags & MutableQuadView.BAKE_FLIP_U)     != 0;
@@ -431,11 +431,11 @@ final class RemixRenderContext implements RenderContext {
                                         @Nullable Direction cullFace) {
             this.cullFaceVal = cullFace;
             this.materialVal = material;
-            this.colorIndexVal = quad.getColorIndex();
+            this.colorIndexVal = quad.getTintIndex();
             this.bakedSprite = quad.getSprite();
-            this.nominalFaceVal = quad.getFace();
+            this.nominalFaceVal = quad.getDirection();
 
-            int[] vd = quad.getVertexData();
+            int[] vd = quad.getVertices();
             for (int v = 0; v < 4; v++) {
                 int off = v * 8;
                 pos(v, Float.intBitsToFloat(vd[off]),
@@ -538,7 +538,7 @@ final class RemixRenderContext implements RenderContext {
         @Override
         public Direction lightFace() {
             if (nominalFaceVal != null) return nominalFaceVal;
-            return Direction.getFacing(faceNormal().x(), faceNormal().y(), faceNormal().z());
+            return Direction.getNearest(faceNormal().x(), faceNormal().y(), faceNormal().z());
         }
 
         @Override public @Nullable Direction nominalFace() { return nominalFaceVal; }
@@ -583,6 +583,6 @@ final class RemixRenderContext implements RenderContext {
             }
         }
 
-        Sprite getBakedSprite() { return bakedSprite; }
+        TextureAtlasSprite getBakedSprite() { return bakedSprite; }
     }
 }

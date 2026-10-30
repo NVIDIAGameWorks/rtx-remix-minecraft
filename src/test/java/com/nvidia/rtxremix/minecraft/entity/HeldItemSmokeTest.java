@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.render.model.json.ModelTransformationMode;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -13,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import net.minecraft.world.item.ItemDisplayContext;
 
 class HeldItemSmokeTest {
 
@@ -26,12 +27,12 @@ class HeldItemSmokeTest {
 
     @Test
     void theSwitchOnlyGovernsFirstPerson() {
-        assertTrue(HeldItemSmoke.showsFor(ModelTransformationMode.FIRST_PERSON_RIGHT_HAND, true));
-        assertFalse(HeldItemSmoke.showsFor(ModelTransformationMode.FIRST_PERSON_RIGHT_HAND, false));
-        assertFalse(HeldItemSmoke.showsFor(ModelTransformationMode.FIRST_PERSON_LEFT_HAND, false));
+        assertTrue(HeldItemSmoke.showsFor(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, true));
+        assertFalse(HeldItemSmoke.showsFor(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, false));
+        assertFalse(HeldItemSmoke.showsFor(ItemDisplayContext.FIRST_PERSON_LEFT_HAND, false));
         // Other entities' torches smoke like placed ones whatever the switch says.
-        assertTrue(HeldItemSmoke.showsFor(ModelTransformationMode.THIRD_PERSON_RIGHT_HAND, false));
-        assertTrue(HeldItemSmoke.showsFor(ModelTransformationMode.THIRD_PERSON_LEFT_HAND, false));
+        assertTrue(HeldItemSmoke.showsFor(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, false));
+        assertTrue(HeldItemSmoke.showsFor(ItemDisplayContext.THIRD_PERSON_LEFT_HAND, false));
     }
 
     @Test

@@ -5,12 +5,10 @@
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfo;
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfoList;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-
 import java.util.Arrays;
 import java.util.List;
+import net.minecraft.client.renderer.SectionOcclusionGraph.SectionToNodeMap;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 
 /**
  * The buffers behind vanilla's visibility state, kept across walks instead of allocated per
@@ -29,19 +27,19 @@ public final class VisibilityGraphBuffers {
     /** One state's worth of buffers. */
     public static final class Buffers {
         public final ReachedChunkSet chunks;
-        public final ChunkInfoList infos;
-        public final Long2ObjectOpenHashMap<List<ChunkBuilder.BuiltChunk>> unbuiltNeighbours = new Long2ObjectOpenHashMap<>();
+        public final SectionToNodeMap infos;
+        public final Long2ObjectOpenHashMap<List<SectionRenderDispatcher.RenderSection>> unbuiltNeighbours = new Long2ObjectOpenHashMap<>();
         public final ChunkInfoPool infoPool;
 
         Buffers(int chunkCount) {
             chunks = new ReachedChunkSet(chunkCount);
-            infos = new ChunkInfoList(Math.max(1, chunkCount));
+            infos = new SectionToNodeMap(Math.max(1, chunkCount));
             infoPool = new ChunkInfoPool(chunkCount);
         }
 
         void reset() {
             chunks.clear();
-            Arrays.fill(infos.current, null);
+            Arrays.fill(infos.nodes, null);
             unbuiltNeighbours.clear();
             infoPool.beginWalk();
         }

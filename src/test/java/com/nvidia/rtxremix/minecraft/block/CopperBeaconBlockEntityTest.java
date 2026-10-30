@@ -6,11 +6,11 @@ package com.nvidia.rtxremix.minecraft.block;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.Direction;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
+import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +26,7 @@ class CopperBeaconBlockEntityTest {
 
     @Test
     void anglesAreNormalizedClampedAndPersisted() {
-        NbtCompound nbt = new NbtCompound();
+        CompoundTag nbt = new CompoundTag();
         CopperBeaconState.writeAngles(
                 nbt,
                 CopperBeaconState.normalizeAzimuth(540.0f),
@@ -47,7 +47,7 @@ class CopperBeaconBlockEntityTest {
     void everyMountAndPlayerPointingDirectionChoosesTheExpectedForwardAxis() {
         for (Direction mount : Direction.values()) {
             for (Direction playerLook : Direction.values()) {
-                for (Direction horizontalFacing : Direction.Type.HORIZONTAL) {
+                for (Direction horizontalFacing : Direction.Plane.HORIZONTAL) {
                     Direction preferred = playerLook.getOpposite();
                     Direction horizontalFallback = horizontalFacing.getOpposite();
                     Direction actual = CopperBeaconState.orthogonalForward(

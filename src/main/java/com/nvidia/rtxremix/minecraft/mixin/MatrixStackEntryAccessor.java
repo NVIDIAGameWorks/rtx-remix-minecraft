@@ -4,17 +4,17 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import net.minecraft.client.util.math.MatrixStack;
+import com.mojang.blaze3d.vertex.PoseStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /** Preserves MatrixStack.Entry's normal-normalization state while recycling it. */
-@Mixin(MatrixStack.Entry.class)
+@Mixin(PoseStack.Pose.class)
 public interface MatrixStackEntryAccessor {
 
-    @Accessor("canSkipNormalization")
+    @Accessor("trustedNormals")
     boolean rtxremix$getCanSkipNormalization();
 
-    @Accessor("canSkipNormalization")
+    @Accessor("trustedNormals")
     void rtxremix$setCanSkipNormalization(boolean canSkipNormalization);
 }

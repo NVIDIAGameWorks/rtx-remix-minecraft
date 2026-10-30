@@ -4,12 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.entity.EntityRenderContext;
 import com.nvidia.rtxremix.minecraft.entity.RemixVertexConsumerProvider;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.entity.EntityRenderDispatcher;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -28,25 +28,25 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class EntityRenderDispatcherMixin {
 
     @Inject(
-        method = "render(Lnet/minecraft/entity/Entity;DDDFFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+        method = "render(Lnet/minecraft/world/entity/Entity;DDDFFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
         at = @At("HEAD")
     )
     private <E extends Entity> void rtxremix$onRenderStart(
             E entity, double x, double y, double z,
             float yaw, float tickDelta,
-            MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+            PoseStack matrices, MultiBufferSource vertexConsumers,
             int light, CallbackInfo ci) {
         EntityRenderContext.get().begin(vertexConsumers instanceof RemixVertexConsumerProvider);
     }
 
     @Inject(
-        method = "render(Lnet/minecraft/entity/Entity;DDDFFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+        method = "render(Lnet/minecraft/world/entity/Entity;DDDFFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
         at = @At("RETURN")
     )
     private <E extends Entity> void rtxremix$onRenderEnd(
             E entity, double x, double y, double z,
             float yaw, float tickDelta,
-            MatrixStack matrices, VertexConsumerProvider vertexConsumers,
+            PoseStack matrices, MultiBufferSource vertexConsumers,
             int light, CallbackInfo ci) {
         EntityRenderContext.get().end();
     }

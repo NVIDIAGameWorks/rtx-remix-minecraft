@@ -9,8 +9,6 @@ import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.HardcodedVertex;
-import net.minecraft.util.Identifier;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -20,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Writes block quad data directly into per-bucket interleaved
@@ -196,7 +195,7 @@ public final class DirectQuadWriter {
     private final float[] stageNy  = new float[MAX_BLOCK_QUADS];
     private final float[] stageNz  = new float[MAX_BLOCK_QUADS];
     private final int[]   stageColor = new int[MAX_BLOCK_QUADS];
-    private final Identifier[] stageSpriteId = new Identifier[MAX_BLOCK_QUADS];
+    private final ResourceLocation[] stageSpriteId = new ResourceLocation[MAX_BLOCK_QUADS];
     private final float[] stageSU0 = new float[MAX_BLOCK_QUADS];
     private final float[] stageSV0 = new float[MAX_BLOCK_QUADS];
     private final float[] stageSU1 = new float[MAX_BLOCK_QUADS];
@@ -250,7 +249,7 @@ public final class DirectQuadWriter {
      */
     public void stageQuad(float[] positions, float[] uvs,
                            float nx, float ny, float nz,
-                           int color, Identifier spriteId,
+                           int color, ResourceLocation spriteId,
                            float su0, float sv0, float su1, float sv1,
                            String renderLayer) {
         if (stageCount >= MAX_BLOCK_QUADS) return;
@@ -272,7 +271,7 @@ public final class DirectQuadWriter {
      */
     public void writeFluidQuad(float[] positions, float[] uvs,
                                 float nx, float ny, float nz,
-                                int color, Identifier spriteId,
+                                int color, ResourceLocation spriteId,
                                 float su0, float sv0, float su1, float sv1,
                                 String renderLayer, BlockTextureManager tex) {
 
@@ -503,7 +502,7 @@ public final class DirectQuadWriter {
         boolean hasCandidate = false;
         boolean hasBase = false;
         for (int i = 0; i < stageCount; i++) {
-            Identifier spriteId = stageSpriteId[i];
+            ResourceLocation spriteId = stageSpriteId[i];
             BlockTextureManager.SpriteEntry sprite = spriteId != null && tex != null
                     ? tex.getSpriteById(spriteId)
                     : null;

@@ -4,13 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.model.BakedModel;
-import net.minecraft.client.render.model.BakedQuad;
-import net.minecraft.client.render.model.WeightedBakedModel;
-import net.minecraft.util.collection.Weighted;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.Random;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -20,6 +13,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Collections;
 import java.util.List;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.WeightedBakedModel;
+import net.minecraft.core.Direction;
+import net.minecraft.util.RandomSource;
+import net.minecraft.util.random.WeightedEntry;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Picks the weighted variant without the iterator and the two {@code Optional}s vanilla
@@ -42,19 +42,19 @@ public abstract class WeightedBakedModelMixin {
 
     @Shadow
     @Final
-    private List<Weighted.Present<BakedModel>> models;
+    private List<WeightedEntry.Wrapper<BakedModel>> list;
 
     @Inject(method = "getQuads", at = @At("HEAD"), cancellable = true)
     private void rtxremix$getQuads(
             BlockState state,
             Direction face,
-            Random random,
+            RandomSource random,
             CallbackInfoReturnable<List<BakedQuad>> cir) {
         int remaining = Math.abs((int) random.nextLong()) % totalWeight;
-        List<Weighted.Present<BakedModel>> variants = models;
+        List<WeightedEntry.Wrapper<BakedModel>> variants = list;
         for (int i = 0, n = variants.size(); i < n; i++) {
-            Weighted.Present<BakedModel> variant = variants.get(i);
-            remaining -= variant.getWeight().getValue();
+            WeightedEntry.Wrapper<BakedModel> variant = variants.get(i);
+            remaining -= variant.getWeight().asInt();
             if (remaining < 0) {
                 cir.setReturnValue(variant.data().getQuads(state, face, random));
                 return;

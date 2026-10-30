@@ -4,23 +4,22 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderPhase;
-import net.minecraft.client.render.VertexFormatElement;
-import net.minecraft.util.Identifier;
-
+import com.mojang.blaze3d.vertex.VertexFormatElement;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.WeakHashMap;
+import net.minecraft.client.renderer.RenderStateShard;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
 
 /**
- * Reads the layer-level facts the capture path needs from a {@link RenderLayer}.
+ * Reads the layer-level facts the capture path needs from a {@link RenderType}.
  *
  * <p>A renderer requests its {@code VertexConsumer} by layer,
  * {@code provider.getBuffer(RenderLayer.getEntityCutout(textureId))}, so the
  * layer is where geometry and material meet and the one place material
- * identity is read. Its {@link RenderPhase} state, reached through the access
+ * identity is read. Its {@link RenderStateShard} state, reached through the access
  * widener, gives the texture the layer is submitted under, if any, the
  * {@link SurfaceMode} Remix shades with, and whether the geometry is streamed
  * afresh every frame; its draw mode gives the {@link Topology} and whether an
@@ -51,11 +50,11 @@ final class RenderLayerUtils {
 
     /**
      * Material identity for layers that draw without a texture. They have no
-     * {@link Identifier} of their own, but the submitter keys materials and mesh
+     * {@link ResourceLocation} of their own, but the submitter keys materials and mesh
      * pools by one, so they share this.
      */
-    static final Identifier UNTEXTURED_LAYER_ID =
-            Identifier.of("rtxremix", "untextured_entity_layer");
+    static final ResourceLocation UNTEXTURED_LAYER_ID =
+            ResourceLocation.fromNamespaceAndPath("rtxremix", "untextured_entity_layer");
 
     private RenderLayerUtils() {}
 
@@ -63,11 +62,11 @@ final class RenderLayerUtils {
      * Cache of RenderLayer -> capturable texture. Most RenderLayer instances are reused,
      * but weak keys avoid retaining dynamic layers created by mods or skin features.
      */
-    private static final Map<RenderLayer, Optional<Identifier>> capturableTextureCache =
+    private static final Map<RenderType, Optional<ResourceLocation>> capturableTextureCache =
             Collections.synchronizedMap(new WeakHashMap<>());
 
     /** Cache of RenderLayer -> streamed-per-frame verdict, weak-keyed like {@link #capturableTextureCache}. */
-    private static final Map<RenderLayer, Boolean> streamedPerFrameCache =
+    private static final Map<RenderType, Boolean> streamedPerFrameCache =
             Collections.synchronizedMap(new WeakHashMap<>());
 
     /**
@@ -84,25 +83,25 @@ final class RenderLayerUtils {
      * @param layer the render layer (typically from an entity renderer)
      * @return the texture identifier to capture under, or empty to skip the layer
      */
-    static Optional<Identifier> capturableTexture(RenderLayer layer) {
+    static Optional<ResourceLocation> capturableTexture(RenderType layer) {
         return capturableTextureCache.computeIfAbsent(layer, RenderLayerUtils::capturableTextureUncached);
     }
 
-    private static Optional<Identifier> capturableTextureUncached(RenderLayer layer) {
-        if (layer instanceof RenderLayer.MultiPhase multiPhase
-                && multiPhase.getPhases().depthTest == RenderPhase.ALWAYS_DEPTH_TEST) {
+    private static Optional<ResourceLocation> capturableTextureUncached(RenderType layer) {
+        if (layer instanceof RenderType.CompositeRenderType multiPhase
+                && multiPhase.state().depthTestState == RenderStateShard.NO_DEPTH_TEST) {
             return Optional.empty();
         }
         return extractTexture(layer);
     }
 
-    private static Optional<Identifier> extractTexture(RenderLayer layer) {
-        if (layer instanceof RenderLayer.MultiPhase multiPhase) {
-            RenderLayer.MultiPhaseParameters phases = multiPhase.getPhases();
-            RenderPhase.TextureBase textureBase = phases.texture;
+    private static Optional<ResourceLocation> extractTexture(RenderType layer) {
+        if (layer instanceof RenderType.CompositeRenderType multiPhase) {
+            RenderType.CompositeState phases = multiPhase.state();
+            RenderStateShard.EmptyTextureStateShard textureBase = phases.textureState;
 
-            if (textureBase instanceof RenderPhase.Texture texture) {
-                return texture.getId();
+            if (textureBase instanceof RenderStateShard.TextureStateShard texture) {
+                return texture.cutoutTexture();
             }
         }
         return Optional.empty();
@@ -112,8 +111,8 @@ final class RenderLayerUtils {
      * How to read the layer's vertices, or empty when it draws primitives that
      * do not become triangles, such as lines.
      */
-    static Optional<Topology> topology(RenderLayer layer) {
-        return switch (layer.getDrawMode()) {
+    static Optional<Topology> topology(RenderType layer) {
+        return switch (layer.mode()) {
             case QUADS -> Optional.of(Topology.QUADS);
             case TRIANGLE_STRIP -> Optional.of(Topology.TRIANGLE_STRIP);
             default -> Optional.empty();
@@ -133,12 +132,12 @@ final class RenderLayerUtils {
      * furniture such as the nameplate background, which should not become
      * scene geometry that lights and casts shadows.
      */
-    static boolean isCapturableUntexturedLayer(RenderLayer layer) {
+    static boolean isCapturableUntexturedLayer(RenderType layer) {
         // Only layers with no texture at all qualify: a textured layer that
         // capturableTexture declined must not re-enter capture through here.
         return extractTexture(layer).isEmpty()
                 && topology(layer).filter(t -> t == Topology.TRIANGLE_STRIP).isPresent()
-                && layer.getVertexFormat().getElements().contains(VertexFormatElement.COLOR);
+                && layer.format().getElements().contains(VertexFormatElement.COLOR);
     }
 
     /**
@@ -151,13 +150,13 @@ final class RenderLayerUtils {
      * coordinate scrolls with world time. Everything else it draws is rigid: a
      * model part or baked quad whose pose changes while its local vertices do not.
      */
-    static boolean isStreamedPerFrame(RenderLayer layer) {
+    static boolean isStreamedPerFrame(RenderType layer) {
         return streamedPerFrameCache.computeIfAbsent(layer, RenderLayerUtils::isStreamedPerFrameUncached);
     }
 
-    private static boolean isStreamedPerFrameUncached(RenderLayer layer) {
-        boolean beaconBeamProgram = layer instanceof RenderLayer.MultiPhase multiPhase
-                && multiPhase.getPhases().program == RenderPhase.BEACON_BEAM_PROGRAM;
+    private static boolean isStreamedPerFrameUncached(RenderType layer) {
+        boolean beaconBeamProgram = layer instanceof RenderType.CompositeRenderType multiPhase
+                && multiPhase.state().shaderState == RenderStateShard.RENDERTYPE_BEACON_BEAM_SHADER;
         return classifyStreamedPerFrame(topology(layer).orElse(Topology.QUADS), beaconBeamProgram);
     }
 
@@ -175,21 +174,21 @@ final class RenderLayerUtils {
      * transparent, so alpha blending them over the surface is the closest surface
      * behaviour and it is classified as translucent.
      */
-    static SurfaceMode surfaceMode(RenderLayer layer) {
-        if (!(layer instanceof RenderLayer.MultiPhase multiPhase)) {
+    static SurfaceMode surfaceMode(RenderType layer) {
+        if (!(layer instanceof RenderType.CompositeRenderType multiPhase)) {
             return SurfaceMode.CUTOUT;
         }
 
-        RenderLayer.MultiPhaseParameters phases = multiPhase.getPhases();
+        RenderType.CompositeState phases = multiPhase.state();
         return classifySurfaceMode(
-                phases.program == RenderPhase.EYES_PROGRAM
-                        || phases.program == RenderPhase.ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM,
-                phases.transparency == RenderPhase.ADDITIVE_TRANSPARENCY,
-                phases.transparency == RenderPhase.TRANSLUCENT_TRANSPARENCY
-                        || phases.transparency == RenderPhase.CRUMBLING_TRANSPARENCY,
-                phases.program == RenderPhase.ENTITY_SOLID_PROGRAM,
-                phases.program == RenderPhase.TEXT_PROGRAM
-                        || phases.program == RenderPhase.TEXT_INTENSITY_PROGRAM);
+                phases.shaderState == RenderStateShard.RENDERTYPE_EYES_SHADER
+                        || phases.shaderState == RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER,
+                phases.transparencyState == RenderStateShard.ADDITIVE_TRANSPARENCY,
+                phases.transparencyState == RenderStateShard.TRANSLUCENT_TRANSPARENCY
+                        || phases.transparencyState == RenderStateShard.CRUMBLING_TRANSPARENCY,
+                phases.shaderState == RenderStateShard.RENDERTYPE_ENTITY_SOLID_SHADER,
+                phases.shaderState == RenderStateShard.RENDERTYPE_TEXT_SHADER
+                        || phases.shaderState == RenderStateShard.RENDERTYPE_TEXT_INTENSITY_SHADER);
     }
 
     /**

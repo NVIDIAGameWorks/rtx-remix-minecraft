@@ -217,19 +217,19 @@ real render-thread saving.
 
 ### Reading Vanilla Bytecode
 
-The Yarn-named merged JAR Loom already caches is enough for `javap`; generating
-all decompiled sources is not necessary. Read the mappings coordinate in
-`build.gradle` and select its exact cache directory. Old versions remain in
-the cache after a mappings bump. The sibling
+The Mojang-named merged JAR Loom already caches is enough for `javap`;
+generating all decompiled sources is not necessary. Loom names its cache
+directory after the layered Mojang mappings, with a hash that changes when the
+layers do; old directories remain after such a change. The sibling
 `~/.gradle/caches/fabric-loom/<minecraft-version>/minecraft-merged.jar` is the
-obfuscated merge, not the Yarn-named one.
+obfuscated merge, not the Mojang-named one.
 
-For the currently pinned mapping, a Git Bash example is:
+A Git Bash example that picks the newest Mojang-named merge for 1.21.1 is:
 
 ```bash
 merged=~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged
-version=1.21.1-net.fabricmc.yarn.1_21_1.1.21.1+build.3-v2
-javap -p -c -classpath "$merged/$version/minecraft-merged-$version.jar" net.minecraft.client.render.VertexConsumer
+version=$(ls -t "$merged" | grep '^1.21.1-loom.mappings' | head -n 1)
+javap -p -c -classpath "$merged/$version/minecraft-merged-$version.jar" com.mojang.blaze3d.vertex.VertexConsumer
 ```
 
 If you need to search all callers of a descriptor, extract the whole JAR into
@@ -242,7 +242,7 @@ the extraction afterwards. Do not leave thousands of class files in the tree.
 
 `Mixing X from ... into net.minecraft...` in `run/logs/debug.log` proves
 registration, not an applied injection or an executed target. The check reads
-Loom's Yarn-named development client, which `runClient`, Fabric's standard
+Loom's Mojang-named development client, which `runClient`, Fabric's standard
 Gradle task, starts from `run/`. Temporarily add `-Dmixin.debug.export=true` to
 the client `vmArgs` in `build.gradle`, launch `runClient`, and disassemble the
 transformed class under
@@ -254,7 +254,7 @@ An `@Inject` merges a `handler$<id>$rtx-remix-renderer$<handler name>` method
 and a call at the intended offset: `invokespecial` for a private instance
 handler, `invokestatic` for a static one. If the call is present but does not
 fire, investigate vanilla's frustum, dimension, cloud-mode and weather gates.
-Exports and the classes loaded from `build/classes/` use Yarn names. The
+Exports and the classes loaded from `build/classes/` use Mojang names. The
 remapped JAR in `build/libs/` instead embeds intermediary `method_NNNNN` names
 in injection annotations. Remove the diagnostic flag and export afterwards.
 

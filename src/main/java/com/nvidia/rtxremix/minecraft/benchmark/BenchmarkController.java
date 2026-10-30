@@ -22,14 +22,14 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.Recording;
 import jdk.jfr.RecordingState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.util.ScreenshotRecorder;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.screens.worldselection.WorldOpenFlows;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.integrated.IntegratedServerLoader;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.storage.LevelResource;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -114,7 +114,7 @@ public class BenchmarkController {
     private boolean disableWorldSaving = false;
     private boolean worldSavingDisabled = false;
     private final CameraController cameraController;
-    private final IdentityHashMap<ServerWorld, Boolean> previousWorldSavingDisabled = new IdentityHashMap<>();
+    private final IdentityHashMap<ServerLevel, Boolean> previousWorldSavingDisabled = new IdentityHashMap<>();
     // Warmup is held (not counted) while a world-load screen is up; this flag
     // only limits the hold/resume log lines to state transitions.
     private boolean warmupHeldForLoadScreen = false;
@@ -204,7 +204,7 @@ public class BenchmarkController {
      * If an auto_benchmark.json trigger file exists, reads it, deletes it immediately,
      * and waits for the benchmark world to load.
      */
-    public void onClientTick(MinecraftClient client) {
+    public void onClientTick(Minecraft client) {
         if (state != State.IDLE) return;
         if (autoTriggerPending) {
             maybeFallbackFromQuickPlay(client);
@@ -212,7 +212,7 @@ public class BenchmarkController {
         }
         if (worldJoinRequested) return;
 
-        Path triggerFile = client.runDirectory.toPath().resolve("benchmark").resolve("auto_benchmark.json");
+        Path triggerFile = client.gameDirectory.toPath().resolve("benchmark").resolve("auto_benchmark.json");
         if (!Files.exists(triggerFile)) return;
 
         // Read and delete the trigger file immediately so it never fires twice
@@ -234,7 +234,7 @@ public class BenchmarkController {
         }
 
         // Verify the benchmark world exists
-        Path worldDir = client.runDirectory.toPath().resolve("saves").resolve(BENCHMARK_WORLD_NAME);
+        Path worldDir = client.gameDirectory.toPath().resolve("saves").resolve(BENCHMARK_WORLD_NAME);
         if (!Files.isDirectory(worldDir)) {
             LOGGER.warn("Auto-benchmark trigger found but world '{}' does not exist at {}",
                     BENCHMARK_WORLD_NAME, worldDir);
@@ -242,7 +242,7 @@ public class BenchmarkController {
             return;
         }
 
-        if (client.world != null) {
+        if (client.level != null) {
             LOGGER.info("Auto-benchmark trigger detected in loaded world, waiting for player...");
             return;
         }
@@ -328,7 +328,7 @@ public class BenchmarkController {
         return config.get(key).getAsString().trim();
     }
 
-    private void requestBenchmarkWorldLoad(MinecraftClient client, String reason) {
+    private void requestBenchmarkWorldLoad(Minecraft client, String reason) {
         if (worldJoinRequested) return;
 
         LOGGER.info("Auto-benchmark trigger detected, loading world '{}' via {}...", BENCHMARK_WORLD_NAME, reason);
@@ -337,8 +337,8 @@ public class BenchmarkController {
         quickPlayWaitTicks = 0;
 
         try {
-            IntegratedServerLoader loader = client.createIntegratedServerLoader();
-            loader.start(BENCHMARK_WORLD_NAME, () -> {
+            WorldOpenFlows loader = client.createWorldOpenFlows();
+            loader.openWorld(BENCHMARK_WORLD_NAME, () -> {
                 LOGGER.warn("World load was cancelled");
                 clearPendingAutoBenchmark();
             });
@@ -375,21 +375,21 @@ public class BenchmarkController {
         resetScreenshotConfig();
     }
 
-    private String describeCurrentScreen(MinecraftClient client) {
-        return client.currentScreen == null ? "none" : client.currentScreen.getClass().getName();
+    private String describeCurrentScreen(Minecraft client) {
+        return client.screen == null ? "none" : client.screen.getClass().getName();
     }
 
     static boolean isWorldLoadScreenName(String screenSimpleName) {
         return screenSimpleName.contains("LevelLoading") || screenSimpleName.contains("DownloadingTerrain");
     }
 
-    private boolean isWorldLoadScreen(MinecraftClient client) {
-        if (client.currentScreen == null) return false;
-        return isWorldLoadScreenName(client.currentScreen.getClass().getSimpleName());
+    private boolean isWorldLoadScreen(Minecraft client) {
+        if (client.screen == null) return false;
+        return isWorldLoadScreenName(client.screen.getClass().getSimpleName());
     }
 
-    private void maybeFallbackFromQuickPlay(MinecraftClient client) {
-        if (!quickPlayWorldLoad || worldJoinRequested || client.world != null) return;
+    private void maybeFallbackFromQuickPlay(Minecraft client) {
+        if (!quickPlayWorldLoad || worldJoinRequested || client.level != null) return;
         quickPlayWaitTicks++;
         if (quickPlayWaitTicks < QUICKPLAY_FALLBACK_TICKS || isWorldLoadScreen(client)) return;
 
@@ -405,8 +405,8 @@ public class BenchmarkController {
     public void onFrameStart(PerformanceTimer perfTimer) {
         // If auto-trigger was parsed in onClientTick and world is now loaded, apply it.
         if (state == State.IDLE && autoTriggerPending) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.world != null) {
+            Minecraft client = Minecraft.getInstance();
+            if (client.player != null && client.level != null) {
                 autoTriggerPending = false;
                 worldJoinRequested = false;
                 quickPlayWorldLoad = false;
@@ -460,9 +460,9 @@ public class BenchmarkController {
         }
 
         if (state == State.STILLS) {
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
             StillShot shot = stillShots.current();
-            if (shot == null || client.player == null || client.world == null) {
+            if (shot == null || client.player == null || client.level == null) {
                 return;
             }
             if (stillShots.needsApply()) {
@@ -477,8 +477,8 @@ public class BenchmarkController {
         if (state == State.IDLE) return;
 
         if (state == State.WAITING_FOR_WORLD) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.world != null) {
+            Minecraft client = Minecraft.getInstance();
+            if (client.player != null && client.level != null) {
                 LOGGER.info("World loaded, starting warmup ({} frames)", warmupFrames);
                 resetBenchmarkStatus();
                 state = State.WARMUP;
@@ -520,11 +520,11 @@ public class BenchmarkController {
             // slow machine the whole warmup can elapse before terrain renders,
             // and recording then starts on the loading screen, skewing every
             // frame statistic. Hold the counter until the overlay is gone.
-            if (isWorldLoadScreen(MinecraftClient.getInstance())) {
+            if (isWorldLoadScreen(Minecraft.getInstance())) {
                 if (!warmupHeldForLoadScreen) {
                     warmupHeldForLoadScreen = true;
                     LOGGER.info("Holding warmup at frame {}/{}: world-load screen still up ({})",
-                            currentFrame, warmupFrames, describeCurrentScreen(MinecraftClient.getInstance()));
+                            currentFrame, warmupFrames, describeCurrentScreen(Minecraft.getInstance()));
                 }
                 writeBenchmarkStatus("warmup", false);
                 return;
@@ -592,9 +592,9 @@ public class BenchmarkController {
         };
     }
 
-    private void notifyPlayer(MinecraftClient client, String message) {
+    private void notifyPlayer(Minecraft client, String message) {
         if (client.player != null) {
-            client.player.sendMessage(Text.literal("[Benchmark] " + message), false);
+            client.player.displayClientMessage(Component.literal("[Benchmark] " + message), false);
         }
     }
 
@@ -656,7 +656,7 @@ public class BenchmarkController {
         pendingFrameTimeIndex = -1;
         finishAfterPendingFrameTime = false;
         perfTimer.setBenchmarkMode(false);
-        endStillShots(MinecraftClient.getInstance());
+        endStillShots(Minecraft.getInstance());
         writeBenchmarkStatus("aborted", true);
         restoreWorldSavingAfterBenchmark();
     }
@@ -671,7 +671,7 @@ public class BenchmarkController {
         }
         perfTimer.setBenchmarkMode(false);
         restoreWorldSavingAfterBenchmark();
-        endStillShots(MinecraftClient.getInstance());
+        endStillShots(Minecraft.getInstance());
 
         state = State.IDLE;
         currentFrame = 0;
@@ -687,19 +687,19 @@ public class BenchmarkController {
         clearPendingAutoBenchmark();
     }
 
-    private void disableWorldSavingForBenchmark(MinecraftClient client) {
+    private void disableWorldSavingForBenchmark(Minecraft client) {
         if (!disableWorldSaving || worldSavingDisabled) return;
 
-        MinecraftServer server = client.getServer();
+        MinecraftServer server = client.getSingleplayerServer();
         if (server == null) {
             LOGGER.debug("Benchmark requested world-save suppression, but no integrated server is available");
             return;
         }
 
         previousWorldSavingDisabled.clear();
-        for (ServerWorld world : server.getWorlds()) {
-            previousWorldSavingDisabled.put(world, world.savingDisabled);
-            world.savingDisabled = true;
+        for (ServerLevel world : server.getAllLevels()) {
+            previousWorldSavingDisabled.put(world, world.noSave);
+            world.noSave = true;
         }
 
         worldSavingDisabled = true;
@@ -712,8 +712,8 @@ public class BenchmarkController {
             return;
         }
 
-        for (Map.Entry<ServerWorld, Boolean> entry : previousWorldSavingDisabled.entrySet()) {
-            entry.getKey().savingDisabled = entry.getValue();
+        for (Map.Entry<ServerLevel, Boolean> entry : previousWorldSavingDisabled.entrySet()) {
+            entry.getKey().noSave = entry.getValue();
         }
         LOGGER.info("Restored integrated-server world saving after benchmark");
 
@@ -755,8 +755,8 @@ public class BenchmarkController {
         }
         lastStatusHeartbeatMillis = now;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        Path resultsDir = client.runDirectory.toPath().resolve("benchmark").resolve("results");
+        Minecraft client = Minecraft.getInstance();
+        Path resultsDir = client.gameDirectory.toPath().resolve("benchmark").resolve("results");
         JsonObject status = new JsonObject();
         status.addProperty("schemaVersion", 1);
         status.addProperty("sequence", ++statusSequence);
@@ -775,14 +775,14 @@ public class BenchmarkController {
         status.addProperty("cameraStorageKey", effectiveCameraStorageKey());
         status.addProperty("cameraPath", cameraPathName);
 
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player != null) {
             JsonObject camera = new JsonObject();
             camera.addProperty("x", player.getX());
             camera.addProperty("y", player.getY());
             camera.addProperty("z", player.getZ());
-            camera.addProperty("yaw", player.getYaw());
-            camera.addProperty("pitch", player.getPitch());
+            camera.addProperty("yaw", player.getYRot());
+            camera.addProperty("pitch", player.getXRot());
             status.add("camera", camera);
         }
 
@@ -1004,7 +1004,7 @@ public class BenchmarkController {
      * benchmark's world join, status heartbeat, and exit path; the schedule is
      * {@link StillShotSession}'s and the poses are the camera controller's.
      */
-    private void startStillShots(MinecraftClient client) {
+    private void startStillShots(Minecraft client) {
         List<StillShot> shots = cameraController.loadStillShots(shotSetName);
         if (shots == null) {
             rejectStillShots(client, cameraController.lastError());
@@ -1027,8 +1027,8 @@ public class BenchmarkController {
         resetBenchmarkStatus();
         state = State.STILLS;
         currentFrame = 0;
-        hudHiddenBeforeStills = client.options.hudHidden;
-        client.options.hudHidden = true;
+        hudHiddenBeforeStills = client.options.hideGui;
+        client.options.hideGui = true;
         LOGGER.info("Still shot capture starting: {} shot(s) from set '{}', settle {}",
                 shots.size(), shotSetName, shotSettle);
         writeBenchmarkStatus("stills-start", true);
@@ -1038,7 +1038,7 @@ public class BenchmarkController {
      * A capture pass that cannot start publishes {@code stills-failed} so the
      * harness stops waiting, then exits as a completed pass would.
      */
-    private void rejectStillShots(MinecraftClient client, String reason) {
+    private void rejectStillShots(Minecraft client, String reason) {
         notifyPlayer(client, "Cannot capture still shots: " + reason);
         LOGGER.error("Cannot capture still shots: {}", reason);
         writeBenchmarkStatus("stills-failed", true);
@@ -1055,14 +1055,14 @@ public class BenchmarkController {
      * pose was reachable when it was marked, and the per-frame hold keeps it
      * against gravity. Time of day is reapplied with the pose every frame.
      */
-    private void applyStillShotScene(MinecraftClient client, StillShot shot) {
+    private void applyStillShotScene(Minecraft client, StillShot shot) {
         cameraController.teleportToStillShot(client, shot);
-        MinecraftServer server = client.getServer();
+        MinecraftServer server = client.getSingleplayerServer();
         if (server != null) {
             boolean raining = shot.weather() != StillShot.Weather.CLEAR;
             boolean thundering = shot.weather() == StillShot.Weather.THUNDER;
             // A day of each so the weather cannot flip while the shot settles.
-            server.execute(() -> server.getOverworld().setWeather(raining ? 0 : WEATHER_HOLD_TICKS,
+            server.execute(() -> server.overworld().setWeatherParameters(raining ? 0 : WEATHER_HOLD_TICKS,
                     raining ? WEATHER_HOLD_TICKS : 0, raining, thundering));
         }
         if (RtxRemixMod.isRtxEnabled() != shot.rtxEnabled()) {
@@ -1084,7 +1084,7 @@ public class BenchmarkController {
      * framebuffer, so reading the framebuffer here would grab the wrong frame.
      */
     private void onStillShotFrameEnd() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         StillShot shot = stillShots.current();
         if (shot == null) {
             return;
@@ -1095,12 +1095,12 @@ public class BenchmarkController {
 
     /**
      * Captures the settled shot and advances. The pass finishes only once
-     * every PNG write has landed: {@link ScreenshotRecorder} encodes on the IO
+     * every PNG write has landed: {@link Screenshot} encodes on the IO
      * worker and reports back later, and a halt on completion would otherwise
      * cut the last file short.
      */
     private void completePendingStillShot() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (captureStillShotAtFrameEnd) {
             captureStillShotAtFrameEnd = false;
             StillShot shot = stillShots.current();
@@ -1136,8 +1136,8 @@ public class BenchmarkController {
                 && terrain.columnsMissingGeometry() == 0;
     }
 
-    private void saveStillShot(MinecraftClient client, StillShot shot) {
-        Path benchmarkDir = client.runDirectory.toPath().resolve("benchmark");
+    private void saveStillShot(Minecraft client, StillShot shot) {
+        Path benchmarkDir = client.gameDirectory.toPath().resolve("benchmark");
         try {
             Files.createDirectories(benchmarkDir);
         } catch (IOException e) {
@@ -1153,13 +1153,13 @@ public class BenchmarkController {
                         ? mod.getRenderer().getChunkManager().getTerrainDiagnostics()
                         : "unavailable",
                 describeCurrentScreen(client),
-                client.interactionManager == null ? "unknown" : client.interactionManager.getCurrentGameMode());
+                client.gameMode == null ? "unknown" : client.gameMode.getPlayerMode());
         Path written = benchmarkDir.resolve("screenshots").resolve(shot.name() + ".png");
         pendingStillShotWrites.incrementAndGet();
-        ScreenshotRecorder.saveScreenshot(
+        Screenshot.grab(
                 benchmarkDir.toFile(),
                 shot.name() + ".png",
-                client.getFramebuffer(),
+                client.getMainRenderTarget(),
                 text -> {
                     // Runs on the IO worker after the encode; the file is the
                     // verdict, not the message text.
@@ -1172,7 +1172,7 @@ public class BenchmarkController {
         );
     }
 
-    private void finishStillShots(MinecraftClient client) {
+    private void finishStillShots(Minecraft client) {
         state = State.COMPLETE;
         boolean failed = stillShotWriteFailed.get();
         LOGGER.info("Still shot capture {}: {} shot(s)", failed ? "finished with a failed write" : "complete",
@@ -1186,12 +1186,12 @@ public class BenchmarkController {
     }
 
     /** Hands the HUD back and drops the session; shared by completion, abort, and disconnect. */
-    private void endStillShots(MinecraftClient client) {
+    private void endStillShots(Minecraft client) {
         if (stillShots == null) {
             return;
         }
         if (client != null && client.options != null) {
-            client.options.hudHidden = hudHiddenBeforeStills;
+            client.options.hideGui = hudHiddenBeforeStills;
         }
         stillShots = null;
         stillShotColumns = -1;
@@ -1318,10 +1318,10 @@ public class BenchmarkController {
         if (!scheduledScreenshotFrames.contains(frame)) return;
         if (!capturedScreenshotFrames.add(frame)) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         // saveScreenshot() creates a "screenshots" subdirectory under the given directory,
         // so we pass "run/benchmark" and it writes to "run/benchmark/screenshots/"
-        Path benchmarkDir = client.runDirectory.toPath().resolve("benchmark");
+        Path benchmarkDir = client.gameDirectory.toPath().resolve("benchmark");
         try {
             Files.createDirectories(benchmarkDir);
         } catch (IOException e) {
@@ -1330,10 +1330,10 @@ public class BenchmarkController {
         }
 
         String filename = String.format("frame_%04d.png", frame);
-        ScreenshotRecorder.saveScreenshot(
+        Screenshot.grab(
                 benchmarkDir.toFile(),
                 filename,
-                client.getFramebuffer(),
+                client.getMainRenderTarget(),
                 text -> LOGGER.info("Screenshot: {}", text.getString())
         );
     }
@@ -1348,8 +1348,8 @@ public class BenchmarkController {
     }
 
     private void writeResults(PerformanceTimer perfTimer) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        Path resultsDir = client.runDirectory.toPath().resolve("benchmark").resolve("results");
+        Minecraft client = Minecraft.getInstance();
+        Path resultsDir = client.gameDirectory.toPath().resolve("benchmark").resolve("results");
         try {
             Files.createDirectories(resultsDir);
         } catch (IOException e) {
@@ -1387,28 +1387,28 @@ public class BenchmarkController {
         metadata.addProperty("screenshotFrameCount", screenshotFrameCount);
         metadata.addProperty("screenshotInterval", screenshotInterval);
         metadata.add("screenshotFrames", screenshotFrameArray(scheduledScreenshotFrames));
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.getServer() != null && mc.getServer().getSavePath(WorldSavePath.ROOT) != null) {
-            metadata.addProperty("worldName", mc.getServer().getSavePath(WorldSavePath.ROOT).getParent().getFileName().toString());
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getSingleplayerServer() != null && mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT) != null) {
+            metadata.addProperty("worldName", mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT).getParent().getFileName().toString());
         }
         // The runtime's version, when the launcher recorded one beside the results.
         try {
-            Path dxvkVersionFile = mc.runDirectory.toPath().resolve("benchmark").resolve("dxvk_version.txt");
+            Path dxvkVersionFile = mc.gameDirectory.toPath().resolve("benchmark").resolve("dxvk_version.txt");
             if (Files.exists(dxvkVersionFile)) {
                 metadata.addProperty("dxvkRemixVersion", Files.readString(dxvkVersionFile).trim());
             }
         } catch (IOException e) {
             LOGGER.debug("Could not read the dxvk-remix version file", e);
         }
-        metadata.addProperty("resolution", mc.getWindow().getFramebufferWidth() + "x" + mc.getWindow().getFramebufferHeight());
-        metadata.addProperty("windowResolution", mc.getWindow().getWidth() + "x" + mc.getWindow().getHeight());
+        metadata.addProperty("resolution", mc.getWindow().getWidth() + "x" + mc.getWindow().getHeight());
+        metadata.addProperty("windowResolution", mc.getWindow().getScreenWidth() + "x" + mc.getWindow().getScreenHeight());
         metadata.addProperty("fullscreen", mc.getWindow().isFullscreen());
-        metadata.addProperty("monitorAvailable", mc.getWindow().getMonitor() != null);
-        metadata.addProperty("renderDistance", mc.options.getViewDistance().getValue());
-        metadata.addProperty("simulationDistance", mc.options.getSimulationDistance().getValue());
-        metadata.addProperty("fov", mc.options.getFov().getValue());
-        metadata.addProperty("graphicsMode", mc.options.getGraphicsMode().getValue().toString());
-        metadata.addProperty("entityDistanceScaling", mc.options.getEntityDistanceScaling().getValue());
+        metadata.addProperty("monitorAvailable", mc.getWindow().findBestMonitor() != null);
+        metadata.addProperty("renderDistance", mc.options.renderDistance().get());
+        metadata.addProperty("simulationDistance", mc.options.simulationDistance().get());
+        metadata.addProperty("fov", mc.options.fov().get());
+        metadata.addProperty("graphicsMode", mc.options.graphicsMode().get().toString());
+        metadata.addProperty("entityDistanceScaling", mc.options.entityDistanceScaling().get());
         root.add("metadata", metadata);
 
         // System info

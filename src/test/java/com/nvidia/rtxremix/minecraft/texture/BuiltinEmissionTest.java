@@ -4,13 +4,14 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
-import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import net.minecraft.resources.ResourceLocation;
 
 class BuiltinEmissionTest {
 
@@ -49,14 +50,14 @@ class BuiltinEmissionTest {
 
     @Test
     void onlyListedSpritesGetAMask() {
-        assertSame(BuiltinEmission.SEA_PICKLE, BuiltinEmission.mask(Identifier.ofVanilla("block/sea_pickle")));
-        assertNull(BuiltinEmission.mask(Identifier.ofVanilla("block/lantern")));
+        assertSame(BuiltinEmission.SEA_PICKLE, BuiltinEmission.mask(ResourceLocation.withDefaultNamespace("block/sea_pickle")));
+        assertNull(BuiltinEmission.mask(ResourceLocation.withDefaultNamespace("block/lantern")));
     }
 
     @Test
     void gainAppliesToLanternsOnly() {
-        assertEquals(2.5f, BuiltinEmission.gain(Identifier.ofVanilla("block/lantern")));
-        assertEquals(2.5f, BuiltinEmission.gain(Identifier.ofVanilla("block/soul_lantern")));
-        assertEquals(1.0f, BuiltinEmission.gain(Identifier.ofVanilla("block/torch")));
+        assertEquals(2.5f, BuiltinEmission.gain(ResourceLocation.withDefaultNamespace("block/lantern")));
+        assertEquals(2.5f, BuiltinEmission.gain(ResourceLocation.withDefaultNamespace("block/soul_lantern")));
+        assertEquals(1.0f, BuiltinEmission.gain(ResourceLocation.withDefaultNamespace("block/torch")));
     }
 }

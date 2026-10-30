@@ -4,14 +4,15 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.util.math.Direction;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import static com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.SHELL_OFFSET;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.core.Direction;
 
 /**
  * Pins how a canvas's pattern stack is baked into one mesh. Remix composites the
@@ -33,12 +34,12 @@ class RemixEntitySubmitterCanvasMeshTest {
     private static final int PATTERN_COUNT = 3;
     private static final float EPSILON = 1e-7f;
 
-    private final ModelPart.Quad[] flag = flag();
-    private final Sprite baseSprite = SpriteFixtures.sprite(0, 0, 64, 512);
-    private final Sprite rhombus = SpriteFixtures.sprite(64, 0, 64, 512);
-    private final Sprite flower = SpriteFixtures.sprite(128, 0, 64, 512);
-    private final Sprite halfBottom = SpriteFixtures.sprite(192, 0, 64, 512);
-    private final Sprite[] patternSprites = {rhombus, flower, halfBottom};
+    private final ModelPart.Polygon[] flag = flag();
+    private final TextureAtlasSprite baseSprite = SpriteFixtures.sprite(0, 0, 64, 512);
+    private final TextureAtlasSprite rhombus = SpriteFixtures.sprite(64, 0, 64, 512);
+    private final TextureAtlasSprite flower = SpriteFixtures.sprite(128, 0, 64, 512);
+    private final TextureAtlasSprite halfBottom = SpriteFixtures.sprite(192, 0, 64, 512);
+    private final TextureAtlasSprite[] patternSprites = {rhombus, flower, halfBottom};
     private final int[] patternTints = {LIGHT_GRAY, GREEN, CYAN};
 
     @Test
@@ -63,11 +64,11 @@ class RemixEntitySubmitterCanvasMeshTest {
         float[] tv = scratch.getTv();
         int i = 0;
         for (int layer = 0; layer < PATTERN_COUNT; layer++) {
-            Sprite sprite = patternSprites[layer];
-            for (ModelPart.Quad quad : flag) {
+            TextureAtlasSprite sprite = patternSprites[layer];
+            for (ModelPart.Polygon quad : flag) {
                 for (ModelPart.Vertex vertex : quad.vertices) {
-                    assertEquals(sprite.getFrameU(vertex.u), tu[i], EPSILON, "u of vertex " + i);
-                    assertEquals(sprite.getFrameV(vertex.v), tv[i], EPSILON, "v of vertex " + i);
+                    assertEquals(sprite.getU(vertex.u), tu[i], EPSILON, "u of vertex " + i);
+                    assertEquals(sprite.getV(vertex.v), tv[i], EPSILON, "v of vertex " + i);
                     i++;
                 }
             }
@@ -85,11 +86,11 @@ class RemixEntitySubmitterCanvasMeshTest {
         int i = 0;
         for (int layer = 0; layer < PATTERN_COUNT; layer++) {
             float shell = (LAYER + layer + 1) * SHELL_OFFSET;
-            for (ModelPart.Quad quad : flag) {
+            for (ModelPart.Polygon quad : flag) {
                 for (ModelPart.Vertex vertex : quad.vertices) {
-                    assertEquals(vertex.pos.x / 16f + quad.direction.x() * shell, px[i], EPSILON, "x of vertex " + i);
-                    assertEquals(vertex.pos.y / 16f + quad.direction.y() * shell, py[i], EPSILON, "y of vertex " + i);
-                    assertEquals(vertex.pos.z / 16f + quad.direction.z() * shell, pz[i], EPSILON, "z of vertex " + i);
+                    assertEquals(vertex.pos.x / 16f + quad.normal.x() * shell, px[i], EPSILON, "x of vertex " + i);
+                    assertEquals(vertex.pos.y / 16f + quad.normal.y() * shell, py[i], EPSILON, "y of vertex " + i);
+                    assertEquals(vertex.pos.z / 16f + quad.normal.z() * shell, pz[i], EPSILON, "z of vertex " + i);
                     i++;
                 }
             }
@@ -113,15 +114,15 @@ class RemixEntitySubmitterCanvasMeshTest {
     }
 
     /** A flag-shaped cuboid: six faces on distinct normals, UVs on the banner's 20x40 flag rectangle. */
-    private static ModelPart.Quad[] flag() {
-        ModelPart.Quad[] sides = new ModelPart.Quad[6];
+    private static ModelPart.Polygon[] flag() {
+        ModelPart.Polygon[] sides = new ModelPart.Polygon[6];
         Direction[] directions = Direction.values();
         for (int q = 0; q < sides.length; q++) {
             ModelPart.Vertex[] vertices = new ModelPart.Vertex[4];
             for (int v = 0; v < 4; v++) {
                 vertices[v] = new ModelPart.Vertex(new Vector3f(q + v, q * 2, v), 0f, 0f);
             }
-            sides[q] = new ModelPart.Quad(vertices, 1, 1, 21, 41, 64, 64, false, directions[q]);
+            sides[q] = new ModelPart.Polygon(vertices, 1, 1, 21, 41, 64, 64, false, directions[q]);
         }
         return sides;
     }

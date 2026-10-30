@@ -5,9 +5,9 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.terrain.ChunkHolderTickEntry;
-import net.minecraft.server.world.ChunkHolder;
-import net.minecraft.server.world.ServerChunkManager;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Mixin;
 
 /**
@@ -18,13 +18,13 @@ import org.spongepowered.asm.mixin.Mixin;
 @Mixin(ChunkHolder.class)
 public abstract class ChunkHolderMixin implements ChunkHolderTickEntry {
 
-    private ServerChunkManager.ChunkWithHolder rtxremix$tickEntry;
+    private ServerChunkCache.ChunkAndHolder rtxremix$tickEntry;
 
     @Override
-    public ServerChunkManager.ChunkWithHolder rtxremix$tickEntry(WorldChunk chunk) {
-        ServerChunkManager.ChunkWithHolder entry = rtxremix$tickEntry;
+    public ServerChunkCache.ChunkAndHolder rtxremix$tickEntry(LevelChunk chunk) {
+        ServerChunkCache.ChunkAndHolder entry = rtxremix$tickEntry;
         if (entry == null || entry.chunk != chunk) {
-            entry = new ServerChunkManager.ChunkWithHolder(chunk, (ChunkHolder) (Object) this);
+            entry = new ServerChunkCache.ChunkAndHolder(chunk, (ChunkHolder) (Object) this);
             rtxremix$tickEntry = entry;
         }
         return entry;

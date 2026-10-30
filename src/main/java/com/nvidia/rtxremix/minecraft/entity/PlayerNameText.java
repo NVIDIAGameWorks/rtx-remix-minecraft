@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 /**
  * A player's name as a text, cached on the player. {@code PlayerEntity.getName()} builds a
@@ -14,5 +14,5 @@ import net.minecraft.text.Text;
  * {@code getName} itself cannot cache.
  */
 public interface PlayerNameText {
-    Text rtxremix$nameText();
+    Component rtxremix$nameText();
 }

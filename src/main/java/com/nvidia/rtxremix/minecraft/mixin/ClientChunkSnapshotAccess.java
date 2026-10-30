@@ -4,12 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import net.minecraft.client.render.chunk.RenderedChunk;
+import net.minecraft.client.renderer.chunk.RenderChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
-@Mixin(targets = "net.minecraft.client.render.chunk.ChunkRendererRegionBuilder$ClientChunk")
+@Mixin(targets = "net.minecraft.client.renderer.chunk.RenderRegionCache$ChunkInfo")
 public interface ClientChunkSnapshotAccess {
-    @Accessor("renderedChunk")
-    RenderedChunk rtxremix$snapshotOrNull();
+    @Accessor("renderChunk")
+    RenderChunk rtxremix$snapshotOrNull();
 }

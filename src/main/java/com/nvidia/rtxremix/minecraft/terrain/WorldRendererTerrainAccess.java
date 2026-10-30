@@ -13,7 +13,7 @@ public interface WorldRendererTerrainAccess {
 
     /**
      * The sections vanilla currently holds built data for, as packed
-     * {@code ChunkSectionPos} longs. This is the terrain the player has seen:
+     * {@code SectionPos} longs. This is the terrain the player has seen:
      * vanilla builds a section when its occlusion walk reaches it, so the set is
      * the frustum-driven subset of the loaded area. Take it before a
      * {@code WorldRenderer.reload()}, which forgets it.
@@ -24,7 +24,7 @@ public interface WorldRendererTerrainAccess {
      * Queues the loaded, non-empty, lit sections in {@code sections} for Remix
      * capture, nearest the camera first.
      *
-     * @return the positions actually queued, as packed {@code ChunkSectionPos} longs;
+     * @return the positions actually queued, as packed {@code SectionPos} longs;
      *         a subset of {@code sections}, never a view of it
      */
     LongSet rtxremix$queueSectionsForRemix(LongSet sections);

@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.Direction;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -59,9 +59,9 @@ public final class CopperBeaconPose {
 
         destination.emitter
                 .set(
-                        mount.getOffsetX(),
-                        mount.getOffsetY(),
-                        mount.getOffsetZ())
+                        mount.getStepX(),
+                        mount.getStepY(),
+                        mount.getStepZ())
                 .mul(HEAD_UP_OFFSET)
                 .fma(LIGHT_FORWARD_OFFSET, destination.direction)
                 .add(0.5f, 0.5f, 0.5f);
@@ -105,7 +105,7 @@ public final class CopperBeaconPose {
 
     private static Vector3f direction(Direction direction, Vector3f destination) {
         return destination.set(
-                direction.getOffsetX(), direction.getOffsetY(), direction.getOffsetZ());
+                direction.getStepX(), direction.getStepY(), direction.getStepZ());
     }
 
     /** Render-thread scratch output; one instance can be reused across evaluations. */

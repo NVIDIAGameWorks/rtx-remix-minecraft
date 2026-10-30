@@ -4,22 +4,22 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import net.minecraft.client.render.Frustum;
+import net.minecraft.client.renderer.culling.Frustum;
 import org.joml.FrustumIntersection;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(Frustum.class)
 public interface FrustumAccessor {
-    @Accessor("frustumIntersection")
+    @Accessor("intersection")
     FrustumIntersection rtxremix$getFrustumIntersection();
 
-    @Accessor("x")
+    @Accessor("camX")
     double rtxremix$getX();
 
-    @Accessor("y")
+    @Accessor("camY")
     double rtxremix$getY();
 
-    @Accessor("z")
+    @Accessor("camZ")
     double rtxremix$getZ();
 }
