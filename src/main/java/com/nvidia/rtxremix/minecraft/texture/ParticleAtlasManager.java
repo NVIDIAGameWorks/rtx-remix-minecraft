@@ -11,19 +11,13 @@ import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixMaterialStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.MaterialInfo;
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.RemixException;
 import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TexturePurpose;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.AbstractTexture;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.client.texture.SpriteAtlasTexture;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,6 +26,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ResourceManager;
 
 /**
  * Captures the particle sprite atlas and builds parallel LabPBR atlas textures
@@ -68,12 +68,12 @@ public class ParticleAtlasManager {
         if (initialized || initFailed) return;
         try {
             RemixAPI api = renderer.getRemixApi();
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
             if (api == null || client == null || client.getTextureManager() == null) return;
 
             AbstractTexture tex = client.getTextureManager()
-                    .getTexture(SpriteAtlasTexture.PARTICLE_ATLAS_TEXTURE);
-            if (!(tex instanceof SpriteAtlasTexture atlas)) return;
+                    .getTexture(TextureAtlas.LOCATION_PARTICLES);
+            if (!(tex instanceof TextureAtlas atlas)) return;
 
             SpriteAtlasAccessor acc = (SpriteAtlasAccessor) atlas;
             int atlasW = acc.getWidth();
@@ -83,7 +83,7 @@ public class ParticleAtlasManager {
                 return;
             }
 
-            Map<Identifier, Sprite> sprites = acc.getSprites();
+            Map<ResourceLocation, TextureAtlasSprite> sprites = acc.getSprites();
             if (sprites == null || sprites.isEmpty()) {
                 LOGGER.warn("Particle atlas has no sprites, deferring init");
                 return;
@@ -113,13 +113,13 @@ public class ParticleAtlasManager {
             LabPBRConverter.VariantCache labPBRVariants = LabPBRConverter.buildVariantCache(rm);
 
             for (var entry : sprites.entrySet()) {
-                Identifier spriteId = entry.getKey();
-                Sprite sprite = entry.getValue();
+                ResourceLocation spriteId = entry.getKey();
+                TextureAtlasSprite sprite = entry.getValue();
                 int pixX = sprite.getX(), pixY = sprite.getY();
-                int pixW = sprite.getContents().getWidth();
-                int pixH = sprite.getContents().getHeight();
+                int pixW = sprite.contents().width();
+                int pixH = sprite.contents().height();
 
-                Identifier texId = Identifier.of(spriteId.getNamespace(),
+                ResourceLocation texId = ResourceLocation.fromNamespaceAndPath(spriteId.getNamespace(),
                         "particle/" + spriteId.getPath());
                 NativeImage nImg = labPBRVariants.loadVariant(texId, "_n");
                 NativeImage sImg = labPBRVariants.loadVariant(texId, "_s");

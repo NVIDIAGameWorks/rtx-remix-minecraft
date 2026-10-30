@@ -5,14 +5,14 @@
 package com.nvidia.rtxremix.minecraft.gl;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.systems.VertexSorter;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
 import org.joml.Matrix4f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,10 +30,10 @@ public class TextureOverlay {
     
     private static final Logger LOGGER = LoggerFactory.getLogger(TextureOverlay.class);
     
-    private final MinecraftClient client;
+    private final Minecraft client;
     
     public TextureOverlay() {
-        this.client = MinecraftClient.getInstance();
+        this.client = Minecraft.getInstance();
         LOGGER.info("TextureOverlay initialized");
     }
     
@@ -59,11 +59,11 @@ public class TextureOverlay {
     }
     
     private void renderTextureOverlay(int texId) {
-        int width = client.getWindow().getScaledWidth();
-        int height = client.getWindow().getScaledHeight();
+        int width = client.getWindow().getGuiScaledWidth();
+        int height = client.getWindow().getGuiScaledHeight();
 
-        if (client.getFramebuffer() != null) {
-            client.getFramebuffer().beginWrite(true);
+        if (client.getMainRenderTarget() != null) {
+            client.getMainRenderTarget().bindWrite(true);
         }
 
         Matrix4f savedProjection = RenderSystem.getProjectionMatrix();
@@ -77,32 +77,32 @@ public class TextureOverlay {
         Matrix4f projMatrix = new Matrix4f().setOrtho(
             0.0f, (float) width, (float) height, 0.0f, -1000.0f, 1000.0f
         );
-        RenderSystem.setProjectionMatrix(projMatrix, VertexSorter.BY_Z);
+        RenderSystem.setProjectionMatrix(projMatrix, VertexSorting.ORTHOGRAPHIC_Z);
 
         RenderSystem.getModelViewStack().pushMatrix();
         RenderSystem.getModelViewStack().identity();
         RenderSystem.applyModelViewMatrix();
 
-        RenderSystem.setShader(GameRenderer::getPositionTexProgram);
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, texId);
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
 
         // Standard GL UVs, with (0,0) at the top left: the interop blit already
         // corrects the Vulkan image's orientation.
         Matrix4f identity = new Matrix4f();
-        BufferBuilder bufferBuilder = Tessellator.getInstance()
-            .begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE);
+        BufferBuilder bufferBuilder = Tesselator.getInstance()
+            .begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
 
-        bufferBuilder.vertex(identity, 0,     0,      0).texture(0.0f, 0.0f);
-        bufferBuilder.vertex(identity, 0,     height, 0).texture(0.0f, 1.0f);
-        bufferBuilder.vertex(identity, width, height, 0).texture(1.0f, 1.0f);
-        bufferBuilder.vertex(identity, width, 0,      0).texture(1.0f, 0.0f);
+        bufferBuilder.addVertex(identity, 0,     0,      0).setUv(0.0f, 0.0f);
+        bufferBuilder.addVertex(identity, 0,     height, 0).setUv(0.0f, 1.0f);
+        bufferBuilder.addVertex(identity, width, height, 0).setUv(1.0f, 1.0f);
+        bufferBuilder.addVertex(identity, width, 0,      0).setUv(1.0f, 0.0f);
 
-        BufferRenderer.drawWithGlobalProgram(bufferBuilder.end());
+        BufferUploader.drawWithShader(bufferBuilder.buildOrThrow());
 
         RenderSystem.getModelViewStack().popMatrix();
         RenderSystem.applyModelViewMatrix();
-        RenderSystem.setProjectionMatrix(savedProjection, VertexSorter.BY_Z);
+        RenderSystem.setProjectionMatrix(savedProjection, VertexSorting.ORTHOGRAPHIC_Z);
 
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();

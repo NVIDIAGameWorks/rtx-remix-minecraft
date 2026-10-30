@@ -8,16 +8,6 @@ import com.nvidia.rtxremix.minecraft.terrain.WorldRendererTerrainAccess;
 import com.nvidia.rtxremix.minecraft.terrain.SkippedSectionRebuilds;
 import com.nvidia.rtxremix.minecraft.terrain.LocalChunkBatchPacing;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientChunkManager;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.packet.s2c.play.ChunkData;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.world.LightType;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.WorldChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -25,11 +15,21 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.function.Consumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientChunkCache;
+import net.minecraft.core.SectionPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * Section rebuild bookkeeping raised by the client chunk manager while RTX capture is on.
  */
-@Mixin(ClientChunkManager.class)
+@Mixin(ClientChunkCache.class)
 public abstract class ClientChunkManagerMixin {
 
     /**
@@ -52,7 +52,7 @@ public abstract class ClientChunkManagerMixin {
      * passes that publish a real copy.
      */
     @Inject(method = "onLightUpdate", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$skipLightOnlyRebuild(LightType type, ChunkSectionPos pos, CallbackInfo ci) {
+    private void rtxremix$skipLightOnlyRebuild(LightLayer type, SectionPos pos, CallbackInfo ci) {
         if (RtxRemixMod.isRtxEnabled()) {
             SkippedSectionRebuilds.recordLightOnly();
             ci.cancel();
@@ -66,22 +66,22 @@ public abstract class ClientChunkManagerMixin {
      * already captured. Slot reuse by another position and unload() are covered by the Fabric
      * CHUNK_UNLOAD event.
      */
-    @Inject(method = "loadChunkFromPacket", at = @At("HEAD"))
+    @Inject(method = "replaceWithPacketData", at = @At("HEAD"))
     private void rtxremix$invalidateNeighboursOnInPlaceReload(
             int x,
             int z,
-            PacketByteBuf buf,
-            NbtCompound nbt,
-            Consumer<ChunkData.BlockEntityVisitor> consumer,
-            CallbackInfoReturnable<WorldChunk> cir) {
+            FriendlyByteBuf buf,
+            CompoundTag nbt,
+            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> consumer,
+            CallbackInfoReturnable<LevelChunk> cir) {
         if (!RtxRemixMod.isRtxEnabled()) {
             return;
         }
-        ClientChunkManager self = (ClientChunkManager) (Object) this;
+        ClientChunkCache self = (ClientChunkCache) (Object) this;
         if (self.getChunk(x, z, ChunkStatus.FULL, false) == null) {
             return;
         }
-        if (MinecraftClient.getInstance().worldRenderer instanceof WorldRendererTerrainAccess access) {
+        if (Minecraft.getInstance().levelRenderer instanceof WorldRendererTerrainAccess access) {
             access.rtxremix$onNeighbourColumnInvalidated(x, z);
         }
     }
@@ -94,27 +94,27 @@ public abstract class ClientChunkManagerMixin {
      * Times each chunk apply for {@link LocalChunkBatchPacing}, which sizes the
      * integrated server's batches from what a chunk costs this thread.
      */
-    @Inject(method = "loadChunkFromPacket", at = @At("HEAD"))
+    @Inject(method = "replaceWithPacketData", at = @At("HEAD"))
     private void rtxremix$beginApplyTiming(
             int x,
             int z,
-            PacketByteBuf buf,
-            NbtCompound nbt,
-            Consumer<ChunkData.BlockEntityVisitor> consumer,
-            CallbackInfoReturnable<WorldChunk> cir) {
+            FriendlyByteBuf buf,
+            CompoundTag nbt,
+            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> consumer,
+            CallbackInfoReturnable<LevelChunk> cir) {
         if (LocalChunkBatchPacing.ENABLED) {
             rtxremix$applyStartNanos = System.nanoTime();
         }
     }
 
-    @Inject(method = "loadChunkFromPacket", at = @At("RETURN"))
+    @Inject(method = "replaceWithPacketData", at = @At("RETURN"))
     private void rtxremix$endApplyTiming(
             int x,
             int z,
-            PacketByteBuf buf,
-            NbtCompound nbt,
-            Consumer<ChunkData.BlockEntityVisitor> consumer,
-            CallbackInfoReturnable<WorldChunk> cir) {
+            FriendlyByteBuf buf,
+            CompoundTag nbt,
+            Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> consumer,
+            CallbackInfoReturnable<LevelChunk> cir) {
         if (LocalChunkBatchPacing.ENABLED) {
             LocalChunkBatchPacing.recordApplyNanos(System.nanoTime() - rtxremix$applyStartNanos);
         }
@@ -131,17 +131,17 @@ public abstract class ClientChunkManagerMixin {
      * thread. An unload of a column the client does not hold (already replaced, or
      * outside its ring) does nothing and is not sampled.
      */
-    @Inject(method = "unload", at = @At("HEAD"))
+    @Inject(method = "drop", at = @At("HEAD"))
     private void rtxremix$beginUnloadTiming(ChunkPos pos, CallbackInfo ci) {
         if (!LocalChunkBatchPacing.UNLOAD_ENABLED) {
             return;
         }
-        ClientChunkManager self = (ClientChunkManager) (Object) this;
+        ClientChunkCache self = (ClientChunkCache) (Object) this;
         rtxremix$unloadIsReal = self.getChunk(pos.x, pos.z, ChunkStatus.FULL, false) != null;
         rtxremix$unloadStartNanos = System.nanoTime();
     }
 
-    @Inject(method = "unload", at = @At("RETURN"))
+    @Inject(method = "drop", at = @At("RETURN"))
     private void rtxremix$endUnloadTiming(ChunkPos pos, CallbackInfo ci) {
         if (LocalChunkBatchPacing.UNLOAD_ENABLED && rtxremix$unloadIsReal) {
             LocalChunkBatchPacing.recordUnloadNanos(System.nanoTime() - rtxremix$unloadStartNanos);

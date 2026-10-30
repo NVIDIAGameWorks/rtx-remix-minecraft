@@ -4,10 +4,10 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.minecraft.texture.AtlasAnimationForwarder;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.SpriteContents;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.texture.SpriteContents;
+import net.minecraft.resources.ResourceLocation;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -18,11 +18,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(SpriteContents.class)
 public abstract class SpriteContentsUploadMixin {
 
-    @Shadow @Final private Identifier id;
+    @Shadow @Final private ResourceLocation name;
     @Shadow @Final int width;
     @Shadow @Final int height;
 
-    @Inject(method = "upload(IIII[Lnet/minecraft/client/texture/NativeImage;)V",
+    @Inject(method = "upload(IIII[Lcom/mojang/blaze3d/platform/NativeImage;)V",
             at = @At("HEAD"))
     private void rtxremix$onAnimationUpload(int texX, int texY, int srcX, int srcY,
                                     NativeImage[] mips, CallbackInfo ci) {
@@ -39,7 +39,7 @@ public abstract class SpriteContentsUploadMixin {
         long pixelPtr = basePtr + ((long) srcY * imgWidth + srcX) * 4;
         int rowPitch = imgWidth * 4;
 
-        AtlasAnimationForwarder.addPatch(id, texX, texY, srcX, srcY, width, height,
+        AtlasAnimationForwarder.addPatch(name, texX, texY, srcX, srcY, width, height,
                                          imgWidth, imgHeight, pixelPtr, rowPitch);
     }
 }

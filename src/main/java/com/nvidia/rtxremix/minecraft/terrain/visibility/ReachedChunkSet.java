@@ -4,8 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfo;
-
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
@@ -15,6 +13,7 @@ import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import net.minecraft.client.renderer.SectionOcclusionGraph.Node;
 
 /**
  * The reached-section set of a visibility walk, as flat arrays reused across walks.
@@ -35,8 +34,8 @@ import java.util.function.Predicate;
  * <p>Single writer at a time, as vanilla's set: the visibility thread fills it, then the
  * render thread owns it after publication.
  */
-public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
-    private ChunkInfo[] order;
+public final class ReachedChunkSet extends LinkedHashSet<Node> {
+    private Node[] order;
     private int count;
     private int[] stamp;
     private long[] originAtIndex;
@@ -44,7 +43,7 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
 
     public ReachedChunkSet(int chunkCount) {
         super(0);
-        order = new ChunkInfo[Math.max(64, chunkCount / 8)];
+        order = new Node[Math.max(64, chunkCount / 8)];
         stamp = new int[Math.max(1, chunkCount)];
         originAtIndex = new long[Math.max(1, chunkCount)];
     }
@@ -61,12 +60,12 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public boolean add(ChunkInfo info) {
-        int index = info.chunk.index;
+    public boolean add(Node info) {
+        int index = info.section.index;
         if (index < 0 || index >= stamp.length) {
             throw new IllegalArgumentException("Section index " + index + " outside storage of " + stamp.length);
         }
-        long origin = info.chunk.getOrigin().asLong();
+        long origin = info.section.getOrigin().asLong();
         if (stamp[index] == walk && originAtIndex[index] == origin) {
             return false;
         }
@@ -81,12 +80,12 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
 
     @Override
     public boolean contains(Object o) {
-        if (!(o instanceof ChunkInfo info)) {
+        if (!(o instanceof Node info)) {
             return false;
         }
-        int index = info.chunk.index;
+        int index = info.section.index;
         return index >= 0 && index < stamp.length && stamp[index] == walk
-                && originAtIndex[index] == info.chunk.getOrigin().asLong();
+                && originAtIndex[index] == info.section.getOrigin().asLong();
     }
 
     @Override
@@ -100,7 +99,7 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public Iterator<ChunkInfo> iterator() {
+    public Iterator<Node> iterator() {
         return new Iterator<>() {
             private int next;
 
@@ -110,7 +109,7 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
             }
 
             @Override
-            public ChunkInfo next() {
+            public Node next() {
                 if (next >= count) {
                     throw new NoSuchElementException();
                 }
@@ -120,14 +119,14 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public void forEach(Consumer<? super ChunkInfo> action) {
+    public void forEach(Consumer<? super Node> action) {
         for (int i = 0; i < count; i++) {
             action.accept(order[i]);
         }
     }
 
     @Override
-    public Spliterator<ChunkInfo> spliterator() {
+    public Spliterator<Node> spliterator() {
         return Spliterators.spliterator(order, 0, count, Spliterator.ORDERED | Spliterator.DISTINCT);
     }
 
@@ -150,7 +149,7 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public ChunkInfo getFirst() {
+    public Node getFirst() {
         if (count == 0) {
             throw new NoSuchElementException();
         }
@@ -158,7 +157,7 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public ChunkInfo getLast() {
+    public Node getLast() {
         if (count == 0) {
             throw new NoSuchElementException();
         }
@@ -171,7 +170,7 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public boolean removeIf(Predicate<? super ChunkInfo> filter) {
+    public boolean removeIf(Predicate<? super Node> filter) {
         throw unsupported();
     }
 
@@ -186,27 +185,27 @@ public final class ReachedChunkSet extends LinkedHashSet<ChunkInfo> {
     }
 
     @Override
-    public void addFirst(ChunkInfo info) {
+    public void addFirst(Node info) {
         throw unsupported();
     }
 
     @Override
-    public void addLast(ChunkInfo info) {
+    public void addLast(Node info) {
         throw unsupported();
     }
 
     @Override
-    public ChunkInfo removeFirst() {
+    public Node removeFirst() {
         throw unsupported();
     }
 
     @Override
-    public ChunkInfo removeLast() {
+    public Node removeLast() {
         throw unsupported();
     }
 
     @Override
-    public LinkedHashSet<ChunkInfo> reversed() {
+    public LinkedHashSet<Node> reversed() {
         throw unsupported();
     }
 

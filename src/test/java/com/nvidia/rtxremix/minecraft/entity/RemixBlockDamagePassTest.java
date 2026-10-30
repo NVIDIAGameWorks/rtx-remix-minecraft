@@ -4,20 +4,21 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.render.OverlayVertexConsumer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.Direction;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.Direction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.SheetedDecalTextureGenerator;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 
 /**
  * Pins the two pure parts of the block-breaking pass.
@@ -78,8 +79,8 @@ class RemixBlockDamagePassTest {
     void projectionMatchesVanillaOverlayConsumerOnEveryFace() {
         for (Direction face : Direction.values()) {
             Recorder vanillaOut = new Recorder();
-            VertexConsumer vanilla = new OverlayVertexConsumer(
-                    vanillaOut, new MatrixStack().peek(), 1.0F);
+            VertexConsumer vanilla = new SheetedDecalTextureGenerator(
+                    vanillaOut, new PoseStack().last(), 1.0F);
             Recorder projectorOut = new Recorder();
             VertexConsumer projector = new RemixBlockDamagePass.CrackProjector().target(projectorOut);
 
@@ -111,7 +112,7 @@ class RemixBlockDamagePassTest {
     void projectedUvIsPresentWhenTheCapturingConsumerClosesTheVertex() {
         EntityRenderContext.get().begin(true);
         Recorder vanillaOut = new Recorder();
-        feedFace(new OverlayVertexConsumer(vanillaOut, new MatrixStack().peek(), 1.0F), Direction.NORTH);
+        feedFace(new SheetedDecalTextureGenerator(vanillaOut, new PoseStack().last(), 1.0F), Direction.NORTH);
         List<Recorder.Vertex> expected = vanillaOut.finish();
 
         RemixCapturingConsumer capture = new RemixCapturingConsumer(null, true);
@@ -132,7 +133,7 @@ class RemixBlockDamagePassTest {
      * coordinates and a tinted, shaded colour that the crack must not inherit.
      */
     private static void feedFace(VertexConsumer consumer, Direction face) {
-        Vector3f n = face.getUnitVector();
+        Vector3f n = face.step();
         Vector3f tangent = Math.abs(n.y) > 0.5f ? new Vector3f(1, 0, 0) : new Vector3f(0, 1, 0);
         Vector3f bitangent = new Vector3f(n).cross(tangent).normalize();
         tangent = new Vector3f(bitangent).cross(n).normalize();
@@ -143,7 +144,7 @@ class RemixBlockDamagePassTest {
                     .add(new Vector3f(tangent).mul(0.5f * corners[i][0]))
                     .add(new Vector3f(bitangent).mul(0.5f * corners[i][1]));
             int shadedTint = 0xFF3080C0 - i;
-            consumer.vertex(p.x, p.y, p.z, shadedTint, 0.25f + 0.1f * i, 0.75f,
+            consumer.addVertex(p.x, p.y, p.z, shadedTint, 0.25f + 0.1f * i, 0.75f,
                     OVERLAY, LIGHT, n.x, n.y, n.z);
         }
     }
@@ -171,7 +172,7 @@ class RemixBlockDamagePassTest {
         }
 
         @Override
-        public VertexConsumer vertex(float x, float y, float z) {
+        public VertexConsumer addVertex(float x, float y, float z) {
             flush();
             open = true;
             this.x = x; this.y = y; this.z = z;
@@ -182,22 +183,22 @@ class RemixBlockDamagePassTest {
         }
 
         @Override
-        public VertexConsumer color(int red, int green, int blue, int alpha) {
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
             color = (alpha << 24) | (red << 16) | (green << 8) | blue;
             return this;
         }
 
         @Override
-        public VertexConsumer texture(float u, float v) {
+        public VertexConsumer setUv(float u, float v) {
             this.u = u; this.v = v;
             return this;
         }
 
-        @Override public VertexConsumer overlay(int u, int v) { return this; }
-        @Override public VertexConsumer light(int u, int v) { return this; }
+        @Override public VertexConsumer setUv1(int u, int v) { return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { return this; }
 
         @Override
-        public VertexConsumer normal(float x, float y, float z) {
+        public VertexConsumer setNormal(float x, float y, float z) {
             nx = x; ny = y; nz = z;
             return this;
         }

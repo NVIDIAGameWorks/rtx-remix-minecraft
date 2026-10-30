@@ -6,22 +6,22 @@ package com.nvidia.rtxremix.minecraft.block;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.DyeItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.ItemStack;
 
 /** Server-authoritative inventory and settings channel for one Copper Beacon. */
-public final class CopperBeaconScreenHandler extends ScreenHandler {
+public final class CopperBeaconScreenHandler extends AbstractContainerMenu {
 
     public static final int WIDTH = 260;
     public static final int DYE_SLOT_X = 32;
@@ -29,7 +29,7 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
     public static final int PLAYER_INVENTORY_X = 49;
     public static final int PLAYER_INVENTORY_Y = 153;
 
-    public static final ScreenHandlerType<CopperBeaconScreenHandler> TYPE =
+    public static final MenuType<CopperBeaconScreenHandler> TYPE =
             new ExtendedScreenHandlerType<>(
                     CopperBeaconScreenHandler::new,
                     CopperBeaconScreenData.PACKET_CODEC);
@@ -39,19 +39,19 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
     private static final int PLAYER_END = PLAYER_START + 27;
     private static final int HOTBAR_END = PLAYER_END + 9;
 
-    private final Inventory dyeInventory;
+    private final Container dyeInventory;
     private final BlockPos pos;
     private final CopperBeaconBlockEntity beacon;
 
     public static void register() {
         Registry.register(
-                Registries.SCREEN_HANDLER,
-                Identifier.of(RtxRemixCommonMod.MOD_ID, CopperBeaconBlock.ID),
+                BuiltInRegistries.MENU,
+                ResourceLocation.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, CopperBeaconBlock.ID),
                 TYPE);
     }
 
     private CopperBeaconScreenHandler(
-            int syncId, PlayerInventory playerInventory, CopperBeaconScreenData data) {
+            int syncId, Inventory playerInventory, CopperBeaconScreenData data) {
         this(
                 syncId,
                 playerInventory,
@@ -61,29 +61,29 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
 
     public CopperBeaconScreenHandler(
             int syncId,
-            PlayerInventory playerInventory,
+            Inventory playerInventory,
             CopperBeaconBlockEntity beacon) {
-        this(syncId, playerInventory, beacon, beacon.getPos());
+        this(syncId, playerInventory, beacon, beacon.getBlockPos());
     }
 
     private CopperBeaconScreenHandler(
             int syncId,
-            PlayerInventory playerInventory,
+            Inventory playerInventory,
             CopperBeaconBlockEntity beacon,
             BlockPos pos) {
         super(TYPE, syncId);
         this.beacon = beacon;
-        this.pos = pos.toImmutable();
-        this.dyeInventory = beacon != null ? beacon : new SimpleInventory(1);
+        this.pos = pos.immutable();
+        this.dyeInventory = beacon != null ? beacon : new SimpleContainer(1);
 
         addSlot(new Slot(dyeInventory, DYE_SLOT, DYE_SLOT_X, DYE_SLOT_Y) {
             @Override
-            public boolean canInsert(ItemStack stack) {
+            public boolean mayPlace(ItemStack stack) {
                 return stack.getItem() instanceof DyeItem;
             }
 
             @Override
-            public int getMaxItemCount() {
+            public int getMaxStackSize() {
                 return 1;
             }
         });
@@ -155,59 +155,59 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
-        if (beacon == null || beacon.isRemoved() || beacon.getWorld() != player.getWorld()) {
+    public boolean stillValid(Player player) {
+        if (beacon == null || beacon.isRemoved() || beacon.getLevel() != player.level()) {
             return false;
         }
-        if (player.getWorld().getBlockEntity(pos) != beacon) {
+        if (player.level().getBlockEntity(pos) != beacon) {
             return false;
         }
-        return player.squaredDistanceTo(
+        return player.distanceToSqr(
                 pos.getX() + 0.5,
                 pos.getY() + 0.5,
                 pos.getZ() + 0.5) <= 64.0;
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slotIndex) {
+    public ItemStack quickMoveStack(Player player, int slotIndex) {
         Slot slot = slots.get(slotIndex);
-        if (!slot.hasStack()) {
+        if (!slot.hasItem()) {
             return ItemStack.EMPTY;
         }
-        ItemStack stack = slot.getStack();
+        ItemStack stack = slot.getItem();
         ItemStack original = stack.copy();
 
         if (slotIndex == DYE_SLOT) {
-            if (!insertItem(stack, PLAYER_START, HOTBAR_END, true)) {
+            if (!moveItemStackTo(stack, PLAYER_START, HOTBAR_END, true)) {
                 return ItemStack.EMPTY;
             }
         } else if (stack.getItem() instanceof DyeItem) {
-            if (!insertItem(stack, DYE_SLOT, DYE_SLOT + 1, false)) {
+            if (!moveItemStackTo(stack, DYE_SLOT, DYE_SLOT + 1, false)) {
                 return ItemStack.EMPTY;
             }
         } else if (slotIndex < PLAYER_END) {
-            if (!insertItem(stack, PLAYER_END, HOTBAR_END, false)) {
+            if (!moveItemStackTo(stack, PLAYER_END, HOTBAR_END, false)) {
                 return ItemStack.EMPTY;
             }
-        } else if (!insertItem(stack, PLAYER_START, PLAYER_END, false)) {
+        } else if (!moveItemStackTo(stack, PLAYER_START, PLAYER_END, false)) {
             return ItemStack.EMPTY;
         }
 
         if (stack.isEmpty()) {
-            slot.setStack(ItemStack.EMPTY);
+            slot.setByPlayer(ItemStack.EMPTY);
         } else {
-            slot.markDirty();
+            slot.setChanged();
         }
         if (stack.getCount() == original.getCount()) {
             return ItemStack.EMPTY;
         }
-        slot.onTakeItem(player, stack);
+        slot.onTake(player, stack);
         return original;
     }
 
     private static CopperBeaconBlockEntity clientBeacon(
-            PlayerInventory inventory, BlockPos pos) {
-        return inventory.player.getWorld().getBlockEntity(pos)
+            Inventory inventory, BlockPos pos) {
+        return inventory.player.level().getBlockEntity(pos)
                         instanceof CopperBeaconBlockEntity beacon
                 ? beacon
                 : null;
@@ -237,7 +237,7 @@ public final class CopperBeaconScreenHandler extends ScreenHandler {
                 return state;
             }
         }
-        long anchorTick = beacon.getWorld() == null ? state.anchorTick() : beacon.getWorld().getTime();
+        long anchorTick = beacon.getLevel() == null ? state.anchorTick() : beacon.getLevel().getGameTime();
         return new CopperBeaconAxisState(
                 position,
                 mode,

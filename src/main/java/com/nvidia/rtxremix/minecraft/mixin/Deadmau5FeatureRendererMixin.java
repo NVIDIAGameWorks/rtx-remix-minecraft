@@ -5,20 +5,20 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.entity.PlayerNameText;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.render.entity.feature.Deadmau5FeatureRenderer;
-import net.minecraft.text.Text;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.entity.layers.Deadmau5EarsLayer;
+import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 /** The ears check only reads the string; see {@link PlayerNameText}. */
-@Mixin(Deadmau5FeatureRenderer.class)
+@Mixin(Deadmau5EarsLayer.class)
 public abstract class Deadmau5FeatureRendererMixin {
     @Redirect(
-            method = "render(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;ILnet/minecraft/client/network/AbstractClientPlayerEntity;FFFFFF)V",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/AbstractClientPlayerEntity;getName()Lnet/minecraft/text/Text;"))
-    private Text rtxremix$cachedName(AbstractClientPlayerEntity player) {
+            method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/client/player/AbstractClientPlayer;FFFFFF)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/AbstractClientPlayer;getName()Lnet/minecraft/network/chat/Component;"))
+    private Component rtxremix$cachedName(AbstractClientPlayer player) {
         return ((PlayerNameText) player).rtxremix$nameText();
     }
 }

@@ -1,88 +1,63 @@
-accessWidener v2 named
-
-# SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
-# Camera access
-accessible method net/minecraft/client/render/GameRenderer getFov (Lnet/minecraft/client/render/Camera;FZ)D
-
-# Deferred application for sliders that rebuild expensive resources
-accessible class net/minecraft/client/option/SimpleOption$SliderCallbacks
-
-# ModelPart inner classes for cuboid-level skinning
-accessible class net/minecraft/client/model/ModelPart$Quad
-accessible class net/minecraft/client/model/ModelPart$Vertex
-accessible field net/minecraft/client/model/ModelPart$Cuboid sides [Lnet/minecraft/client/model/ModelPart$Quad;
-accessible field net/minecraft/client/model/ModelPart$Quad vertices [Lnet/minecraft/client/model/ModelPart$Vertex;
-accessible field net/minecraft/client/model/ModelPart$Quad direction Lorg/joml/Vector3f;
-accessible field net/minecraft/client/model/ModelPart$Vertex pos Lorg/joml/Vector3f;
-accessible field net/minecraft/client/model/ModelPart$Vertex u F
-accessible field net/minecraft/client/model/ModelPart$Vertex v F
-
-# SpriteTexturedVertexConsumer unwrap, so sprite-wrapped cuboids reach the capture as cuboids
-accessible field net/minecraft/client/render/SpriteTexturedVertexConsumer delegate Lnet/minecraft/client/render/VertexConsumer;
-accessible field net/minecraft/client/render/SpriteTexturedVertexConsumer sprite Lnet/minecraft/client/texture/Sprite;
-
-# RenderLayer texture extraction (for entity material identity)
-accessible method net/minecraft/client/render/RenderLayer$MultiPhase getPhases ()Lnet/minecraft/client/render/RenderLayer$MultiPhaseParameters;
-accessible field net/minecraft/client/render/RenderLayer$MultiPhaseParameters texture Lnet/minecraft/client/render/RenderPhase$TextureBase;
-accessible field net/minecraft/client/render/RenderLayer$MultiPhaseParameters program Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderLayer$MultiPhaseParameters transparency Lnet/minecraft/client/render/RenderPhase$Transparency;
-accessible method net/minecraft/client/render/RenderPhase$Texture getId ()Ljava/util/Optional;
-accessible field net/minecraft/client/render/RenderPhase ADDITIVE_TRANSPARENCY Lnet/minecraft/client/render/RenderPhase$Transparency;
-accessible field net/minecraft/client/render/RenderPhase TRANSLUCENT_TRANSPARENCY Lnet/minecraft/client/render/RenderPhase$Transparency;
-accessible field net/minecraft/client/render/RenderPhase CRUMBLING_TRANSPARENCY Lnet/minecraft/client/render/RenderPhase$Transparency;
-accessible field net/minecraft/client/render/RenderPhase BEACON_BEAM_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderPhase ENTITY_SOLID_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderPhase ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderPhase EYES_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderPhase TEXT_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderPhase TEXT_INTENSITY_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
-accessible field net/minecraft/client/render/RenderLayer$MultiPhaseParameters depthTest Lnet/minecraft/client/render/RenderPhase$DepthTest;
-accessible field net/minecraft/client/render/RenderPhase ALWAYS_DEPTH_TEST Lnet/minecraft/client/render/RenderPhase$DepthTest;
-
-# SpriteContents animation data for flipbook texture extraction
-accessible class net/minecraft/client/texture/SpriteContents$Animation
-accessible class net/minecraft/client/texture/SpriteContents$AnimationFrame
-accessible field net/minecraft/client/texture/SpriteContents animation Lnet/minecraft/client/texture/SpriteContents$Animation;
-accessible field net/minecraft/client/texture/SpriteContents$Animation frames Ljava/util/List;
-accessible field net/minecraft/client/texture/SpriteContents$AnimationFrame index I
-accessible field net/minecraft/client/texture/SpriteContents$AnimationFrame time I
-
-# Allocation-free port of vanilla's chunk visibility walk (ChunkRenderingDataPreparerMixin)
-accessible class net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfoList
-accessible class net/minecraft/client/render/ChunkRenderingDataPreparer$RenderableChunks
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo <init> (Lnet/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk;Lnet/minecraft/util/math/Direction;I)V
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo updateCullingState (BLnet/minecraft/util/math/Direction;)V
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo canCull (Lnet/minecraft/util/math/Direction;)Z
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo addDirection (Lnet/minecraft/util/math/Direction;)V
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo hasDirection (I)Z
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo hasAnyDirection ()Z
-accessible field net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo chunk Lnet/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk;
-accessible field net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo cullingState B
-accessible field net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo propagationLevel I
-accessible method net/minecraft/client/render/BuiltChunkStorage getRenderedChunk (Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk;
-
-# Visibility walk buffers reused across walks (RenderableChunksMixin, ChunkInfoPool)
-accessible method net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfoList <init> (I)V
-accessible field net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfoList current [Lnet/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo;
-accessible field net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo direction B
-mutable field net/minecraft/client/render/ChunkRenderingDataPreparer$ChunkInfo propagationLevel I
-
-# Integrated-server light snapshot published as an overlay view (LightStorageMixin)
-accessible field net/minecraft/world/chunk/ChunkToNibbleArrayMap arrays Lit/unimi/dsi/fastutil/longs/Long2ObjectOpenHashMap;
-accessible field net/minecraft/world/chunk/light/SkyLightStorage$Data columnToTopSection Lit/unimi/dsi/fastutil/longs/Long2IntOpenHashMap;
-accessible field net/minecraft/world/chunk/light/SkyLightStorage$Data minSectionY I
-accessible class net/minecraft/world/chunk/light/BlockLightStorage$Data
-
-# The integrated server's per-tick chunk list entries, cached per holder (ChunkHolderMixin)
-accessible class net/minecraft/server/world/ServerChunkManager$ChunkWithHolder
-accessible method net/minecraft/server/world/ServerChunkManager$ChunkWithHolder <init> (Lnet/minecraft/world/chunk/WorldChunk;Lnet/minecraft/server/world/ChunkHolder;)V
-accessible field net/minecraft/server/world/ServerChunkManager$ChunkWithHolder chunk Lnet/minecraft/world/chunk/WorldChunk;
-
-# Render-region snapshot storage recycling (RenderedChunkMixin, PalettedContainerDataMixin)
-accessible class net/minecraft/client/render/chunk/RenderedChunk
-accessible class net/minecraft/world/chunk/PalettedContainer$Data
-accessible field net/minecraft/world/chunk/PalettedContainer data Lnet/minecraft/world/chunk/PalettedContainer$Data;
-accessible class net/minecraft/client/render/chunk/ChunkBuilder$Result
-accessible class net/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk$RebuildTask
+accessWidener	v2	named
+accessible	method	net/minecraft/client/renderer/GameRenderer	getFov	(Lnet/minecraft/client/Camera;FZ)D
+accessible	class	net/minecraft/client/OptionInstance$SliderableValueSet
+accessible	class	net/minecraft/client/model/geom/ModelPart$Polygon
+accessible	class	net/minecraft/client/model/geom/ModelPart$Vertex
+accessible	field	net/minecraft/client/model/geom/ModelPart$Cube	polygons	[Lnet/minecraft/client/model/geom/ModelPart$Polygon;
+accessible	field	net/minecraft/client/model/geom/ModelPart$Polygon	vertices	[Lnet/minecraft/client/model/geom/ModelPart$Vertex;
+accessible	field	net/minecraft/client/model/geom/ModelPart$Polygon	normal	Lorg/joml/Vector3f;
+accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	pos	Lorg/joml/Vector3f;
+accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	u	F
+accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	v	F
+accessible	field	net/minecraft/client/renderer/SpriteCoordinateExpander	delegate	Lcom/mojang/blaze3d/vertex/VertexConsumer;
+accessible	field	net/minecraft/client/renderer/SpriteCoordinateExpander	sprite	Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;
+accessible	method	net/minecraft/client/renderer/RenderType$CompositeRenderType	state	()Lnet/minecraft/client/renderer/RenderType$CompositeState;
+accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	textureState	Lnet/minecraft/client/renderer/RenderStateShard$EmptyTextureStateShard;
+accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	shaderState	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	transparencyState	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
+accessible	method	net/minecraft/client/renderer/RenderStateShard$TextureStateShard	cutoutTexture	()Ljava/util/Optional;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	ADDITIVE_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	TRANSLUCENT_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	CRUMBLING_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_BEACON_BEAM_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_ENTITY_SOLID_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_EYES_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_TEXT_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_TEXT_INTENSITY_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderType$CompositeState	depthTestState	Lnet/minecraft/client/renderer/RenderStateShard$DepthTestStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	NO_DEPTH_TEST	Lnet/minecraft/client/renderer/RenderStateShard$DepthTestStateShard;
+accessible	class	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture
+accessible	class	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents	animatedTexture	Lnet/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture;
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture	frames	Ljava/util/List;
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo	index	I
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo	time	I
+accessible	class	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap
+accessible	class	net/minecraft/client/renderer/SectionOcclusionGraph$GraphStorage
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	<init>	(Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;Lnet/minecraft/core/Direction;I)V
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	setDirections	(BLnet/minecraft/core/Direction;)V
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasDirection	(Lnet/minecraft/core/Direction;)Z
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	addSourceDirection	(Lnet/minecraft/core/Direction;)V
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasSourceDirection	(I)Z
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasSourceDirections	()Z
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	section	Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	directions	B
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	step	I
+accessible	method	net/minecraft/client/renderer/ViewArea	getRenderSectionAt	(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap	<init>	(I)V
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap	nodes	[Lnet/minecraft/client/renderer/SectionOcclusionGraph$Node;
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	sourceDirections	B
+mutable	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	step	I
+accessible	field	net/minecraft/world/level/lighting/DataLayerStorageMap	map	Lit/unimi/dsi/fastutil/longs/Long2ObjectOpenHashMap;
+accessible	field	net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap	topSections	Lit/unimi/dsi/fastutil/longs/Long2IntOpenHashMap;
+accessible	field	net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap	currentLowestY	I
+accessible	class	net/minecraft/world/level/lighting/BlockLightSectionStorage$BlockDataLayerStorageMap
+accessible	class	net/minecraft/server/level/ServerChunkCache$ChunkAndHolder
+accessible	method	net/minecraft/server/level/ServerChunkCache$ChunkAndHolder	<init>	(Lnet/minecraft/world/level/chunk/LevelChunk;Lnet/minecraft/server/level/ChunkHolder;)V
+accessible	field	net/minecraft/server/level/ServerChunkCache$ChunkAndHolder	chunk	Lnet/minecraft/world/level/chunk/LevelChunk;
+accessible	class	net/minecraft/client/renderer/chunk/RenderChunk
+accessible	class	net/minecraft/world/level/chunk/PalettedContainer$Data
+accessible	field	net/minecraft/world/level/chunk/PalettedContainer	data	Lnet/minecraft/world/level/chunk/PalettedContainer$Data;
+accessible	class	net/minecraft/client/renderer/chunk/SectionRenderDispatcher$SectionTaskResult
+accessible	class	net/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection$RebuildTask

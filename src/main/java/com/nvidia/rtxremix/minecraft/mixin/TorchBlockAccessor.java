@@ -4,14 +4,14 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import net.minecraft.block.TorchBlock;
-import net.minecraft.particle.SimpleParticleType;
+import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.world.level.block.TorchBlock;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /** Exposes the particle a torch block spawns from its display tick. */
 @Mixin(TorchBlock.class)
 public interface TorchBlockAccessor {
-    @Accessor("particle")
+    @Accessor("flameParticle")
     SimpleParticleType getParticle();
 }

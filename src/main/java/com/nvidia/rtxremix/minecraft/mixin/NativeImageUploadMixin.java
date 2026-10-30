@@ -4,8 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
-import net.minecraft.client.texture.NativeImage;
 import org.lwjgl.system.MemoryUtil;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,11 +27,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class NativeImageUploadMixin {
 
     @Shadow @Final private NativeImage.Format format;
-    @Shadow private long pointer;
+    @Shadow private long pixels;
 
     @Shadow public abstract int getWidth();
 
-    @Inject(method = "uploadInternal", at = @At("HEAD"))
+    @Inject(method = "_upload", at = @At("HEAD"))
     private void rtxremix$mirrorGlyphUpload(int level, int offsetX, int offsetY,
                                              int unpackSkipPixels, int unpackSkipRows,
                                              int width, int height, boolean blur, boolean clamp,
@@ -40,9 +40,9 @@ public abstract class NativeImageUploadMixin {
         if (page == null || level != 0 || width <= 0 || height <= 0) {
             return;
         }
-        int channels = format.getChannelCount();
+        int channels = format.components();
         int rowPitch = getWidth() * channels;
-        long first = pointer + ((long) unpackSkipRows * getWidth() + unpackSkipPixels) * channels;
+        long first = pixels + ((long) unpackSkipRows * getWidth() + unpackSkipPixels) * channels;
         // The window's rows stride the whole image; the buffer spans only the bytes the
         // window touches, from its first pixel to the end of its last row.
         int span = (height - 1) * rowPitch + width * channels;

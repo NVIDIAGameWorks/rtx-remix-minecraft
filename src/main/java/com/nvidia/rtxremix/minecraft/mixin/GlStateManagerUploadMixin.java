@@ -5,8 +5,8 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
-import net.minecraft.client.texture.NativeImage;
 import org.lwjgl.system.MemoryUtil;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -36,7 +36,7 @@ public abstract class GlStateManagerUploadMixin {
         if (page == null || level != 0 || width <= 0 || height <= 0) {
             return;
         }
-        int channels = format.getChannelCount();
+        int channels = format.components();
         int rowPitch = width * channels;
         page.blit(offsetX, offsetY, width, height, channels,
                 MemoryUtil.memByteBuffer(MemoryUtil.memAddress(pixels), height * rowPitch), rowPitch);

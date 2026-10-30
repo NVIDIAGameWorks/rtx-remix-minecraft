@@ -6,9 +6,9 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.material.MapColor;
 import com.nvidia.rtxremix.InstanceCategoryBit;
-import net.minecraft.block.MapColor;
-import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RemixEntitySubmitterCoverageCutoutTest {
 
-    private static final Identifier MAP_TEXTURE = Identifier.of("minecraft", "dynamic/map/42_1");
+    private static final ResourceLocation MAP_TEXTURE = ResourceLocation.fromNamespaceAndPath("minecraft", "dynamic/map/42_1");
 
     @Test
     void dynamicMapsCutAtHalfCoverage() {
@@ -30,14 +30,14 @@ class RemixEntitySubmitterCoverageCutoutTest {
     @Test
     void mapDecorationsCutAtHalfCoverage() {
         assertEquals(128, RemixEntitySubmitter.cutoutAlphaReferenceValue(
-                Identifier.of("minecraft", "textures/atlas/map_decorations.png")));
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/map_decorations.png")));
     }
 
     @Test
     void mapDecorationsAreAlreadyOffsetDecals() {
         assertEquals(InstanceCategoryBit.DECAL_NO_OFFSET,
                 RemixEntitySubmitter.additionalCategoryFlagsForTexture(
-                        Identifier.of("minecraft", "textures/atlas/map_decorations.png")));
+                        ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/map_decorations.png")));
         assertEquals(0, RemixEntitySubmitter.additionalCategoryFlagsForTexture(MAP_TEXTURE));
     }
 
@@ -45,12 +45,12 @@ class RemixEntitySubmitterCoverageCutoutTest {
     void particleAtlasPartsAreParticles() {
         assertEquals(InstanceCategoryBit.PARTICLE,
                 RemixEntitySubmitter.additionalCategoryFlagsForTexture(
-                        Identifier.of("minecraft", "textures/atlas/particles.png")));
+                        ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/particles.png")));
     }
 
     @Test
     void glyphPagesCutAtHalfCoverage() {
-        Identifier page = Identifier.of("minecraft", "default/7");
+        ResourceLocation page = ResourceLocation.fromNamespaceAndPath("minecraft", "default/7");
         DynamicTextureCache.onRegisterGlyphPage(page, new GlyphPageMirror(false));
 
         assertEquals(128, RemixEntitySubmitter.cutoutAlphaReferenceValue(page));
@@ -59,7 +59,7 @@ class RemixEntitySubmitterCoverageCutoutTest {
     @Test
     void vanillaMapPaletteHasBinaryAlpha() {
         for (int color = 0; color <= 255; color++) {
-            int alpha = MapColor.getRenderColor(color) >>> 24;
+            int alpha = MapColor.getColorFromPackedId(color) >>> 24;
             assertTrue(alpha == 0 || alpha == 255, "map color " + color + " has alpha " + alpha);
         }
     }
@@ -67,8 +67,8 @@ class RemixEntitySubmitterCoverageCutoutTest {
     @Test
     void otherTexturesShowAnyTexelWithAlpha() {
         assertEquals(1, RemixEntitySubmitter.cutoutAlphaReferenceValue(
-                Identifier.of("minecraft", "textures/entity/slime/slime.png")));
+                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/slime/slime.png")));
         assertEquals(1, RemixEntitySubmitter.cutoutAlphaReferenceValue(
-                Identifier.of("example", "dynamic/map/42_1")));
+                ResourceLocation.fromNamespaceAndPath("example", "dynamic/map/42_1")));
     }
 }

@@ -5,8 +5,8 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.terrain.BiomeColorGeneration;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeEffects;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSpecialEffects;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -40,12 +40,12 @@ public abstract class BiomeMixin {
 
     @Shadow
     @Final
-    private BiomeEffects effects;
+    private BiomeSpecialEffects specialEffects;
 
     private volatile BiomeColorGeneration.Cached rtxremix$grass;
     private volatile BiomeColorGeneration.Cached rtxremix$foliage;
 
-    @Inject(method = "getGrassColorAt", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getGrassColor", at = @At("HEAD"), cancellable = true)
     private void rtxremix$grassColorAt(double x, double z, CallbackInfoReturnable<Integer> cir) {
         BiomeColorGeneration.Cached cached = rtxremix$grass;
         if (cached != null && cached.isCurrent()) {
@@ -53,9 +53,9 @@ public abstract class BiomeMixin {
         }
     }
 
-    @Inject(method = "getGrassColorAt", at = @At("RETURN"))
+    @Inject(method = "getGrassColor", at = @At("RETURN"))
     private void rtxremix$rememberGrassColor(double x, double z, CallbackInfoReturnable<Integer> cir) {
-        if (effects.getGrassColorModifier() == BiomeEffects.GrassColorModifier.NONE) {
+        if (specialEffects.getGrassColorModifier() == BiomeSpecialEffects.GrassColorModifier.NONE) {
             rtxremix$grass = new BiomeColorGeneration.Cached(BiomeColorGeneration.current(), cir.getReturnValue());
         }
     }

@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.render.model.json.ModelTransformationMode;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Quaternionfc;
@@ -17,22 +16,24 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import net.minecraft.world.item.ItemDisplayContext;
+
 class HeldItemFlameTest {
 
     private static final float EPSILON = 1.0e-5f;
 
     @Test
     void onlyHandModesCarryTheFlame() {
-        assertTrue(HeldItemFlame.isHandMode(ModelTransformationMode.FIRST_PERSON_LEFT_HAND));
-        assertTrue(HeldItemFlame.isHandMode(ModelTransformationMode.FIRST_PERSON_RIGHT_HAND));
-        assertTrue(HeldItemFlame.isHandMode(ModelTransformationMode.THIRD_PERSON_LEFT_HAND));
-        assertTrue(HeldItemFlame.isHandMode(ModelTransformationMode.THIRD_PERSON_RIGHT_HAND));
+        assertTrue(HeldItemFlame.isHandMode(ItemDisplayContext.FIRST_PERSON_LEFT_HAND));
+        assertTrue(HeldItemFlame.isHandMode(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND));
+        assertTrue(HeldItemFlame.isHandMode(ItemDisplayContext.THIRD_PERSON_LEFT_HAND));
+        assertTrue(HeldItemFlame.isHandMode(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND));
         // Inventory, dropped, item frame and worn-on-head renders are not held.
-        assertFalse(HeldItemFlame.isHandMode(ModelTransformationMode.GUI));
-        assertFalse(HeldItemFlame.isHandMode(ModelTransformationMode.GROUND));
-        assertFalse(HeldItemFlame.isHandMode(ModelTransformationMode.FIXED));
-        assertFalse(HeldItemFlame.isHandMode(ModelTransformationMode.HEAD));
-        assertFalse(HeldItemFlame.isHandMode(ModelTransformationMode.NONE));
+        assertFalse(HeldItemFlame.isHandMode(ItemDisplayContext.GUI));
+        assertFalse(HeldItemFlame.isHandMode(ItemDisplayContext.GROUND));
+        assertFalse(HeldItemFlame.isHandMode(ItemDisplayContext.FIXED));
+        assertFalse(HeldItemFlame.isHandMode(ItemDisplayContext.HEAD));
+        assertFalse(HeldItemFlame.isHandMode(ItemDisplayContext.NONE));
     }
 
     @Test
@@ -69,26 +70,26 @@ class HeldItemFlameTest {
     @Test
     void onlyFirstPersonPushesTheQuadTowardTheCamera() {
         assertEquals(HeldItemFlame.FIRST_PERSON_CAMERA_OFFSET,
-                HeldItemFlame.cameraOffset(ModelTransformationMode.FIRST_PERSON_RIGHT_HAND));
+                HeldItemFlame.cameraOffset(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND));
         assertEquals(HeldItemFlame.FIRST_PERSON_CAMERA_OFFSET,
-                HeldItemFlame.cameraOffset(ModelTransformationMode.FIRST_PERSON_LEFT_HAND));
+                HeldItemFlame.cameraOffset(ItemDisplayContext.FIRST_PERSON_LEFT_HAND));
         // Seen from the side, a world-space push would float the flame off the torch.
-        assertEquals(0.0f, HeldItemFlame.cameraOffset(ModelTransformationMode.THIRD_PERSON_RIGHT_HAND));
-        assertEquals(0.0f, HeldItemFlame.cameraOffset(ModelTransformationMode.THIRD_PERSON_LEFT_HAND));
+        assertEquals(0.0f, HeldItemFlame.cameraOffset(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND));
+        assertEquals(0.0f, HeldItemFlame.cameraOffset(ItemDisplayContext.THIRD_PERSON_LEFT_HAND));
     }
 
     @Test
     void onlyFirstPersonMovesTheQuadAlongItsLineOfSight() {
         assertEquals(HeldItemFlame.FIRST_PERSON_DEPTH_FRACTION,
-                HeldItemFlame.depthFraction(ModelTransformationMode.FIRST_PERSON_RIGHT_HAND));
+                HeldItemFlame.depthFraction(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND));
         assertEquals(HeldItemFlame.FIRST_PERSON_DEPTH_FRACTION,
-                HeldItemFlame.depthFraction(ModelTransformationMode.FIRST_PERSON_LEFT_HAND));
+                HeldItemFlame.depthFraction(ItemDisplayContext.FIRST_PERSON_LEFT_HAND));
         // Past the anchor, so the card's front face cuts the base of the sprite
         // instead of the whole quad floating in front of the head.
         assertTrue(HeldItemFlame.FIRST_PERSON_DEPTH_FRACTION > 1.0f);
         // Another entity's capture has no eye to move along; the flame stays on the torch.
-        assertEquals(1.0f, HeldItemFlame.depthFraction(ModelTransformationMode.THIRD_PERSON_RIGHT_HAND));
-        assertEquals(1.0f, HeldItemFlame.depthFraction(ModelTransformationMode.THIRD_PERSON_LEFT_HAND));
+        assertEquals(1.0f, HeldItemFlame.depthFraction(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND));
+        assertEquals(1.0f, HeldItemFlame.depthFraction(ItemDisplayContext.THIRD_PERSON_LEFT_HAND));
     }
 
     @Test
@@ -232,10 +233,10 @@ class HeldItemFlameTest {
     void theFirstPersonRigRisesAlongTheCamerasUp() {
         Quaternionf level = new Quaternionf();
         Quaternionf lookingDown = new Quaternionf().rotationX((float) Math.toRadians(-60));
-        assertSame(level, HeldItemFlame.riseFrame(ModelTransformationMode.FIRST_PERSON_RIGHT_HAND, level));
-        assertSame(lookingDown, HeldItemFlame.riseFrame(ModelTransformationMode.FIRST_PERSON_LEFT_HAND, lookingDown));
+        assertSame(level, HeldItemFlame.riseFrame(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, level));
+        assertSame(lookingDown, HeldItemFlame.riseFrame(ItemDisplayContext.FIRST_PERSON_LEFT_HAND, lookingDown));
         // A holder in the world keeps world up whatever the camera does.
-        Quaternionfc world = HeldItemFlame.riseFrame(ModelTransformationMode.THIRD_PERSON_RIGHT_HAND, lookingDown);
+        Quaternionfc world = HeldItemFlame.riseFrame(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, lookingDown);
         assertVector(0, 1, 0, world.transform(new Vector3f(0, 1, 0)));
     }
 

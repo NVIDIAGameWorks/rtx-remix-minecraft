@@ -5,10 +5,10 @@
 package com.nvidia.rtxremix.minecraft.terrain;
 
 import com.nvidia.rtxremix.minecraft.terrain.LightStorageSnapshotAccess;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import com.nvidia.rtxremix.minecraft.mixin.ChunkLightProviderAccessor;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.world.LightType;
-import net.minecraft.world.chunk.light.LightingProvider;
 
 /** Render-thread control over the client light engine's published snapshots. */
 public final class ClientLightSnapshots {
@@ -21,10 +21,10 @@ public final class ClientLightSnapshots {
      * rebuilds that follow read light on worker threads. A storage whose snapshot is already
      * a real copy is left alone.
      */
-    public static void publishRealSnapshots(ClientWorld world) {
-        LightingProvider provider = world.getLightingProvider();
-        for (LightType type : LightType.values()) {
-            if (provider.get(type) instanceof ChunkLightProviderAccessor access
+    public static void publishRealSnapshots(ClientLevel world) {
+        LevelLightEngine provider = world.getLightEngine();
+        for (LightLayer type : LightLayer.values()) {
+            if (provider.getLayerListener(type) instanceof ChunkLightProviderAccessor access
                     && access.rtxremix$getLightStorage() instanceof LightStorageSnapshotAccess storage) {
                 storage.rtxremix$publishRealSnapshot();
             }

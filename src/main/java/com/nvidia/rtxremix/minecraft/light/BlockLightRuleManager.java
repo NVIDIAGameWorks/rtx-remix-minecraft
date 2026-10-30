@@ -9,18 +9,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.resource.Resource;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.state.property.Properties;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +25,18 @@ import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.IntFunction;
 import java.util.function.Predicate;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.Property;
 
 /**
  * Owns block-attached Remix light rules and atomically swaps them on resource reload.
@@ -55,8 +55,8 @@ public final class BlockLightRuleManager {
         private final List<Rule>[] matchesByRawStateId;
         private final CandidatePlan<Rule>[] candidatePlansByRawStateId;
 
-        RuleCatalog(Map<Identifier, Rule> rules) {
-            Map<Identifier, Rule> immutableRules =
+        RuleCatalog(Map<ResourceLocation, Rule> rules) {
+            Map<ResourceLocation, Rule> immutableRules =
                     Collections.unmodifiableMap(new LinkedHashMap<>(rules));
             if (immutableRules.isEmpty()) {
                 this.matchesByRawStateId = emptyMatchTable();
@@ -69,19 +69,19 @@ public final class BlockLightRuleManager {
             if (hasTagRules) {
                 this.matchesByRawStateId = emptyMatchTable();
                 this.candidatePlansByRawStateId = precomputeCandidatePlans(
-                        Block.STATE_IDS.size(), Block.STATE_IDS::get, immutableRules.values(),
+                        Block.BLOCK_STATE_REGISTRY.size(), Block.BLOCK_STATE_REGISTRY::byId, immutableRules.values(),
                         BlockLightRuleManager::matchesStatically,
                         BlockLightRuleManager::isDynamicCandidate);
             } else {
                 this.matchesByRawStateId = precomputeMatches(
-                        Block.STATE_IDS.size(), Block.STATE_IDS::get,
+                        Block.BLOCK_STATE_REGISTRY.size(), Block.BLOCK_STATE_REGISTRY::byId,
                         immutableRules.values(), Rule::matches);
                 this.candidatePlansByRawStateId = null;
             }
         }
 
         boolean hasMatchingRules(BlockState state) {
-            int rawId = Block.getRawIdFromState(state);
+            int rawId = Block.getId(state);
             if (!isCanonicalState(rawId, state)) {
                 return false;
             }
@@ -101,7 +101,7 @@ public final class BlockLightRuleManager {
         }
 
         List<LightEntry> resolve(BlockState state, BlockPos pos, ModelSampler sampler) {
-            int rawId = Block.getRawIdFromState(state);
+            int rawId = Block.getId(state);
             if (!isCanonicalState(rawId, state)) {
                 return List.of();
             }
@@ -130,7 +130,7 @@ public final class BlockLightRuleManager {
                     ? matchesByRawStateId.length
                     : candidatePlansByRawStateId.length;
             // Minecraft maps an unregistered state to raw ID zero, so range alone is insufficient.
-            return rawId >= 0 && rawId < tableLength && Block.STATE_IDS.get(rawId) == state;
+            return rawId >= 0 && rawId < tableLength && Block.BLOCK_STATE_REGISTRY.byId(rawId) == state;
         }
 
         @SuppressWarnings("unchecked")
@@ -290,22 +290,22 @@ public final class BlockLightRuleManager {
         reload(manager, BlockLightDefaults.create());
     }
 
-    static void reload(ResourceManager manager, Map<Identifier, Rule> defaults) {
-        Map<Identifier, Rule> rules = loadRules(manager, defaults);
+    static void reload(ResourceManager manager, Map<ResourceLocation, Rule> defaults) {
+        Map<ResourceLocation, Rule> rules = loadRules(manager, defaults);
         activeCatalog = new RuleCatalog(rules);
         LOGGER.info("Loaded {} block light rules", rules.size());
     }
 
-    static Map<Identifier, Rule> loadRules(ResourceManager manager) {
+    static Map<ResourceLocation, Rule> loadRules(ResourceManager manager) {
         return loadRules(manager, BlockLightDefaults.create());
     }
 
-    static Map<Identifier, Rule> loadRules(ResourceManager manager, Map<Identifier, Rule> defaults) {
-        LinkedHashMap<Identifier, Rule> rules = new LinkedHashMap<>(defaults);
-        manager.findAllResources(RESOURCE_PATH, id -> id.getPath().endsWith(".json"))
+    static Map<ResourceLocation, Rule> loadRules(ResourceManager manager, Map<ResourceLocation, Rule> defaults) {
+        LinkedHashMap<ResourceLocation, Rule> rules = new LinkedHashMap<>(defaults);
+        manager.listResourceStacks(RESOURCE_PATH, id -> id.getPath().endsWith(".json"))
                 .entrySet()
                 .stream()
-                .sorted(Map.Entry.comparingByKey(Comparator.comparing(Identifier::toString)))
+                .sorted(Map.Entry.comparingByKey(Comparator.comparing(ResourceLocation::toString)))
                 .forEach(entry -> {
                     for (Resource resource : entry.getValue()) {
                         loadJsonRule(rules, entry.getKey(), resource);
@@ -314,30 +314,30 @@ public final class BlockLightRuleManager {
         return Collections.unmodifiableMap(new LinkedHashMap<>(rules));
     }
 
-    static Rule rule(Identifier id, Predicate<BlockState> matcher, Resolver resolver) {
+    static Rule rule(ResourceLocation id, Predicate<BlockState> matcher, Resolver resolver) {
         return new FunctionalRule(id, matcher, resolver);
     }
 
-    static Rule parseJsonRule(Identifier id, JsonObject root) {
+    static Rule parseJsonRule(ResourceLocation id, JsonObject root) {
         return JsonRule.parse(id, root);
     }
 
-    static LightEntry sphere(Identifier ruleId, int index, BlockState state, BlockPos pos,
+    static LightEntry sphere(ResourceLocation ruleId, int index, BlockState state, BlockPos pos,
                              float x, float y, float z, float radius,
                              LightEntry.ColorOverride color, Float intensity) {
-        return LightEntry.sphere(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+        return LightEntry.sphere(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                 pos.getX() + x, pos.getY() + y, pos.getZ() + z,
                 radius, color, intensity, LightEntry.defaultVolumetricRadianceScale());
     }
 
-    static LightEntry shapedSphere(Identifier ruleId, int index, BlockState state, BlockPos pos,
+    static LightEntry shapedSphere(ResourceLocation ruleId, int index, BlockState state, BlockPos pos,
                                    float x, float y, float z, float radius,
                                    Vec3 direction,
                                    float coneAngleDegrees, float coneSoftness, float focusExponent,
                                    LightEntry.ColorOverride color, Float intensity,
                                    float volumetricRadianceScale) {
         Vec3 dir = direction.normalized();
-        return LightEntry.shapedSphere(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+        return LightEntry.shapedSphere(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                 pos.getX() + x, pos.getY() + y, pos.getZ() + z,
                 radius, color, intensity,
                 dir.x, dir.y, dir.z,
@@ -345,34 +345,34 @@ public final class BlockLightRuleManager {
                 volumetricRadianceScale);
     }
 
-    static LightEntry cylinder(Identifier ruleId, int index, BlockState state, BlockPos pos,
+    static LightEntry cylinder(ResourceLocation ruleId, int index, BlockState state, BlockPos pos,
                                float x, float y, float z, float radius,
                                Vec3 axis, float axisLength,
                                LightEntry.ColorOverride color, Float intensity) {
         Vec3 normal = axis.normalized();
-        return LightEntry.cylinder(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+        return LightEntry.cylinder(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                 pos.getX() + x, pos.getY() + y, pos.getZ() + z,
                 radius, normal.x, normal.y, normal.z, axisLength,
                 color, intensity, LightEntry.defaultVolumetricRadianceScale());
     }
 
-    static Identifier id(String namespace, String path) {
-        return Identifier.of(namespace, RESOURCE_PATH + "/" + path);
+    static ResourceLocation id(String namespace, String path) {
+        return ResourceLocation.fromNamespaceAndPath(namespace, RESOURCE_PATH + "/" + path);
     }
 
-    private static BlockLightKey key(BlockPos pos, Identifier ruleId, int index) {
-        return new BlockLightKey(pos.toImmutable(), ruleId, index);
+    private static BlockLightKey key(BlockPos pos, ResourceLocation ruleId, int index) {
+        return new BlockLightKey(pos.immutable(), ruleId, index);
     }
 
-    private static void loadJsonRule(Map<Identifier, Rule> rules, Identifier resourceId, Resource resource) {
-        try (Reader reader = resource.getReader()) {
+    private static void loadJsonRule(Map<ResourceLocation, Rule> rules, ResourceLocation resourceId, Resource resource) {
+        try (Reader reader = resource.openAsReader()) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
             if (root == null) {
                 throw new JsonParseException("empty rule file");
             }
             rules.put(resourceId, JsonRule.parse(resourceId, root));
         } catch (Exception e) {
-            LOGGER.warn("Skipping block light rule {} from {}: {}", resourceId, resource.getPackId(), e.getMessage());
+            LOGGER.warn("Skipping block light rule {} from {}: {}", resourceId, resource.sourcePackId(), e.getMessage());
         }
     }
 
@@ -407,16 +407,16 @@ public final class BlockLightRuleManager {
     }
 
     interface Rule {
-        Identifier id();
+        ResourceLocation id();
         boolean matches(BlockState state);
         List<LightEntry> resolve(BlockState state, BlockPos pos, ModelSampler sampler);
     }
 
     interface Resolver {
-        List<LightEntry> resolve(Identifier id, BlockState state, BlockPos pos, ModelSampler sampler);
+        List<LightEntry> resolve(ResourceLocation id, BlockState state, BlockPos pos, ModelSampler sampler);
     }
 
-    private record FunctionalRule(Identifier id, Predicate<BlockState> matcher, Resolver resolver) implements Rule {
+    private record FunctionalRule(ResourceLocation id, Predicate<BlockState> matcher, Resolver resolver) implements Rule {
         @Override
         public boolean matches(BlockState state) {
             return matcher.test(state);
@@ -429,22 +429,22 @@ public final class BlockLightRuleManager {
     }
 
     private record JsonRule(
-            Identifier id,
-            Set<Identifier> blockIds,
+            ResourceLocation id,
+            Set<ResourceLocation> blockIds,
             Set<TagKey<Block>> blockTags,
             Map<String, String> properties,
             List<JsonLightSpec> lights) implements Rule {
 
-        static JsonRule parse(Identifier id, JsonObject root) {
-            Set<Identifier> blocks = new HashSet<>();
+        static JsonRule parse(ResourceLocation id, JsonObject root) {
+            Set<ResourceLocation> blocks = new HashSet<>();
             Set<TagKey<Block>> tags = new HashSet<>();
             JsonArray blockArray = requiredArray(root, "blocks");
             for (JsonElement element : blockArray) {
                 String value = element.getAsString();
                 if (value.startsWith("#")) {
-                    tags.add(TagKey.of(RegistryKeys.BLOCK, Identifier.of(value.substring(1))));
+                    tags.add(TagKey.create(Registries.BLOCK, ResourceLocation.parse(value.substring(1))));
                 } else {
-                    Identifier blockId = Identifier.of(value);
+                    ResourceLocation blockId = ResourceLocation.parse(value);
                     blocks.add(blockId);
                 }
             }
@@ -460,7 +460,7 @@ public final class BlockLightRuleManager {
         @Override
         public boolean matches(BlockState state) {
             return propertiesMatch(state, properties)
-                    && (blockIds.contains(Registries.BLOCK.getId(state.getBlock()))
+                    && (blockIds.contains(BuiltInRegistries.BLOCK.getKey(state.getBlock()))
                     || matchesDynamicTag(state));
         }
 
@@ -469,7 +469,7 @@ public final class BlockLightRuleManager {
         }
 
         boolean matchesExplicitBlock(BlockState state) {
-            return blockIds.contains(Registries.BLOCK.getId(state.getBlock()))
+            return blockIds.contains(BuiltInRegistries.BLOCK.getKey(state.getBlock()))
                     && propertiesMatch(state, properties);
         }
 
@@ -479,7 +479,7 @@ public final class BlockLightRuleManager {
 
         boolean matchesDynamicTag(BlockState state) {
             for (TagKey<Block> tag : blockTags) {
-                if (state.isIn(tag)) {
+                if (state.is(tag)) {
                     return true;
                 }
             }
@@ -538,15 +538,15 @@ public final class BlockLightRuleManager {
                     direction);
         }
 
-        LightEntry resolve(Identifier ruleId, int index, BlockState state, BlockPos pos, ModelSampler sampler) {
+        LightEntry resolve(ResourceLocation ruleId, int index, BlockState state, BlockPos pos, ModelSampler sampler) {
             Vec3 p = position.resolve(state, sampler);
             return switch (shape) {
-                case SPHERE -> LightEntry.sphere(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+                case SPHERE -> LightEntry.sphere(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                         pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
                         radius, color, intensity, volumetricRadianceScale);
                 case CYLINDER -> {
                     Vec3 resolvedAxis = axis.resolve(state).normalized();
-                    yield LightEntry.cylinder(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+                    yield LightEntry.cylinder(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                             pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
                             radius, resolvedAxis.x, resolvedAxis.y, resolvedAxis.z, axisLength,
                             color, intensity, volumetricRadianceScale);
@@ -555,7 +555,7 @@ public final class BlockLightRuleManager {
                     Vec3 xa = xAxis.resolve(state).normalized();
                     Vec3 ya = yAxis.resolve(state).normalized();
                     Vec3 dir = direction.resolve(state).normalized();
-                    yield LightEntry.rect(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+                    yield LightEntry.rect(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                             pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
                             xa.x, xa.y, xa.z, Objects.requireNonNullElse(xSize, 1.0f),
                             ya.x, ya.y, ya.z, Objects.requireNonNullElse(ySize, 1.0f),
@@ -566,7 +566,7 @@ public final class BlockLightRuleManager {
                     Vec3 xa = xAxis.resolve(state).normalized();
                     Vec3 ya = yAxis.resolve(state).normalized();
                     Vec3 dir = direction.resolve(state).normalized();
-                    yield LightEntry.disk(key(pos, ruleId, index), state.getLuminance(), state.getBlock(),
+                    yield LightEntry.disk(key(pos, ruleId, index), state.getLightEmission(), state.getBlock(),
                             pos.getX() + p.x, pos.getY() + p.y, pos.getZ() + p.z,
                             xa.x, xa.y, xa.z, Objects.requireNonNullElse(xRadius, 0.5f),
                             ya.x, ya.y, ya.z, Objects.requireNonNullElse(yRadius, 0.5f),
@@ -611,9 +611,9 @@ public final class BlockLightRuleManager {
             Direction direction = directionProperty(state, property);
             Direction opposite = direction.getOpposite();
             return new Vec3(
-                    base.x + scale * opposite.getOffsetX(),
-                    base.y + scale * opposite.getOffsetY(),
-                    base.z + scale * opposite.getOffsetZ());
+                    base.x + scale * opposite.getStepX(),
+                    base.y + scale * opposite.getStepY(),
+                    base.z + scale * opposite.getStepZ());
         }
     }
 
@@ -650,8 +650,8 @@ public final class BlockLightRuleManager {
     private record StateVectorSpec(String type) implements VectorSpec {
         @Override
         public Vec3 resolve(BlockState state) {
-            Direction facing = state.contains(Properties.FACING)
-                    ? state.get(Properties.FACING)
+            Direction facing = state.hasProperty(BlockStateProperties.FACING)
+                    ? state.getValue(BlockStateProperties.FACING)
                     : Direction.UP;
             return switch (type) {
                 case "facing" -> Vec3.from(facing);
@@ -664,7 +664,7 @@ public final class BlockLightRuleManager {
 
     record Vec3(float x, float y, float z) {
         static Vec3 from(Direction direction) {
-            return new Vec3(direction.getOffsetX(), direction.getOffsetY(), direction.getOffsetZ());
+            return new Vec3(direction.getStepX(), direction.getStepY(), direction.getStepZ());
         }
 
         static Vec3 fromAxis(Direction.Axis axis) {
@@ -740,15 +740,15 @@ public final class BlockLightRuleManager {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static String propertyValueName(BlockState state, Property property) {
-        return property.name(state.get(property));
+        return property.getName(state.getValue(property));
     }
 
     private static Direction directionProperty(BlockState state, String propertyName) {
         Property<?> property = propertyByName(state, propertyName);
-        if (property == null || !Direction.class.isAssignableFrom(property.getType())) {
+        if (property == null || !Direction.class.isAssignableFrom(property.getValueClass())) {
             throw new JsonParseException("property " + propertyName + " is not a direction property");
         }
-        return (Direction)state.get(property);
+        return (Direction)state.getValue(property);
     }
 
     private static JsonArray requiredArray(JsonObject json, String name) {

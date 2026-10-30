@@ -4,11 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Quaternionf;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.mojang.blaze3d.vertex.PoseStack;
 
 class RecyclingMatrixStackTest {
 
@@ -24,9 +25,9 @@ class RecyclingMatrixStackTest {
         float yScale = 1.1F;
         float zScale = 1.3F;
 
-        MatrixStack vanilla = new MatrixStack();
+        PoseStack vanilla = new PoseStack();
         vanilla.translate(pivotX / 16.0F, pivotY / 16.0F, pivotZ / 16.0F);
-        vanilla.multiply(new Quaternionf().rotationZYX(roll, yaw, pitch));
+        vanilla.mulPose(new Quaternionf().rotationZYX(roll, yaw, pitch));
         vanilla.scale(xScale, yScale, zScale);
 
         RecyclingMatrixStack recycling = new RecyclingMatrixStack();
@@ -35,15 +36,15 @@ class RecyclingMatrixStackTest {
                 pitch, yaw, roll,
                 xScale, yScale, zScale);
 
-        assertTrue(vanilla.peek().getPositionMatrix()
-                .equals(recycling.peek().getPositionMatrix(), 0.0F));
-        assertTrue(vanilla.peek().getNormalMatrix()
-                .equals(recycling.peek().getNormalMatrix(), 0.0F));
+        assertTrue(vanilla.last().pose()
+                .equals(recycling.last().pose(), 0.0F));
+        assertTrue(vanilla.last().normal()
+                .equals(recycling.last().normal(), 0.0F));
     }
 
     @Test
     void identityRotationAndScaleMatchVanillaTranslation() {
-        MatrixStack vanilla = new MatrixStack();
+        PoseStack vanilla = new PoseStack();
         vanilla.translate(0.5F, -0.25F, 1.5F);
 
         RecyclingMatrixStack recycling = new RecyclingMatrixStack();
@@ -52,10 +53,10 @@ class RecyclingMatrixStackTest {
                 0.0F, 0.0F, 0.0F,
                 1.0F, 1.0F, 1.0F);
 
-        assertTrue(vanilla.peek().getPositionMatrix()
-                .equals(recycling.peek().getPositionMatrix(), 0.0F));
-        assertTrue(vanilla.peek().getNormalMatrix()
-                .equals(recycling.peek().getNormalMatrix(), 0.0F));
+        assertTrue(vanilla.last().pose()
+                .equals(recycling.last().pose(), 0.0F));
+        assertTrue(vanilla.last().normal()
+                .equals(recycling.last().normal(), 0.0F));
     }
 
 }
