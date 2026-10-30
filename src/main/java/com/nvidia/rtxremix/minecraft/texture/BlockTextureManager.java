@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.MaterialInfo;
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
@@ -22,16 +23,6 @@ import com.nvidia.rtxremix.minecraft.mixin.SpriteAtlasAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteContentsAccessor;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.AbstractTexture;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.client.texture.SpriteAtlasTexture;
-import net.minecraft.client.texture.SpriteContents;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +36,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.SpriteContents;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Per-sprite texture and material management for Minecraft's block atlas.
@@ -56,7 +56,7 @@ import java.util.Set;
 public class BlockTextureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockTextureManager.class);
-    public static final Identifier BLOCK_ATLAS_ID = Identifier.of("minecraft", "textures/atlas/blocks.png");
+    public static final Identifier BLOCK_ATLAS_ID = Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
     /** Blend state for draw calls using the atlas cutout material, which sets useDrawCallAlphaState=true. */
     public static final InstanceInfoBlendEXT ATLAS_CUTOUT_BLEND =
             InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
@@ -163,18 +163,18 @@ public class BlockTextureManager {
         public final Identifier id;
         public final float u0, v0, u1, v1;
         public final boolean hasTransparency;
-        final int pixW, pixH, pixX, pixY;
+        final int pixW, pixH, pixX, pixY, pad;
         private final BitSet transparentPixels;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
         float[] lightColor;
 
-        SpriteEntry(int i, Identifier id, Sprite s) {
+        SpriteEntry(int i, Identifier id, TextureAtlasSprite s) {
             this.index = i; this.id = id;
-            u0 = s.getMinU(); v0 = s.getMinV(); u1 = s.getMaxU(); v1 = s.getMaxV();
-            pixX = s.getX(); pixY = s.getY();
-            SpriteContents contents = s.getContents();
-            pixW = contents.getWidth(); pixH = contents.getHeight();
+            u0 = s.getU0(); v0 = s.getV0(); u1 = s.getU1(); v1 = s.getV1();
+            pixX = SpriteTexels.x(s); pixY = SpriteTexels.y(s); pad = s.padding;
+            SpriteContents contents = s.contents();
+            pixW = contents.width(); pixH = contents.height();
             transparentPixels = scanTransparency(contents, pixW, pixH);
             hasTransparency = transparentPixels != null && !transparentPixels.isEmpty();
         }
@@ -213,7 +213,7 @@ public class BlockTextureManager {
             BitSet transparent = null;
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
-                    if (((img.getColor(x, y) >> 24) & 0xFF) < 255) {
+                    if (((img.getPixelABGR(x, y) >> 24) & 0xFF) < 255) {
                         if (transparent == null) transparent = new BitSet(w * h);
                         transparent.set(y * w + x);
                     }
@@ -248,11 +248,11 @@ public class BlockTextureManager {
         if (initialized || initFailed) return;
         try {
             RemixAPI api = renderer.getRemixApi();
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
             if (api == null || client == null || client.getTextureManager() == null) return;
 
             AbstractTexture tex = client.getTextureManager().getTexture(BLOCK_ATLAS_ID);
-            if (!(tex instanceof SpriteAtlasTexture spriteAtlas)) return;
+            if (!(tex instanceof TextureAtlas spriteAtlas)) return;
 
             captureAtlas(api, spriteAtlas);
             LabPBRConverter.VariantCache labPBRVariants;
@@ -277,7 +277,7 @@ public class BlockTextureManager {
         }
     }
 
-    private void captureAtlas(RemixAPI api, SpriteAtlasTexture atlas) {
+    private void captureAtlas(RemixAPI api, TextureAtlas atlas) {
         atlasW = atlasWidth(atlas);
         atlasH = atlasHeight(atlas);
         if (atlasW == 0 || atlasH == 0) {
@@ -295,8 +295,8 @@ public class BlockTextureManager {
     //  Per-sprite texture extraction
     // ====================================================================
 
-    private void buildSprites(RemixAPI api, SpriteAtlasTexture atlas, LabPBRConverter.VariantCache labPBRVariants) {
-        Map<Identifier, Sprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
+    private void buildSprites(RemixAPI api, TextureAtlas atlas, LabPBRConverter.VariantCache labPBRVariants) {
+        Map<Identifier, TextureAtlasSprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
         if (map == null) return;
 
         Map<String, Integer> lumMap = buildLuminanceMap();
@@ -352,14 +352,14 @@ public class BlockTextureManager {
      * are cached. Non-LabPBR animated sprites are copied as albedo only.
      */
     private Map<String, AnimatedSpriteLabPBR> buildAnimatedSpriteLabPBRMap(
-            LabPBRConverter.VariantCache labPBRVariants, SpriteAtlasTexture atlas) {
+            LabPBRConverter.VariantCache labPBRVariants, TextureAtlas atlas) {
         Map<String, AnimatedSpriteLabPBR> result = new HashMap<>();
-        Map<Identifier, Sprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
+        Map<Identifier, TextureAtlasSprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
         if (map == null) return result;
 
         for (var e : map.entrySet()) {
-            SpriteContents contents = e.getValue().getContents();
-            SpriteContents.Animation animation = ((SpriteContentsAccessor) contents).getAnimation();
+            SpriteContents contents = e.getValue().contents();
+            SpriteContents.AnimatedTexture animation = ((SpriteContentsAccessor) contents).getAnimation();
             if (animation == null) continue;
 
             NativeImage nI = labPBRVariants.loadVariant(e.getKey(), "_n");
@@ -379,16 +379,16 @@ public class BlockTextureManager {
                 int sH             = (sI != null) ? sI.getHeight()                       : 0;
                 boolean hasPerPixelEmissive = sI != null && LabPBRConverter.hasEmissiveData(sI);
                 boolean hasSss = sI != null && LabPBRConverter.hasSSSData(sI);
-                List<SpriteContents.AnimationFrame> frames = animation.frames;
+                List<SpriteContents.FrameInfo> frames = animation.frames;
                 int[] frameIndices = new int[frames.size()];
                 int[] frameTimes = new int[frames.size()];
                 for (int i = 0; i < frames.size(); i++) {
-                    SpriteContents.AnimationFrame frame = frames.get(i);
+                    SpriteContents.FrameInfo frame = frames.get(i);
                     frameIndices[i] = frame.index;
                     frameTimes[i] = frame.time;
                 }
                 int variantW = (sI != null) ? sW : aoW;
-                int frameColumns = Math.max(1, variantW / Math.max(1, contents.getWidth()));
+                int frameColumns = Math.max(1, variantW / Math.max(1, contents.width()));
                 result.put(e.getKey().toString(),
                     new AnimatedSpriteLabPBR(aoTable, aoW, aoH,
                                              sAlphaTable, sRoughnessTable, sMetallicTable, sSssTable,
@@ -406,6 +406,14 @@ public class BlockTextureManager {
     // ====================================================================
     //  Atlas-level PBR textures & materials
     // ====================================================================
+
+    /** See {@link SpriteTexels#fillPadding}. */
+    private void fillSpritePadding(byte[] layer, int bytesPerPixel) {
+        for (SpriteEntry se : sprites) {
+            SpriteTexels.fillPadding(layer, atlasW, atlasH, bytesPerPixel,
+                    se.pixX, se.pixY, se.pixW, se.pixH, se.pad);
+        }
+    }
 
     private void buildAtlasMaterials(RemixAPI api, LabPBRConverter.VariantCache labPBRVariants) {
         int pixels = atlasW * atlasH;
@@ -477,6 +485,15 @@ public class BlockTextureManager {
             }
         }
 
+        // The layers were written sprite by sprite; their borders follow the edits.
+        fillSpritePadding(albedoRGBA, 4);
+        fillSpritePadding(normalAtlas, 4);
+        fillSpritePadding(heightAtlas, 1);
+        fillSpritePadding(roughnessAtlas, 1);
+        fillSpritePadding(metallicAtlas, 1);
+        fillSpritePadding(emissiveAtlas, 4);
+        fillSpritePadding(sssThicknessAtlas, 4);
+        fillSpritePadding(sssAlbedoAtlas, 4);
         atlasAlbedo = upload(api, "atlas_albedo", albedoRGBA, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
 
@@ -738,7 +755,7 @@ public class BlockTextureManager {
         try {
             destroyWaterResources(api);
 
-            String mcDir = MinecraftClient.getInstance().runDirectory.getAbsolutePath();
+            String mcDir = Minecraft.getInstance().gameDirectory.getAbsolutePath();
             String ddsPath = mcDir + File.separator + WATER_NORMALS_DDS;
 
             waterNormalHandle = api.createTextureFromFile(ddsPath);
@@ -955,12 +972,12 @@ public class BlockTextureManager {
     /** Maps sprite identifiers (e.g. "minecraft:block/glowstone") to max block luminance. */
     private static Map<String, Integer> buildLuminanceMap() {
         Map<String, Integer> map = new HashMap<>();
-        for (Block block : Registries.BLOCK) {
+        for (Block block : BuiltInRegistries.BLOCK) {
             int maxLum = 0;
-            for (BlockState state : block.getStateManager().getStates())
-                maxLum = Math.max(maxLum, state.getLuminance());
+            for (BlockState state : block.getStateDefinition().getPossibleStates())
+                maxLum = Math.max(maxLum, state.getLightEmission());
             if (maxLum > 0) {
-                Identifier id = Registries.BLOCK.getId(block);
+                Identifier id = BuiltInRegistries.BLOCK.getKey(block);
                 map.merge(id.getNamespace() + ":block/" + id.getPath(), maxLum, Math::max);
             }
         }
@@ -1024,18 +1041,18 @@ public class BlockTextureManager {
     }
 
     /** Reads per-sprite NativeImages and stitches into an RGBA byte[] atlas buffer. */
-    public static byte[] stitchAtlasRGBA(SpriteAtlasTexture atlas) {
+    public static byte[] stitchAtlasRGBA(TextureAtlas atlas) {
         SpriteAtlasAccessor acc = (SpriteAtlasAccessor) atlas;
         int w = acc.getWidth(), h = acc.getHeight();
         byte[] buf = new byte[w * h * 4];
-        for (Sprite sprite : acc.getSprites().values()) {
-            NativeImage img = ((SpriteContentsAccessor) sprite.getContents()).getImage();
+        for (TextureAtlasSprite sprite : acc.getSprites().values()) {
+            NativeImage img = ((SpriteContentsAccessor) sprite.contents()).getImage();
             if (img == null) continue;
-            int sx = sprite.getX(), sy = sprite.getY();
-            int sw = sprite.getContents().getWidth(), sh = sprite.getContents().getHeight();
+            int sx = SpriteTexels.x(sprite), sy = SpriteTexels.y(sprite);
+            int sw = sprite.contents().width(), sh = sprite.contents().height();
             for (int y = 0; y < sh; y++)
                 for (int x = 0; x < sw; x++) {
-                    int abgr = img.getColor(x, y);
+                    int abgr = img.getPixelABGR(x, y);
                     int idx = ((sy + y) * w + (sx + x)) * 4;
                     buf[idx]     = (byte) (abgr & 0xFF);
                     buf[idx + 1] = (byte) ((abgr >> 8) & 0xFF);
@@ -1043,16 +1060,17 @@ public class BlockTextureManager {
                     buf[idx + 3] = (byte) ((abgr >> 24) & 0xFF);
                 }
         }
+        SpriteTexels.fillPadding(acc.getSprites().values(), buf, w, h, 4);
         return buf;
     }
 
     /** Returns the atlas width, or 0 if not initialized. */
-    public static int atlasWidth(SpriteAtlasTexture atlas) {
+    public static int atlasWidth(TextureAtlas atlas) {
         return ((SpriteAtlasAccessor) atlas).getWidth();
     }
 
     /** Returns the atlas height, or 0 if not initialized. */
-    public static int atlasHeight(SpriteAtlasTexture atlas) {
+    public static int atlasHeight(TextureAtlas atlas) {
         return ((SpriteAtlasAccessor) atlas).getHeight();
     }
 
@@ -1187,6 +1205,10 @@ public class BlockTextureManager {
 
             Map.entry("redstone_torch", RED), Map.entry("redstone_wall_torch", RED),
 
+            Map.entry("copper_torch", GREEN), Map.entry("copper_wall_torch", GREEN),
+            Map.entry("copper_lantern", GREEN), Map.entry("exposed_copper_lantern", GREEN),
+            Map.entry("weathered_copper_lantern", GREEN), Map.entry("oxidized_copper_lantern", GREEN),
+
             Map.entry("end_rod", WHITE), Map.entry("beacon", WHITE),
             Map.entry("conduit", WHITE),
 
@@ -1230,7 +1252,7 @@ public class BlockTextureManager {
      * 3. Warm white fallback
      */
     public float[] getLightColorForBlock(Block block) {
-        Identifier id = Registries.BLOCK.getId(block);
+        Identifier id = BuiltInRegistries.BLOCK.getKey(block);
         String path = id.getPath();
 
         float[] known = KNOWN_LIGHT_COLORS.get(path);

@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
-import net.minecraft.client.option.GameOptions;
+import net.minecraft.client.Options;
 
 /**
  * The framerate cap applied while the game window is unfocused.
@@ -16,7 +16,7 @@ import net.minecraft.client.option.GameOptions;
 public final class UnfocusedFramerateLimit {
 
     public static final int MIN = 10;
-    public static final int UNLIMITED = GameOptions.MAX_FRAMERATE;
+    public static final int UNLIMITED = Options.UNLIMITED_FRAMERATE_CUTOFF;
     /**
      * Vanilla's Max Framerate moves in steps of 10, and its top step is its
      * Unlimited value, so the slider needs no separate sentinel position.

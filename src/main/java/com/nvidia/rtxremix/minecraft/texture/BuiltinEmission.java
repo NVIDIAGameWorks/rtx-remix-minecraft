@@ -4,9 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
-import net.minecraft.util.Identifier;
-
 import java.util.Map;
+import net.minecraft.resources.Identifier;
 
 /**
  * Emission the mod adds on top of what the resource pack authors, for the blocks that
@@ -29,8 +28,12 @@ public final class BuiltinEmission {
     private static final float LANTERN_GAIN = 2.5f;
 
     private static final Map<Identifier, Float> GAIN = Map.of(
-            Identifier.ofVanilla("block/lantern"), LANTERN_GAIN,
-            Identifier.ofVanilla("block/soul_lantern"), LANTERN_GAIN);
+            Identifier.withDefaultNamespace("block/lantern"), LANTERN_GAIN,
+            Identifier.withDefaultNamespace("block/soul_lantern"), LANTERN_GAIN,
+            Identifier.withDefaultNamespace("block/copper_lantern"), LANTERN_GAIN,
+            Identifier.withDefaultNamespace("block/exposed_copper_lantern"), LANTERN_GAIN,
+            Identifier.withDefaultNamespace("block/weathered_copper_lantern"), LANTERN_GAIN,
+            Identifier.withDefaultNamespace("block/oxidized_copper_lantern"), LANTERN_GAIN);
 
     /** Emission factor at a point of a sprite, {@code u} and {@code v} in [0, 1) across the sprite. */
     @FunctionalInterface
@@ -64,7 +67,7 @@ public final class BuiltinEmission {
     };
 
     private static final Map<Identifier, Mask> MASK = Map.of(
-            Identifier.ofVanilla("block/sea_pickle"), SEA_PICKLE);
+            Identifier.withDefaultNamespace("block/sea_pickle"), SEA_PICKLE);
 
     private BuiltinEmission() {
     }

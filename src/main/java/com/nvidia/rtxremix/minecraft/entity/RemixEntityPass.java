@@ -6,23 +6,10 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.minecraft.util.ClosestKHeap;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import com.nvidia.rtxremix.minecraft.mixin.EntityRenderDispatcherAccessor;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nvidia.rtxremix.minecraft.ClientViewDistance;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.entity.EntityRenderDispatcher;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,6 +19,19 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntPredicate;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Captures entity geometry for Remix and hands it to the submission layer.
@@ -86,6 +86,7 @@ public class RemixEntityPass {
     private static final int TYPE_LOG_INTERVAL = 300;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
     /**
      * The per-type breakdown costs a HashMap probe per entity per frame and a
      * stream sort plus a dozen String.formats on the render thread every summary,
@@ -105,21 +106,21 @@ public class RemixEntityPass {
     // the camera can actually see.
     private long frameCaptureNanos, frameSubmitNanos, frameOffSweepNanos;
     private int frameOffCount, frameOffDraws, frameOffReused;
-    private Vec3d firstPersonShadowModelOffset = Vec3d.ZERO;
+    private Vec3 firstPersonShadowModelOffset = Vec3.ZERO;
     // Deltas of the submitter's running totals taken around this pass's own submits,
     // so what the submitter's other owners draw in the same frame stays out of them.
     private int frameDraws, frameMeshCreates;
 
     /** One captured cuboid part, kept so a pose can be replayed without the model. */
     private static final class SnapshotPart {
-        ModelPart.Quad[] sides;
-        Sprite sprite;
+        ModelPart.Polygon[] sides;
+        TextureAtlasSprite sprite;
         int tint;
         int bone;
     }
 
     private static final class SnapshotLayer {
-        RenderLayer renderLayer;
+        RenderType renderLayer;
         int layerIndex;
         SnapshotPart[] parts = new SnapshotPart[0];
         int partCount;
@@ -171,7 +172,7 @@ public class RemixEntityPass {
 
     private final Int2ObjectOpenHashMap<PoseSnapshot> poseSnapshots = new Int2ObjectOpenHashMap<>();
     private final RemixVertexConsumerProvider replayProvider = new RemixVertexConsumerProvider();
-    private ClientWorld snapshotWorld;
+    private ClientLevel snapshotWorld;
     private long sweepFrame;
     private float[] reusableBoneData = new float[0];
     private int typeLogFrames = 0;
@@ -249,31 +250,36 @@ public class RemixEntityPass {
      */
     public boolean captureAndSubmit(Entity entity, EntityRenderDispatcher dispatcher,
                                     float tickDelta, RemixEntitySubmitter submitter) {
-        return captureAndSubmit(entity, dispatcher, tickDelta, submitter, false);
+        return captureAndSubmit(entity, null, dispatcher, tickDelta, submitter, false);
     }
 
-    private boolean captureAndSubmit(Entity entity, EntityRenderDispatcher dispatcher,
+    /**
+     * {@link #captureAndSubmit(Entity, EntityRenderDispatcher, float, RemixEntitySubmitter)}
+     * for an entity vanilla has already extracted this frame, so its render state is
+     * reused rather than extracted again.
+     */
+    public boolean captureAndSubmit(Entity entity, EntityRenderState extracted, EntityRenderDispatcher dispatcher,
+                                    float tickDelta, RemixEntitySubmitter submitter) {
+        return captureAndSubmit(entity, extracted, dispatcher, tickDelta, submitter, false);
+    }
+
+    private boolean captureAndSubmit(Entity entity, EntityRenderState extracted,
+                                     EntityRenderDispatcher dispatcher,
                                      float tickDelta, RemixEntitySubmitter submitter,
                                      boolean snapshotPose) {
         if (!capturedIds.add(entity.getId())) {
             return false;
         }
         long captureStart = System.nanoTime();
-        // Remix traces shadows from the scene lights, so vanilla's blob shadow
-        // quads have no consumer. Suppress them rather than capture and drop them.
-        boolean hadShadows =
-                ((EntityRenderDispatcherAccessor) dispatcher)
-                        .rtxremix$getRenderShadows();
-        dispatcher.setRenderShadows(false);
+        // Remix traces shadows from the scene lights; the collector drops vanilla's
+        // blob shadow submits.
         EntityCaptureResult result;
         try {
-            result = renderOneEntity(entity, dispatcher, tickDelta,
-                    isFirstPersonLocalPlayer(MinecraftClient.getInstance(), entity));
+            result = renderOneEntity(entity, extracted, dispatcher, tickDelta,
+                    isFirstPersonLocalPlayer(Minecraft.getInstance(), entity));
         } catch (Exception e) {
             LOGGER.error("Error capturing entity {}: {}", entity.getType(), e.getMessage());
             return true;
-        } finally {
-            dispatcher.setRenderShadows(hadShadows);
         }
         long captured = System.nanoTime();
         frameCaptureNanos += captured - captureStart;
@@ -314,9 +320,9 @@ public class RemixEntityPass {
         int drawsBefore = submitter.getLastDrawCount();
         int meshCreatesBefore = submitter.getLastMeshCreateCount();
         try {
-            Vec3d renderOffset = result.firstPersonLocalPlayer()
+            Vec3 renderOffset = result.firstPersonLocalPlayer()
                     ? firstPersonShadowModelOffset
-                    : Vec3d.ZERO;
+                    : Vec3.ZERO;
             submitter.submitEntity(result, renderOffset);
             return true;
         } catch (Exception e) {
@@ -366,12 +372,12 @@ public class RemixEntityPass {
      * first-person traversal, so the closing sweep captures that hidden shadow
      * model after light placement has resolved its current render-only offset.
      */
-    public FrameStats finishFrame(ClientWorld world, Vec3d cameraPos, float tickDelta,
-                                  Vec3d firstPersonShadowModelOffset,
+    public FrameStats finishFrame(ClientLevel world, Vec3 cameraPos, float tickDelta,
+                                  Vec3 firstPersonShadowModelOffset,
                                   RemixEntitySubmitter submitter) {
         this.firstPersonShadowModelOffset = firstPersonShadowModelOffset;
         beginFrame(submitter);
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         EntityRenderDispatcher dispatcher = client == null ? null : client.getEntityRenderDispatcher();
         // Entity ids are per world, so a stale snapshot would alias a different
         // entity after a world change.
@@ -428,7 +434,7 @@ public class RemixEntityPass {
      * and never evicted: its light already reaches the scene from wherever it
      * stands, and a beam without its housing looks broken.
      */
-    private void captureOffFrustum(ClientWorld world, Vec3d cameraPos, float tickDelta,
+    private void captureOffFrustum(ClientLevel world, Vec3 cameraPos, float tickDelta,
                                    EntityRenderDispatcher dispatcher, RemixEntitySubmitter submitter) {
         int budget = MAX_ENTITIES - capturedIds.size();
         if (budget <= 0) {
@@ -446,11 +452,11 @@ public class RemixEntityPass {
         long submitNanosBefore = frameSubmitNanos;
         double maxDistSq = getEffectiveEntityRenderDistance();
         maxDistSq *= maxDistSq;
-        for (Entity entity : world.getEntities()) {
+        for (Entity entity : world.entitiesForRendering()) {
             if (capturedIds.contains(entity.getId())) {
                 continue;
             }
-            double distSq = entity.squaredDistanceTo(cameraPos);
+            double distSq = entity.distanceToSqr(cameraPos);
             boolean ownsLight = lightOwners.test(entity.getId());
             if (!sweepAdmits(distSq, maxDistSq, ownsLight)) {
                 continue;
@@ -561,10 +567,10 @@ public class RemixEntityPass {
      * {@link #POSE_REFRESH_FRAMES} frames, and the entity's position is recomputed
      * every frame regardless, so what lags is the animation and never the place.
      */
-    private boolean submitOffFrustum(Entity entity, Vec3d cameraPos, float tickDelta,
+    private boolean submitOffFrustum(Entity entity, Vec3 cameraPos, float tickDelta,
                                      EntityRenderDispatcher dispatcher,
                                      RemixEntitySubmitter submitter) {
-        boolean far = entity.squaredDistanceTo(cameraPos) > POSE_REUSE_MIN_SQ;
+        boolean far = entity.distanceToSqr(cameraPos) > POSE_REUSE_MIN_SQ;
         if (far) {
             PoseSnapshot snapshot = poseSnapshots.get(entity.getId());
             // The stagger spreads refreshes across frames; the age test is what bounds
@@ -584,7 +590,7 @@ public class RemixEntityPass {
                 capturedIds.remove(entity.getId());
             }
         }
-        return captureAndSubmit(entity, dispatcher, tickDelta, submitter, far);
+        return captureAndSubmit(entity, null, dispatcher, tickDelta, submitter, far);
     }
 
     /**
@@ -682,8 +688,8 @@ public class RemixEntityPass {
         }
         EntityCaptureResult result = new EntityCaptureResult(
                 entity,
-                entity.getLerpedPos(tickDelta),
-                MathHelper.lerp(tickDelta, entity.prevYaw, entity.getYaw()),
+                entity.getPosition(tickDelta),
+                Mth.lerp(tickDelta, entity.yRotO, entity.getYRot()),
                 layers,
                 snapshot.boneData,
                 snapshot.boneCount,
@@ -723,21 +729,24 @@ public class RemixEntityPass {
      * instance transform instead, so it is applied exactly once.
      */
     private EntityCaptureResult renderOneEntity(Entity entity,
+                                                 EntityRenderState extracted,
                                                  EntityRenderDispatcher dispatcher,
                                                  float tickDelta,
                                                  boolean firstPersonLocalPlayer) {
-        Vec3d entityPos = entity.getLerpedPos(tickDelta);
-        float yaw = MathHelper.lerp(tickDelta, entity.prevYaw, entity.getYaw());
-
-        // Light is discarded by the capture; any value reaches the same result.
-        int light = LightmapTextureManager.MAX_LIGHT_COORDINATE;
+        Vec3 entityPos = entity.getPosition(tickDelta);
+        float yaw = Mth.lerp(tickDelta, entity.yRotO, entity.getYRot());
 
         provider.beginEntity();
         EntityRenderContext ctx = EntityRenderContext.get();
 
-        sharedMatrices.push();
+        // Since 26.x a render is an extraction into a render state followed by a
+        // submit; the collector evaluates the submits into the capture provider.
+        EntityRenderState state = extracted != null ? extracted : dispatcher.extractEntity(entity, tickDelta);
+        CameraRenderState camera = Minecraft.getInstance().gameRenderer.gameRenderState()
+                .levelRenderState.cameraRenderState;
+        sharedMatrices.pushPose();
         try {
-            dispatcher.render(entity, 0.0, 0.0, 0.0, yaw, tickDelta, sharedMatrices, provider, light);
+            dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, collector);
         } finally {
             // Both reset even if a renderer threw mid-traversal, which skips the
             // dispatcher's RETURN hook: the identity root returns every pooled
@@ -761,7 +770,7 @@ public class RemixEntityPass {
         int boneCount = ctx.getBoneCount();
 
         String typeKey = entityTypeKeyCache.computeIfAbsent(entity.getType(),
-                t -> Registries.ENTITY_TYPE.getId(t).toString());
+                t -> BuiltInRegistries.ENTITY_TYPE.getKey(t).toString());
 
         return new EntityCaptureResult(
             entity,
@@ -775,8 +784,8 @@ public class RemixEntityPass {
         );
     }
 
-    private static boolean isFirstPersonLocalPlayer(MinecraftClient client, Entity entity) {
-        return entity == client.player && client.options.getPerspective().isFirstPerson();
+    private static boolean isFirstPersonLocalPlayer(Minecraft client, Entity entity) {
+        return entity == client.player && client.options.getCameraType().isFirstPerson();
     }
 
     // ---- Result container ----
@@ -791,7 +800,7 @@ public class RemixEntityPass {
      * @param worldPos  the owner's world position, from which the world-position
      *                  submit overloads build the root the captured pivot transforms
      *                  compose onto. A caller that supplies its own root passes
-     *                  {@link Vec3d#ZERO}.
+     *                  {@link Vec3#ZERO}.
      * @param yaw       the owner's interpolated yaw at capture, in degrees
      * @param layers    captured vertices grouped by RenderLayer and texture
      * @param boneData  flat float array: 12 floats per bone (3 rows x 4 cols).
@@ -806,7 +815,7 @@ public class RemixEntityPass {
      */
     public record EntityCaptureResult(
         Object owner,
-        Vec3d worldPos,
+        Vec3 worldPos,
         float yaw,
         List<RemixVertexConsumerProvider.CapturedLayer> layers,
         float[] boneData,

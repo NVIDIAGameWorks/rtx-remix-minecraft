@@ -6,19 +6,19 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.particle.rapids.WaterRapidParticleSpawner;
-import net.minecraft.client.world.ClientWorld;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.function.BooleanSupplier;
+import net.minecraft.client.multiplayer.ClientLevel;
 
 /**
  * Adds lightweight profiling scopes around client-world work that contributes
  * to Remix frame cost.
  */
-@Mixin(ClientWorld.class)
+@Mixin(ClientLevel.class)
 public abstract class ClientWorldMixin {
     
     private static final ThreadLocal<ProfileScope> rtxremix$worldTickScope = new ThreadLocal<>();
@@ -38,7 +38,7 @@ public abstract class ClientWorldMixin {
 
     @Inject(method = "tickEntities", at = @At("HEAD"))
     private void rtxremix$tickEntitiesHead(CallbackInfo ci) {
-        int entityCount = ((ClientWorld) (Object) this).getRegularEntityCount();
+        int entityCount = ((ClientLevel) (Object) this).getEntityCount();
         rtxremix$openScope(rtxremix$entityTickScope, ProfileScope.beginJfrOnly("ClientWorld.tickEntities")
                 .entityCount(entityCount)
                 .plotOnClose("Java.ClientWorld.tickEntities.ms"));
@@ -49,16 +49,16 @@ public abstract class ClientWorldMixin {
         rtxremix$closeScope(rtxremix$entityTickScope);
     }
 
-    @Inject(method = "doRandomBlockDisplayTicks", at = @At("HEAD"))
+    @Inject(method = "animateTick", at = @At("HEAD"))
     private void rtxremix$randomBlockDisplayHead(int centerX, int centerY, int centerZ, CallbackInfo ci) {
         rtxremix$openScope(rtxremix$randomDisplayTickScope, ProfileScope.beginJfrOnly("ClientWorld.randomBlockDisplayTicks")
                 .captureCount(1334)
                 .plotOnClose("Java.ClientWorld.randomBlockDisplayTicks.ms"));
     }
 
-    @Inject(method = "doRandomBlockDisplayTicks", at = @At("RETURN"))
+    @Inject(method = "animateTick", at = @At("RETURN"))
     private void rtxremix$randomBlockDisplayReturn(int centerX, int centerY, int centerZ, CallbackInfo ci) {
-        WaterRapidParticleSpawner.spawnRandomDisplayParticles((ClientWorld) (Object) this, centerX, centerY, centerZ);
+        WaterRapidParticleSpawner.spawnRandomDisplayParticles((ClientLevel) (Object) this, centerX, centerY, centerZ);
         rtxremix$closeScope(rtxremix$randomDisplayTickScope);
     }
 

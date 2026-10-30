@@ -11,6 +11,27 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Changed
+
+- Targets Minecraft Java Edition 26.3 on Fabric Loader 0.20.1, Fabric API
+  0.165.0+26.3 and Java 25, through the OpenGL backend that RTX Remix interop
+  needs. Entities, block entities, held items and the breaking crack are
+  captured from 26.x's extract and submit pipeline, and animated sprites are
+  forwarded from the GPU-side animation tick.
+- The Copper Beacon lens textures are 48 pixels square, the same six texels
+  drawn 8 by 8, so they no longer cap the block atlas at one mip level.
+
+### Added
+
+- Block lights for the copper torch and copper wall torch, and glowing flames
+  for the copper lantern in every oxidation stage.
+
+### Fixed
+
+- Distant blocks no longer pick up dark outlines and colour from their atlas
+  neighbours: every atlas the mod copies fills the padding vanilla 26.x leaves
+  around each sprite.
+
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.

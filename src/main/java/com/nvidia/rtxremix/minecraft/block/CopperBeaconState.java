@@ -4,8 +4,9 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.storage.ValueInput;
 
 /** Validation and serialization rules shared by Copper Beacon placement and persistence. */
 final class CopperBeaconState {
@@ -35,14 +36,20 @@ final class CopperBeaconState {
         return Math.max(-90.0f, Math.min(90.0f, degrees));
     }
 
-    static void writeAngles(NbtCompound nbt, float azimuth, float zenith) {
+    static void writeAngles(CompoundTag nbt, float azimuth, float zenith) {
         nbt.putFloat(AZIMUTH_KEY, azimuth);
         nbt.putFloat(ZENITH_KEY, zenith);
     }
 
-    static Angles readAngles(NbtCompound nbt) {
-        float azimuth = nbt.getFloat(AZIMUTH_KEY);
-        float zenith = nbt.getFloat(ZENITH_KEY);
+    static Angles readAngles(CompoundTag nbt) {
+        return sanitizedAngles(nbt.getFloatOr(AZIMUTH_KEY, 0.0f), nbt.getFloatOr(ZENITH_KEY, 0.0f));
+    }
+
+    static Angles readAngles(ValueInput input) {
+        return sanitizedAngles(input.getFloatOr(AZIMUTH_KEY, 0.0f), input.getFloatOr(ZENITH_KEY, 0.0f));
+    }
+
+    private static Angles sanitizedAngles(float azimuth, float zenith) {
         return new Angles(
                 Float.isFinite(azimuth) ? normalizeAzimuth(azimuth) : 0.0f,
                 Float.isFinite(zenith) ? clampZenith(zenith) : 0.0f);

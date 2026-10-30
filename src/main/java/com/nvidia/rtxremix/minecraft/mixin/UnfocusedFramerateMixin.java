@@ -8,7 +8,8 @@ import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.UnfocusedFramerateLimit;
-import net.minecraft.client.MinecraftClient;
+import com.mojang.blaze3d.platform.FramerateLimitTracker;
+import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -18,20 +19,19 @@ import org.spongepowered.asm.mixin.injection.At;
  * Without an initialized Remix renderer the game draws through vanilla, so
  * the limit is left to vanilla too.
  *
- * <p>Minecraft's render loop waits for input only inside
- * {@code glfwWaitEventsTimeout}, which {@code RenderSystem.limitDisplayFPS}
- * reaches only when a frame finishes inside the cap's budget. At Unlimited, or
- * at any cap the frame rate does not reach, the loop never waits, and with the
- * Remix present path Windows then marks an unfocused window as not responding.
- * {@code rtx.conf} enables {@code rtx.enableInputQueuePing}, which keeps the
- * window responsive at every setting.
+ * <p>The limit is applied to {@link FramerateLimitTracker#getFramerateLimit},
+ * which already folds in vanilla's own iconified, AFK and menu throttles, so
+ * the lower of the two wins. {@code FramerateLimiter.limitDisplayFPS} sleeps
+ * only when a frame finishes inside the cap's budget; {@code rtx.conf} enables
+ * {@code rtx.enableInputQueuePing}, which keeps the window responsive when it
+ * does not.
  */
-@Mixin(MinecraftClient.class)
+@Mixin(FramerateLimitTracker.class)
 public abstract class UnfocusedFramerateMixin {
 
     @ModifyReturnValue(method = "getFramerateLimit()I", at = @At("RETURN"))
     private int rtxremix$capWhileUnfocused(int limit) {
-        if (((MinecraftClient) (Object) this).isWindowFocused()) {
+        if (Minecraft.getInstance().isWindowActive()) {
             return limit;
         }
         // A benchmark measures renderer throughput and must not be throttled

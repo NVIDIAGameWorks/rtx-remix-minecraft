@@ -5,7 +5,7 @@
 package com.nvidia.rtxremix.minecraft.input;
 
 import org.junit.jupiter.api.Test;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -32,11 +32,11 @@ class RemixInputGateTest {
     void altXOpensWheneverCaptureIsClosed() {
         RemixInputGate gate = new RemixInputGate();
 
-        assertSame(TOGGLE_MENU, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_REPEAT, true));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_RELEASE, true));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, false));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_PRESS, true));
+        assertSame(TOGGLE_MENU, key(gate, InputConstants.KEY_X, InputConstants.PRESS, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.REPEAT, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.RELEASE, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.PRESS, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_W, InputConstants.PRESS, true));
     }
 
     @Test
@@ -44,11 +44,11 @@ class RemixInputGateTest {
         RemixInputGate gate = new RemixInputGate();
         open(gate);
 
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_PRESS, false));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_PRESS, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_REPEAT, false));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_RELEASE, false));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_PRESS, false));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_W, InputConstants.PRESS, false));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_W, InputConstants.PRESS, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_W, InputConstants.REPEAT, false));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_W, InputConstants.RELEASE, false));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_ESCAPE, InputConstants.PRESS, false));
         assertTrue(gate.isCaptureSessionOpen());
     }
 
@@ -57,54 +57,54 @@ class RemixInputGateTest {
         RemixInputGate gate = new RemixInputGate();
         open(gate);
 
-        assertSame(TOGGLE_MENU, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_REPEAT, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_RELEASE, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, false));
+        assertSame(TOGGLE_MENU, key(gate, InputConstants.KEY_X, InputConstants.PRESS, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.REPEAT, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.RELEASE, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.PRESS, false));
     }
 
     @Test
     void controlAltXDoesNotToggle() {
         RemixInputGate gate = new RemixInputGate();
 
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true, true));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, false, true));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_REPEAT, true, true));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_RELEASE, true, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.PRESS, true, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.PRESS, false, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.REPEAT, true, true));
+        assertSame(PASS, key(gate, InputConstants.KEY_X, InputConstants.RELEASE, true, true));
 
         open(gate);
 
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, false, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_REPEAT, true, true));
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_RELEASE, true, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.PRESS, true, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.PRESS, false, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.REPEAT, true, true));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_X, InputConstants.RELEASE, true, true));
         assertTrue(gate.isCaptureSessionOpen());
     }
 
     @Test
     void closingReturnsHeldKeyEventsToMinecraftImmediately() {
         RemixInputGate gate = new RemixInputGate();
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_PRESS, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_W, InputConstants.PRESS, false));
         open(gate);
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_REPEAT, false));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_W, InputConstants.REPEAT, false));
 
         close(gate);
 
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_REPEAT, false));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_W, GLFW.GLFW_RELEASE, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_W, InputConstants.REPEAT, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_W, InputConstants.RELEASE, false));
     }
 
     @Test
     void keyPressedInsideOverlayPassesAfterClose() {
         RemixInputGate gate = new RemixInputGate();
         open(gate);
-        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_E, GLFW.GLFW_PRESS, false));
+        assertSame(BLOCK, key(gate, InputConstants.KEY_E, InputConstants.PRESS, false));
 
         close(gate);
 
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_E, GLFW.GLFW_REPEAT, false));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_E, GLFW.GLFW_RELEASE, false));
-        assertSame(PASS, key(gate, GLFW.GLFW_KEY_E, GLFW.GLFW_PRESS, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_E, InputConstants.REPEAT, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_E, InputConstants.RELEASE, false));
+        assertSame(PASS, key(gate, InputConstants.KEY_E, InputConstants.PRESS, false));
     }
 
     @Test

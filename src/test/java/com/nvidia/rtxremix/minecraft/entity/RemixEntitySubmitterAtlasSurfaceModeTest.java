@@ -5,7 +5,7 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class RemixEntitySubmitterAtlasSurfaceModeTest {
 
     private static final Identifier ENTITY_TEXTURE =
-            Identifier.of("minecraft", "textures/entity/creeper/creeper.png");
+            Identifier.fromNamespaceAndPath("minecraft", "textures/entity/creeper/creeper.png");
 
     @Test
     void aHeldTranslucentBlockKeepsItsTranslucentSurface() {

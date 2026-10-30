@@ -6,11 +6,11 @@ package com.nvidia.rtxremix.minecraft.block;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.Direction;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
+import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +26,7 @@ class CopperBeaconBlockEntityTest {
 
     @Test
     void anglesAreNormalizedClampedAndPersisted() {
-        NbtCompound nbt = new NbtCompound();
+        CompoundTag nbt = new CompoundTag();
         CopperBeaconState.writeAngles(
                 nbt,
                 CopperBeaconState.normalizeAzimuth(540.0f),
@@ -47,7 +47,7 @@ class CopperBeaconBlockEntityTest {
     void everyMountAndPlayerPointingDirectionChoosesTheExpectedForwardAxis() {
         for (Direction mount : Direction.values()) {
             for (Direction playerLook : Direction.values()) {
-                for (Direction horizontalFacing : Direction.Type.HORIZONTAL) {
+                for (Direction horizontalFacing : Direction.Plane.HORIZONTAL) {
                     Direction preferred = playerLook.getOpposite();
                     Direction horizontalFallback = horizontalFacing.getOpposite();
                     Direction actual = CopperBeaconState.orthogonalForward(
@@ -127,17 +127,29 @@ class CopperBeaconBlockEntityTest {
 
     @Test
     void lensTexturesMatchTheSixPixelGeometry() throws IOException {
+        // Six texels across, each drawn 8x8: a sprite side the atlas can halve four times,
+        // so the lens does not cap the block atlas's mip levels, which since 26.x also sets
+        // the padding every block sprite gets.
         for (String path : new String[]{
                 "assets/rtx-remix-renderer/textures/block/copper_beacon_lens.png",
+                "assets/rtx-remix-renderer/textures/block/copper_beacon_lens_unlit.png",
                 "assets/rtx-remix-renderer/textures/block/copper_beacon_lens_s.png"}) {
             try (var stream = CopperBeaconBlockEntityTest.class.getClassLoader()
                     .getResourceAsStream(path)) {
                 assertNotNull(stream, path);
                 var image = ImageIO.read(stream);
                 assertNotNull(image, path);
-                assertEquals(6, image.getWidth(), path);
-                assertEquals(6, image.getHeight(), path);
+                assertEquals(6 * LENS_TEXEL_SCALE, image.getWidth(), path);
+                assertEquals(6 * LENS_TEXEL_SCALE, image.getHeight(), path);
+                for (int y = 0; y < image.getHeight(); y++) {
+                    for (int x = 0; x < image.getWidth(); x++) {
+                        int texel = image.getRGB(x - x % LENS_TEXEL_SCALE, y - y % LENS_TEXEL_SCALE);
+                        assertEquals(texel, image.getRGB(x, y), path + " at " + x + "," + y);
+                    }
+                }
             }
         }
     }
+
+    private static final int LENS_TEXEL_SCALE = 8;
 }

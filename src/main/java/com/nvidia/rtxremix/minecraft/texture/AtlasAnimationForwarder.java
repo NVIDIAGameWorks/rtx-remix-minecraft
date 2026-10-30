@@ -10,7 +10,6 @@ import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TexturePatch;
 import com.nvidia.rtxremix.TexturePatchInfo;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
-import net.minecraft.util.Identifier;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.resources.Identifier;
 
 /**
  * Collects animated sprite upload patches each tick and flushes them to Remix
@@ -477,6 +477,11 @@ public final class AtlasAnimationForwarder {
         expectedThread = null;
         currentAtlasId.remove();
         LOGGER.info("AtlasAnimationForwarder cleared");
+    }
+
+    /** Whether patches are being queued; a caller that builds one checks this first. */
+    public static boolean isActive() {
+        return active;
     }
 
     public static void beginAtlasUpload(Identifier atlasId) {
