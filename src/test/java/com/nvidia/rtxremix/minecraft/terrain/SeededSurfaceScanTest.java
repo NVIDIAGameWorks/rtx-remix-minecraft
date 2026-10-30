@@ -43,12 +43,12 @@ class SeededSurfaceScanTest {
         }
 
         int state(int x, int y, int z) {
-            int i = y - world.getMinBuildHeight();
+            int i = y - world.getMinY();
             return i < 0 || i >= world.getHeight() ? AIR : blocks[x][z][i];
         }
 
         void set(int x, int y, int z, int state) {
-            blocks[x][z][y - world.getMinBuildHeight()] = state;
+            blocks[x][z][y - world.getMinY()] = state;
         }
 
         boolean sectionEmpty(int index) {
@@ -76,12 +76,12 @@ class SeededSurfaceScanTest {
 
         /** {@code WORLD_SURFACE}: one above the highest non-air block, the bottom if there is none. */
         int worldSurface(int x, int z) {
-            for (int y = world.getMaxBuildHeight() - 1; y >= world.getMinBuildHeight(); y--) {
+            for (int y = world.getMaxY(); y >= world.getMinY(); y--) {
                 if (state(x, y, z) != AIR) {
                     return y + 1;
                 }
             }
-            return world.getMinBuildHeight();
+            return world.getMinY();
         }
 
         /** Sections as the walk sees them; an index outside the array throws, as {@code Chunk.getSection} does. */
@@ -108,12 +108,12 @@ class SeededSurfaceScanTest {
     /** Vanilla's walk from the world top, written plainly: every pair whose lower block is in a non-empty section. */
     private static int oracle(Column c, int x, int z, List<Pair> visited) {
         LevelHeightAccessor w = c.world;
-        for (int lowerY = w.getMaxBuildHeight() - 1; lowerY >= w.getMinBuildHeight(); lowerY--) {
+        for (int lowerY = w.getMaxY(); lowerY >= w.getMinY(); lowerY--) {
             if (c.sectionEmpty(w.getSectionIndex(lowerY))) {
                 continue;
             }
             int upperY = lowerY + 1;
-            boolean upperInEmptySection = upperY >= w.getMaxBuildHeight() || c.sectionEmpty(w.getSectionIndex(upperY));
+            boolean upperInEmptySection = upperY > w.getMaxY() || c.sectionEmpty(w.getSectionIndex(upperY));
             int upperState = upperInEmptySection ? AIR : c.state(x, upperY, z);
             int lowerState = c.state(x, lowerY, z);
             visited.add(new Pair(upperY, upperState, lowerY, lowerState));
@@ -121,7 +121,7 @@ class SeededSurfaceScanTest {
                 return upperY;
             }
         }
-        return w.getMinBuildHeight() - 1;
+        return w.getMinY() - 1;
     }
 
     private static int[][] seeded(Column c, SeededSurfaceScan.SurfaceHeight surface, List<Pair>[][] visited) {
@@ -163,7 +163,7 @@ class SeededSurfaceScanTest {
     private static void assertMatchesOracle(Column c, SeededSurfaceScan.SurfaceHeight surface) {
         List<Pair>[][] visited = pairLists();
         int[][] surfaces = seeded(c, surface, visited);
-        int minY = c.world.getMinBuildHeight() - 1;
+        int minY = c.world.getMinY() - 1;
         int vanillaStart = c.highestNonEmptySection() == -1
                 ? minY
                 : SectionPos.sectionToBlockCoord(c.world.getSectionYFromSectionIndex(c.highestNonEmptySection()) + 1);
@@ -275,8 +275,8 @@ class SeededSurfaceScanTest {
         // the seed is at most vanilla's own start, the bottom of the section above the
         // highest non-empty one, where the walk is vanilla's exactly.
         Column c = flat(-64, 384, 70, SOLID);
-        assertMatchesOracle(c, (x, z) -> c.world.getMaxBuildHeight() + 200);
-        assertMatchesOracle(c, (x, z) -> c.world.getMaxBuildHeight());
+        assertMatchesOracle(c, (x, z) -> c.world.getMaxY() + 201);
+        assertMatchesOracle(c, (x, z) -> c.world.getMaxY() + 1);
     }
 
     @Test

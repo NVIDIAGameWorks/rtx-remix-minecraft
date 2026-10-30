@@ -14,6 +14,24 @@ public interface BillboardParticleAccessor {
     @Accessor("quadSize")
     float getScale();
 
+    @Accessor("rCol")
+    float getRed();
+
+    @Accessor("gCol")
+    float getGreen();
+
+    @Accessor("bCol")
+    float getBlue();
+
+    @Accessor("alpha")
+    float getAlpha();
+
+    @Accessor("roll")
+    float getAngle();
+
+    @Accessor("oRoll")
+    float getPrevAngle();
+
     @Invoker("getU0")
     float invokeGetMinU();
 

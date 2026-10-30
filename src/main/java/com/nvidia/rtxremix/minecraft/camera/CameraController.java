@@ -8,7 +8,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.client.ClientClockManager;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.clock.ClockNetworkState;
+import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
@@ -27,6 +30,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Set;
+import java.util.Map;
 import java.util.function.LongSupplier;
 
 /**
@@ -136,7 +141,7 @@ public final class CameraController {
             }
             recordingHudTicks++;
             if (client.player != null && recordingHudTicks % 20 == 0) {
-                client.player.displayClientMessage(Component.literal("[Camera] " + status()), true);
+                client.player.sendOverlayMessage(Component.literal("[Camera] " + status()));
             }
         }
 
@@ -272,7 +277,7 @@ public final class CameraController {
 
         if (client.level != null) {
             return "world-" + safePathComponent(
-                    client.level.dimension().location().toString(),
+                    client.level.dimension().identifier().toString(),
                     "unknown-dimension"
             );
         }
@@ -699,7 +704,7 @@ public final class CameraController {
             return null;
         }
 
-        long normalized = normalizeTimeOfDay(client.level.getDayTime() + deltaTicks);
+        long normalized = normalizeTimeOfDay(client.level.getOverworldClockTime() + deltaTicks);
         applyTimeOfDay(client, normalized);
         clearError();
         return normalized;
@@ -737,7 +742,7 @@ public final class CameraController {
         StillShot shot = new StillShot(
                 name, player.getX(), player.getY(), player.getZ(),
                 Mth.wrapDegrees(player.getYRot()), player.getXRot(),
-                normalizeTimeOfDay(client.level.getDayTime()),
+                normalizeTimeOfDay(client.level.getOverworldClockTime()),
                 scene.weather(), scene.rtxEnabled(), scene.proceduralClouds());
         boolean replaced = shots.removeIf(existing -> existing.name().equalsIgnoreCase(name));
         shots.add(shot);
@@ -838,7 +843,7 @@ public final class CameraController {
             return;
         }
         LocalPlayer player = client.player;
-        player.moveTo(shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
+        player.snapTo(shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
         player.setDeltaMovement(0.0, 0.0, 0.0);
         applyTimeOfDay(client, shot.timeOfDay());
     }
@@ -859,8 +864,8 @@ public final class CameraController {
             if (serverPlayer == null) {
                 return;
             }
-            serverPlayer.teleportTo(serverPlayer.serverLevel(),
-                    shot.x(), shot.y(), shot.z(), shot.yaw(), shot.pitch());
+            serverPlayer.teleportTo(serverPlayer.level(),
+                    shot.x(), shot.y(), shot.z(), Set.of(), shot.yaw(), shot.pitch(), true);
             serverPlayer.setDeltaMovement(0.0, 0.0, 0.0);
         });
     }
@@ -1177,7 +1182,7 @@ public final class CameraController {
     ) {
         Long timeOfDay = client.level == null
                 ? null
-                : normalizeTimeOfDay(client.level.getDayTime());
+                : normalizeTimeOfDay(client.level.getOverworldClockTime());
         return new CameraPath.Waypoint(
                 timeMs,
                 player.getX(),
@@ -1196,7 +1201,7 @@ public final class CameraController {
         // Keep Minecraft's previous/current entity transforms identical so
         // Camera.update() does not interpolate that pose a second time against
         // the 20 Hz client-tick history.
-        player.moveTo(
+        player.snapTo(
                 sample.x(),
                 sample.y(),
                 sample.z(),
@@ -1211,15 +1216,21 @@ public final class CameraController {
 
     private static void applyTimeOfDay(Minecraft client, long timeOfDay) {
         long normalized = normalizeTimeOfDay(timeOfDay);
+        // Since 26.x time of day is the overworld WorldClock: the server owns it
+        // and the client mirrors it through ClientClockManager.
         if (client.level != null) {
-            client.level.setDayTime(normalized);
+            client.level.registryAccess().get(WorldClocks.OVERWORLD).ifPresent(clock -> {
+                ClientClockManager clocks = client.level.clockManager();
+                float rate = clocks.getInstance(clock).rate();
+                clocks.handleUpdates(client.level.getGameTime(),
+                        Map.of(clock, new ClockNetworkState(normalized, 0.0f, rate)));
+            });
         }
 
         MinecraftServer server = client.getSingleplayerServer();
         if (server != null) {
-            for (ServerLevel world : server.getAllLevels()) {
-                world.setDayTime(normalized);
-            }
+            server.registryAccess().get(WorldClocks.OVERWORLD)
+                    .ifPresent(clock -> server.clockManager().setTotalTicks(clock, normalized));
         }
     }
 
@@ -1243,8 +1254,8 @@ public final class CameraController {
      */
     private static boolean isPausedOrWillPause(Minecraft client) {
         MinecraftServer server = client.getSingleplayerServer();
-        boolean screenPauses = client.screen != null && client.screen.isPauseScreen();
-        boolean overlayPauses = client.getOverlay() != null && client.getOverlay().isPauseScreen();
+        boolean screenPauses = client.gui.screen() != null && client.gui.screen().isPauseScreen();
+        boolean overlayPauses = client.gui.overlay() != null && client.gui.overlay().isPausing();
         return isPausedOrWillPause(
                 client.isPaused(),
                 client.hasSingleplayerServer(),

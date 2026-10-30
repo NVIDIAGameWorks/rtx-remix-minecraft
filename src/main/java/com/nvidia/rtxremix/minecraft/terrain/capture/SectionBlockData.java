@@ -7,7 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import java.util.List;
 import net.minecraft.core.SectionPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * Captured block-level mesh data for a single chunk section (16x16x16),
@@ -69,7 +69,7 @@ public record SectionBlockData(
         float[] uvs,
         float nx, float ny, float nz,
         int color,
-        ResourceLocation spriteId,
+        Identifier spriteId,
         float spriteU0, float spriteV0,
         float spriteU1, float spriteV1,
         String renderLayer,

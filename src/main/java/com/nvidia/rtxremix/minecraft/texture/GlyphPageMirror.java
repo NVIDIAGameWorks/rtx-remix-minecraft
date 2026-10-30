@@ -18,13 +18,13 @@ import java.nio.ByteBuffer;
  * {@code GlStateManager} write the same rectangle here that they hand to GL.
  *
  * <p>The mirror stores what the text shaders read, not what was uploaded. A colour page
- * is an RGBA8 texture and keeps the uploaded channels as {@code glTexSubImage2D}
- * converts them, missing colour channels zero and missing alpha opaque. An intensity
+ * is an RGBA8 texture and keeps the uploaded channels as the texture upload converts
+ * them, missing colour channels zero and missing alpha opaque. An intensity
  * page is an R8 texture that {@code rendertype_text_intensity} samples as {@code .rrrr},
  * so red is spread across all four channels here.
  *
- * <p>Glyph uploads run only on the render thread ({@code NativeImage.uploadInternal}
- * asserts it) and every reader of {@link #data()} runs there too, so the page and the
+ * <p>Glyph uploads run only on the render thread (the font texture's {@code add} is
+ * reached only from text rendering) and every reader of {@link #data()} runs there too, so the page and the
  * upload scope carry no synchronisation.
  */
 public final class GlyphPageMirror {

@@ -12,7 +12,7 @@ import com.nvidia.rtxremix.minecraft.light.BlockLightKey;
 import java.lang.reflect.Field;
 import java.util.List;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 class ChunkManagerLightCullDistanceTest {
@@ -91,9 +91,9 @@ class ChunkManagerLightCullDistanceTest {
             TerrainLight drawn = new TerrainLight(new RemixLight(null, null));
             TerrainLight skipped = new TerrainLight(new RemixLight(null, null));
             TerrainLight other = new TerrainLight(new RemixLight(null, null));
-            entry.putLight(new BlockLightKey(new BlockPos(0, 0, 0), ResourceLocation.fromNamespaceAndPath("rtxremix", "torch"), 0), drawn);
-            entry.putLight(new BlockLightKey(new BlockPos(1, 0, 0), ResourceLocation.fromNamespaceAndPath("rtxremix", "torch"), 0), skipped);
-            entry.putLight(new BlockLightKey(new BlockPos(2, 0, 0), ResourceLocation.fromNamespaceAndPath("rtxremix", "lantern"), 0), other);
+            entry.putLight(new BlockLightKey(new BlockPos(0, 0, 0), Identifier.fromNamespaceAndPath("rtxremix", "torch"), 0), drawn);
+            entry.putLight(new BlockLightKey(new BlockPos(1, 0, 0), Identifier.fromNamespaceAndPath("rtxremix", "torch"), 0), skipped);
+            entry.putLight(new BlockLightKey(new BlockPos(2, 0, 0), Identifier.fromNamespaceAndPath("rtxremix", "lantern"), 0), other);
             drawn.place(0, 0, 0, 1f);
             skipped.place(0, 0, 0, 1f);
             other.place(0, 0, 0, 1f);
@@ -106,10 +106,10 @@ class ChunkManagerLightCullDistanceTest {
 
             List<ChunkManager.LightRuleStats> stats = manager.lightStatsByRule();
             assertEquals(2, stats.size());
-            assertEquals(ResourceLocation.fromNamespaceAndPath("rtxremix", "torch"), stats.get(0).ruleId());
+            assertEquals(Identifier.fromNamespaceAndPath("rtxremix", "torch"), stats.get(0).ruleId());
             assertEquals(2, stats.get(0).total());
             assertEquals(1, stats.get(0).drawn());
-            assertEquals(ResourceLocation.fromNamespaceAndPath("rtxremix", "lantern"), stats.get(1).ruleId());
+            assertEquals(Identifier.fromNamespaceAndPath("rtxremix", "lantern"), stats.get(1).ruleId());
             assertEquals(1, stats.get(1).total());
             assertEquals(0, stats.get(1).drawn());
         } finally {

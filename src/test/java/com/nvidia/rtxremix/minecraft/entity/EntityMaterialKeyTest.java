@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * The material cache stores records and is probed with a mutable key. HashMap calls
@@ -19,7 +19,7 @@ import net.minecraft.resources.ResourceLocation;
  */
 class EntityMaterialKeyTest {
 
-    private static final ResourceLocation TEX = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/cow/cow.png");
+    private static final Identifier TEX = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/cow/cow.png");
 
     @Test
     void lookupProbeAgreesWithTheStoredRecordOnHashAndEquality() {

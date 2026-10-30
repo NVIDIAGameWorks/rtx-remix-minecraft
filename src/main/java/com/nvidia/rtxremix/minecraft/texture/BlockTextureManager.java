@@ -42,7 +42,7 @@ import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -56,7 +56,7 @@ import net.minecraft.world.level.block.state.BlockState;
 public class BlockTextureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockTextureManager.class);
-    public static final ResourceLocation BLOCK_ATLAS_ID = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
+    public static final Identifier BLOCK_ATLAS_ID = Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
     /** Blend state for draw calls using the atlas cutout material, which sets useDrawCallAlphaState=true. */
     public static final InstanceInfoBlendEXT ATLAS_CUTOUT_BLEND =
             InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
@@ -91,7 +91,7 @@ public class BlockTextureManager {
     private RemixTexture atlasSssAlbedoTex;
     private int atlasW, atlasH;
     private final List<SpriteEntry> sprites = new ArrayList<>();
-    private final Map<ResourceLocation, SpriteEntry> spriteById = new HashMap<>();
+    private final Map<Identifier, SpriteEntry> spriteById = new HashMap<>();
     private final Map<Long, RemixMaterial> materials = new HashMap<>();
     private final RemixMaterial[] atlasMaterials = new RemixMaterial[LAYER_COUNT];
     private final RemixMaterial[] atlasMaterialsSSS = new RemixMaterial[LAYER_COUNT];
@@ -160,19 +160,19 @@ public class BlockTextureManager {
     /** Per-sprite data: UV bounds (from Minecraft), texture handles, PBR flags. */
     public static final class SpriteEntry {
         public final int index;
-        public final ResourceLocation id;
+        public final Identifier id;
         public final float u0, v0, u1, v1;
         public final boolean hasTransparency;
-        final int pixW, pixH, pixX, pixY;
+        final int pixW, pixH, pixX, pixY, pad;
         private final BitSet transparentPixels;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
         float[] lightColor;
 
-        SpriteEntry(int i, ResourceLocation id, TextureAtlasSprite s) {
+        SpriteEntry(int i, Identifier id, TextureAtlasSprite s) {
             this.index = i; this.id = id;
             u0 = s.getU0(); v0 = s.getV0(); u1 = s.getU1(); v1 = s.getV1();
-            pixX = s.getX(); pixY = s.getY();
+            pixX = SpriteTexels.x(s); pixY = SpriteTexels.y(s); pad = s.padding;
             SpriteContents contents = s.contents();
             pixW = contents.width(); pixH = contents.height();
             transparentPixels = scanTransparency(contents, pixW, pixH);
@@ -213,7 +213,7 @@ public class BlockTextureManager {
             BitSet transparent = null;
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
-                    if (((img.getPixelRGBA(x, y) >> 24) & 0xFF) < 255) {
+                    if (((img.getPixelABGR(x, y) >> 24) & 0xFF) < 255) {
                         if (transparent == null) transparent = new BitSet(w * h);
                         transparent.set(y * w + x);
                     }
@@ -296,7 +296,7 @@ public class BlockTextureManager {
     // ====================================================================
 
     private void buildSprites(RemixAPI api, TextureAtlas atlas, LabPBRConverter.VariantCache labPBRVariants) {
-        Map<ResourceLocation, TextureAtlasSprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
+        Map<Identifier, TextureAtlasSprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
         if (map == null) return;
 
         Map<String, Integer> lumMap = buildLuminanceMap();
@@ -354,7 +354,7 @@ public class BlockTextureManager {
     private Map<String, AnimatedSpriteLabPBR> buildAnimatedSpriteLabPBRMap(
             LabPBRConverter.VariantCache labPBRVariants, TextureAtlas atlas) {
         Map<String, AnimatedSpriteLabPBR> result = new HashMap<>();
-        Map<ResourceLocation, TextureAtlasSprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
+        Map<Identifier, TextureAtlasSprite> map = ((SpriteAtlasAccessor) atlas).getSprites();
         if (map == null) return result;
 
         for (var e : map.entrySet()) {
@@ -406,6 +406,14 @@ public class BlockTextureManager {
     // ====================================================================
     //  Atlas-level PBR textures & materials
     // ====================================================================
+
+    /** See {@link SpriteTexels#fillPadding}. */
+    private void fillSpritePadding(byte[] layer, int bytesPerPixel) {
+        for (SpriteEntry se : sprites) {
+            SpriteTexels.fillPadding(layer, atlasW, atlasH, bytesPerPixel,
+                    se.pixX, se.pixY, se.pixW, se.pixH, se.pad);
+        }
+    }
 
     private void buildAtlasMaterials(RemixAPI api, LabPBRConverter.VariantCache labPBRVariants) {
         int pixels = atlasW * atlasH;
@@ -477,6 +485,15 @@ public class BlockTextureManager {
             }
         }
 
+        // The layers were written sprite by sprite; their borders follow the edits.
+        fillSpritePadding(albedoRGBA, 4);
+        fillSpritePadding(normalAtlas, 4);
+        fillSpritePadding(heightAtlas, 1);
+        fillSpritePadding(roughnessAtlas, 1);
+        fillSpritePadding(metallicAtlas, 1);
+        fillSpritePadding(emissiveAtlas, 4);
+        fillSpritePadding(sssThicknessAtlas, 4);
+        fillSpritePadding(sssAlbedoAtlas, 4);
         atlasAlbedo = upload(api, "atlas_albedo", albedoRGBA, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
 
@@ -960,7 +977,7 @@ public class BlockTextureManager {
             for (BlockState state : block.getStateDefinition().getPossibleStates())
                 maxLum = Math.max(maxLum, state.getLightEmission());
             if (maxLum > 0) {
-                ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+                Identifier id = BuiltInRegistries.BLOCK.getKey(block);
                 map.merge(id.getNamespace() + ":block/" + id.getPath(), maxLum, Math::max);
             }
         }
@@ -1031,11 +1048,11 @@ public class BlockTextureManager {
         for (TextureAtlasSprite sprite : acc.getSprites().values()) {
             NativeImage img = ((SpriteContentsAccessor) sprite.contents()).getImage();
             if (img == null) continue;
-            int sx = sprite.getX(), sy = sprite.getY();
+            int sx = SpriteTexels.x(sprite), sy = SpriteTexels.y(sprite);
             int sw = sprite.contents().width(), sh = sprite.contents().height();
             for (int y = 0; y < sh; y++)
                 for (int x = 0; x < sw; x++) {
-                    int abgr = img.getPixelRGBA(x, y);
+                    int abgr = img.getPixelABGR(x, y);
                     int idx = ((sy + y) * w + (sx + x)) * 4;
                     buf[idx]     = (byte) (abgr & 0xFF);
                     buf[idx + 1] = (byte) ((abgr >> 8) & 0xFF);
@@ -1043,6 +1060,7 @@ public class BlockTextureManager {
                     buf[idx + 3] = (byte) ((abgr >> 24) & 0xFF);
                 }
         }
+        SpriteTexels.fillPadding(acc.getSprites().values(), buf, w, h, 4);
         return buf;
     }
 
@@ -1061,7 +1079,7 @@ public class BlockTextureManager {
     // ====================================================================
 
     /** Finds a sprite by its content identifier (O(1) HashMap lookup). */
-    public SpriteEntry getSpriteById(ResourceLocation id) {
+    public SpriteEntry getSpriteById(Identifier id) {
         return spriteById.get(id);
     }
 
@@ -1187,6 +1205,10 @@ public class BlockTextureManager {
 
             Map.entry("redstone_torch", RED), Map.entry("redstone_wall_torch", RED),
 
+            Map.entry("copper_torch", GREEN), Map.entry("copper_wall_torch", GREEN),
+            Map.entry("copper_lantern", GREEN), Map.entry("exposed_copper_lantern", GREEN),
+            Map.entry("weathered_copper_lantern", GREEN), Map.entry("oxidized_copper_lantern", GREEN),
+
             Map.entry("end_rod", WHITE), Map.entry("beacon", WHITE),
             Map.entry("conduit", WHITE),
 
@@ -1230,7 +1252,7 @@ public class BlockTextureManager {
      * 3. Warm white fallback
      */
     public float[] getLightColorForBlock(Block block) {
-        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+        Identifier id = BuiltInRegistries.BLOCK.getKey(block);
         String path = id.getPath();
 
         float[] known = KNOWN_LIGHT_COLORS.get(path);

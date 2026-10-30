@@ -56,7 +56,7 @@ class InGameGuideCommandTest {
      * {@code Text.literal("...")} builds chat text rather than a command node.
      */
     private static final Pattern REGISTERED_LITERAL =
-            Pattern.compile("ClientCommandManager\\.literal\\(\"([A-Za-z0-9_-]+)\"\\)");
+            Pattern.compile("ClientCommands\\.literal\\(\"([A-Za-z0-9_-]+)\"\\)");
 
     /**
      * String, character, and comment text, whose parentheses are prose rather
@@ -126,7 +126,7 @@ class InGameGuideCommandTest {
             collectNesting(blankStringsAndComments(text), literals, children);
         }
         assertFalse(children.getOrDefault(ROOT, Set.of()).isEmpty(),
-                "No ClientCommandManager.literal(\"...\") nodes under /rtx in " + COMMAND_SOURCES);
+                "No ClientCommands.literal(\"...\") nodes under /rtx in " + COMMAND_SOURCES);
         return children;
     }
 

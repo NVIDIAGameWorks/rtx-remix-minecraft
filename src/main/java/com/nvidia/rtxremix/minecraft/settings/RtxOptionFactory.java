@@ -66,7 +66,8 @@ final class RtxOptionFactory {
                                 new OptionInstance.IntRange(
                                         sliderMin, sliderMax, true).xmap(
                                                 value -> intValueFromSlider(s, value),
-                                                value -> sliderValueFromInt(s, value)),
+                                                value -> sliderValueFromInt(s, value),
+                                                true),
                                 s.applySliderValueImmediately());
                 return new OptionInstance<>(
                         setting.labelKey(),

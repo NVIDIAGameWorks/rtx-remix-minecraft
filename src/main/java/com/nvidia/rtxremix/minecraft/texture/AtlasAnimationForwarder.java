@@ -20,7 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * Collects animated sprite upload patches each tick and flushes them to Remix
@@ -50,10 +50,10 @@ public final class AtlasAnimationForwarder {
 
     private static Thread expectedThread;
     private static final List<PatchRecord> pendingPatches = new ArrayList<>();
-    private static final Map<ResourceLocation, AnimationPlayback> animationStates = new HashMap<>();
+    private static final Map<Identifier, AnimationPlayback> animationStates = new HashMap<>();
     private static Map<String, BlockTextureManager.AnimatedSpriteLabPBR> labPBRMap;
-    private static Set<ResourceLocation> blockAtlasSpriteIds;
-    private static final ThreadLocal<ResourceLocation> currentAtlasId = new ThreadLocal<>();
+    private static Set<Identifier> blockAtlasSpriteIds;
+    private static final ThreadLocal<Identifier> currentAtlasId = new ThreadLocal<>();
 
     // Reusable scratch between CPU-side patch composition and the final
     // DirectBuffer copy. Pre-sized for a typical 64x64 RGBA sprite so the
@@ -64,7 +64,7 @@ public final class AtlasAnimationForwarder {
     private static byte[] scratch = new byte[kInitialScratchBytes];
 
     private static final class PatchRecord {
-        final ResourceLocation id;
+        final Identifier id;
         final int dstX;
         final int dstY;
         final int srcX;
@@ -90,7 +90,7 @@ public final class AtlasAnimationForwarder {
         final long pixelPtr;
         final int rowPitch;
 
-        PatchRecord(ResourceLocation id, int dstX, int dstY, int srcX, int srcY,
+        PatchRecord(Identifier id, int dstX, int dstY, int srcX, int srcY,
                     int width, int height, int srcImageWidth, int srcImageHeight,
                     long pixelPtr, int rowPitch) {
             this.id = id;
@@ -142,7 +142,7 @@ public final class AtlasAnimationForwarder {
 
     public static void init(
             Map<String, BlockTextureManager.AnimatedSpriteLabPBR> labPBR,
-            Set<ResourceLocation> blockAtlasSprites) {
+            Set<Identifier> blockAtlasSprites) {
         labPBRMap = labPBR;
         blockAtlasSpriteIds = Set.copyOf(blockAtlasSprites);
         pendingPatches.clear();
@@ -155,7 +155,7 @@ public final class AtlasAnimationForwarder {
                     labPBR.size(), blockAtlasSpriteIds.size());
     }
 
-    public static void addPatch(ResourceLocation spriteId, int dstX, int dstY,
+    public static void addPatch(Identifier spriteId, int dstX, int dstY,
                                 int srcX, int srcY, int width, int height,
                                 int srcImageWidth, int srcImageHeight,
                                 long pixelPtr, int rowPitch) {
@@ -168,7 +168,7 @@ public final class AtlasAnimationForwarder {
             return;
         }
 
-        Set<ResourceLocation> allowedSprites = blockAtlasSpriteIds;
+        Set<Identifier> allowedSprites = blockAtlasSpriteIds;
         if (allowedSprites == null || !allowedSprites.contains(spriteId)) {
             return;
         }
@@ -479,7 +479,12 @@ public final class AtlasAnimationForwarder {
         LOGGER.info("AtlasAnimationForwarder cleared");
     }
 
-    public static void beginAtlasUpload(ResourceLocation atlasId) {
+    /** Whether patches are being queued; a caller that builds one checks this first. */
+    public static boolean isActive() {
+        return active;
+    }
+
+    public static void beginAtlasUpload(Identifier atlasId) {
         currentAtlasId.set(atlasId);
     }
 

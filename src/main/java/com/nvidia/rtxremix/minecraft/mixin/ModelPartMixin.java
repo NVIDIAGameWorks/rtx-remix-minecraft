@@ -82,7 +82,7 @@ public abstract class ModelPartMixin {
             int overlay,
             int color) {
         VertexConsumer target = vertexConsumer instanceof SpriteCoordinateExpander wrapped
-                ? wrapped.delegate
+                ? wrapped.delegate()
                 : vertexConsumer;
         // Local reads first: the cuboid count and list type reject group and
         // multi-cuboid parts before the capture check pays for its thread-local lookup.

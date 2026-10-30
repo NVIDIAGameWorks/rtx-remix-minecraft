@@ -25,15 +25,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiPredicate;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
-import net.minecraft.server.packs.metadata.MetadataSectionSerializer;
+import net.minecraft.server.packs.metadata.MetadataSectionType;
 import net.minecraft.server.packs.repository.KnownPack;
 import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.resources.IoSupplier;
@@ -51,7 +50,7 @@ class BlockLightRuleManagerTest {
 
     @Test
     void parseJsonRulePreservesTheAuthoredRectSpec() throws Exception {
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("custom", "rtx_remix/block_lights/daylight_panel.json");
+        Identifier id = Identifier.fromNamespaceAndPath("custom", "rtx_remix/block_lights/daylight_panel.json");
         BlockLightRuleManager.Rule rule = BlockLightRuleManager.parseJsonRule(id, JsonParser.parseString("""
                 {
                   "blocks": ["minecraft:daylight_detector"],
@@ -106,7 +105,7 @@ class BlockLightRuleManagerTest {
 
     @Test
     void parseJsonRuleRejectsAnInvalidRadius() {
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("custom", "rtx_remix/block_lights/bad.json");
+        Identifier id = Identifier.fromNamespaceAndPath("custom", "rtx_remix/block_lights/bad.json");
 
         assertThrows(RuntimeException.class, () -> BlockLightRuleManager.parseJsonRule(id, JsonParser.parseString("""
                 {
@@ -121,7 +120,7 @@ class BlockLightRuleManagerTest {
 
     @Test
     void loadRulesReplacesASamePathResourceInPackOrder() throws Exception {
-        ResourceLocation ruleId = ResourceLocation.fromNamespaceAndPath("custom", "rtx_remix/block_lights/replaced.json");
+        Identifier ruleId = Identifier.fromNamespaceAndPath("custom", "rtx_remix/block_lights/replaced.json");
         Resource lowPriority = jsonResource("low", """
                 {
                   "blocks": ["minecraft:torch"],
@@ -138,7 +137,7 @@ class BlockLightRuleManagerTest {
 
         BlockLightRuleManager.Rule rule = BlockLightRuleManager.loadRules(manager, Map.of()).get(ruleId);
 
-        assertEquals(Set.of(ResourceLocation.fromNamespaceAndPath("minecraft", "lantern")), parsedBlockIds(rule));
+        assertEquals(Set.of(Identifier.fromNamespaceAndPath("minecraft", "lantern")), parsedBlockIds(rule));
     }
 
     @Test
@@ -218,7 +217,7 @@ class BlockLightRuleManagerTest {
         Future<?> reload = null;
         try {
             Object oldCatalog = activeCatalogField.get(null);
-            ResourceLocation newRuleId = ResourceLocation.fromNamespaceAndPath("test", "new-rule");
+            Identifier newRuleId = Identifier.fromNamespaceAndPath("test", "new-rule");
             BlockLightRuleManager.Rule newRule = BlockLightRuleManager.rule(
                     newRuleId, state -> false, (id, state, pos, sampler) -> List.of());
 
@@ -243,10 +242,10 @@ class BlockLightRuleManagerTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Set<ResourceLocation> parsedBlockIds(BlockLightRuleManager.Rule rule) throws Exception {
+    private static Set<Identifier> parsedBlockIds(BlockLightRuleManager.Rule rule) throws Exception {
         Method method = rule.getClass().getDeclaredMethod("blockIds");
         method.setAccessible(true);
-        return (Set<ResourceLocation>) method.invoke(rule);
+        return (Set<Identifier>) method.invoke(rule);
     }
 
     private static Resource jsonResource(String packId, String json) {
@@ -302,24 +301,24 @@ class BlockLightRuleManagerTest {
         }
 
         @Override
-        public Optional<Resource> getResource(ResourceLocation identifier) {
+        public Optional<Resource> getResource(Identifier identifier) {
             return Optional.empty();
         }
 
         @Override
-        public List<Resource> getResourceStack(ResourceLocation id) {
+        public List<Resource> getResourceStack(Identifier id) {
             return List.of();
         }
 
         @Override
-        public Map<ResourceLocation, Resource> listResources(String startingPath,
-                                                       Predicate<ResourceLocation> allowedPathPredicate) {
+        public Map<Identifier, Resource> listResources(String startingPath,
+                                                       ResourceManager.Selector allowedPathPredicate) {
             return Map.of();
         }
 
         @Override
-        public Map<ResourceLocation, List<Resource>> listResourceStacks(String startingPath,
-                                                                Predicate<ResourceLocation> allowedPathPredicate) {
+        public Map<Identifier, List<Resource>> listResourceStacks(String startingPath,
+                                                                ResourceManager.Selector allowedPathPredicate) {
             findEntered.countDown();
             try {
                 if (!releaseFind.await(5, TimeUnit.SECONDS)) {
@@ -338,33 +337,33 @@ class BlockLightRuleManagerTest {
         }
     }
 
-    private record FakeResourceManager(Map<ResourceLocation, List<Resource>> resources) implements ResourceManager {
+    private record FakeResourceManager(Map<Identifier, List<Resource>> resources) implements ResourceManager {
         @Override
         public Set<String> getNamespaces() {
             return Set.of("custom");
         }
 
         @Override
-        public Optional<Resource> getResource(ResourceLocation identifier) {
+        public Optional<Resource> getResource(Identifier identifier) {
             List<Resource> found = resources.get(identifier);
             return found == null || found.isEmpty() ? Optional.empty() : Optional.of(found.getLast());
         }
 
         @Override
-        public List<Resource> getResourceStack(ResourceLocation id) {
+        public List<Resource> getResourceStack(Identifier id) {
             return resources.getOrDefault(id, List.of());
         }
 
         @Override
-        public Map<ResourceLocation, Resource> listResources(String startingPath, Predicate<ResourceLocation> allowedPathPredicate) {
+        public Map<Identifier, Resource> listResources(String startingPath, ResourceManager.Selector allowedPathPredicate) {
             return Map.of();
         }
 
         @Override
-        public Map<ResourceLocation, List<Resource>> listResourceStacks(String startingPath, Predicate<ResourceLocation> allowedPathPredicate) {
+        public Map<Identifier, List<Resource>> listResourceStacks(String startingPath, ResourceManager.Selector allowedPathPredicate) {
             return resources.entrySet().stream()
                     .filter(entry -> entry.getKey().getPath().startsWith(startingPath))
-                    .filter(entry -> allowedPathPredicate.test(entry.getKey()))
+                    .filter(entry -> allowedPathPredicate.isIncluded(entry.getKey()))
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         }
 
@@ -381,7 +380,7 @@ class BlockLightRuleManagerTest {
         }
 
         @Override
-        public IoSupplier<InputStream> getResource(PackType type, ResourceLocation id) {
+        public IoSupplier<InputStream> getResource(PackType type, Identifier id) {
             return null;
         }
 
@@ -395,7 +394,7 @@ class BlockLightRuleManagerTest {
         }
 
         @Override
-        public <T> T getMetadataSection(MetadataSectionSerializer<T> metaReader) throws IOException {
+        public <T> T getMetadataSection(MetadataSectionType<T> metaReader) throws IOException {
             return null;
         }
 

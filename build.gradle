@@ -7,7 +7,7 @@ import javax.inject.Inject
 import org.gradle.process.ExecOperations
 
 plugins {
-    id 'fabric-loom' version '1.15.5'
+    id 'net.fabricmc.fabric-loom' version '1.19.3'
     id 'java'
 }
 
@@ -126,10 +126,10 @@ repositories {
     }
 }
 
-// Minecraft 1.21.x requires Java 21
+// Minecraft 26.x requires Java 25
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
     withSourcesJar()
 }
@@ -145,17 +145,6 @@ sourceSets {
 
 loom {
     accessWidenerPath = file("src/main/resources/rtx-remix-renderer.accesswidener")
-
-    // Loom 1.15+ disabled the mixin annotation processor by default. We use
-    // mixins extensively (see src/main/resources/rtx-remix-renderer.mixins.json),
-    // so explicitly opt back into the legacy AP via the `mixin` extension's
-    // useLegacyMixinAp flag. The previous defaultRefmapName setting is no
-    // longer needed. Without it, Loom derives the refmap name from the
-    // project; our mixins.json doesn't reference the refmap by literal name,
-    // so the auto-derived name works fine.
-    mixin {
-        useLegacyMixinAp = true
-    }
 
     runs {
         client {
@@ -206,15 +195,16 @@ loom {
 // Fabric API (keep in sync with FABRIC_API_VERSION in packaging/installer.ps1,
 // which is what gets installed at runtime on the user's machine). One literal
 // serves both the compile dependency and stageFabricApi.
-def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.116.10+1.21.1"
+def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.165.0+26.3"
 
 dependencies {
     // Minecraft and Fabric
-    minecraft "com.mojang:minecraft:1.21.1"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:0.16.5"
+    // 26.x ships unobfuscated: no mappings, and mods are compiled against the
+    // same names the game runs with, so there is no remap step.
+    minecraft "com.mojang:minecraft:26.3"
+    implementation "net.fabricmc:fabric-loader:0.20.1"
 
-    modImplementation fabricApiCoordinate
+    implementation fabricApiCoordinate
 
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
@@ -247,7 +237,8 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = "UTF-8"
-    options.release = 21
+    options.release = 25
+    if (project.hasProperty('maxErrs')) options.compilerArgs += ['-Xmaxerrs', project.property('maxErrs').toString()]
 }
 
 def currentRuntimeArch = System.getProperty("os.arch") == "aarch64" ? "arm64" : "win64"
@@ -484,16 +475,16 @@ jar {
     }
 }
 
-// `build` leaves Loom's remapped lightweight JAR in build/libs for fast dev
-// iteration. packageJar starts with that already-remapped JAR and adds only the
+// `build` leaves Loom's lightweight JAR in build/libs for fast dev
+// iteration. packageJar starts with that JAR and adds only the
 // selected native payload, writing the distributable JAR to build/distributions.
 // Packaging therefore depends on an explicit task instead of guessing intent
 // from Gradle's command-line task names (`package` versus `:package`).
-def remapJarTask = tasks.named('remapJar')
+def modJarTask = tasks.named('jar')
 def packageJarTask = tasks.register('packageJar', Zip) {
-    description = 'Assembles the remapped distributable JAR with the selected platform SDKs bundled'
+    description = 'Assembles the distributable JAR with the selected platform SDKs bundled'
     group = 'build'
-    dependsOn remapJarTask
+    dependsOn modJarTask
     dependsOn buildArches.collect { fetchRuntimeSdkTasks[it] }
     if (buildArches.contains('win64')) dependsOn 'compileNativeWin64'
     if (buildArches.contains('arm64')) dependsOn 'compileNativeArm64'
@@ -506,7 +497,7 @@ def packageJarTask = tasks.register('packageJar', Zip) {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
 
-    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) })
+    from({ zipTree(modJarTask.get().archiveFile.get().asFile) })
 
     doFirst {
         checkPackageSourceHomogeneity()

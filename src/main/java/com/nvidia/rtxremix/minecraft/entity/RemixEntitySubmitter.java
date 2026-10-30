@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
+import com.nvidia.rtxremix.minecraft.texture.SpriteTexels;
 import com.nvidia.rtxremix.minecraft.texture.LabPBRConverter;
 import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
@@ -62,11 +63,13 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelPart;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.entity.player.Player;
@@ -128,18 +131,17 @@ public class RemixEntitySubmitter {
     private static final float THIN_SSS_MEASUREMENT_DISTANCE = 0.75f;
     private static final int DEFAULT_CUTOUT_ALPHA_REFERENCE = 1;
     private static final int COVERAGE_ALPHA_REFERENCE = 128;
-    private static final ResourceLocation BANNER_PATTERNS_ATLAS_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/banner_patterns.png");
-    private static final ResourceLocation SHIELD_PATTERNS_ATLAS_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/shield_patterns.png");
-    private static final ResourceLocation PARTICLE_ATLAS_ID = TextureAtlas.LOCATION_PARTICLES;
-    private static final ResourceLocation BEDS_ATLAS_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/beds.png");
-    private static final ResourceLocation MAP_DECORATIONS_ATLAS_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/map_decorations.png");
+    private static final Identifier BANNER_PATTERNS_ATLAS_TEXTURE =
+            Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/banner_patterns.png");
+    private static final Identifier SHIELD_PATTERNS_ATLAS_TEXTURE =
+            Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/shield_patterns.png");
+    private static final Identifier PARTICLE_ATLAS_ID = TextureAtlas.LOCATION_PARTICLES;
+    private static final Identifier MAP_DECORATIONS_ATLAS_TEXTURE =
+            Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/map_decorations.png");
     private static final String DYNAMIC_MAP_TEXTURE_PREFIX = "dynamic/map/";
-    private static final EntityMaterialKey BEDS_ATLAS_MATERIAL_KEY =
-            new EntityMaterialKey(BEDS_ATLAS_TEXTURE, RenderLayerUtils.SurfaceMode.OPAQUE);
+    /** Beds are block models since 26.x; chests are the common block-entity atlas now. */
+    private static final EntityMaterialKey LARGE_BLOCK_ENTITY_ATLAS_MATERIAL_KEY =
+            new EntityMaterialKey(Sheets.CHEST_SHEET, RenderLayerUtils.SurfaceMode.CUTOUT);
     static final InstanceInfoBlendEXT VERTEX_COLOR_MODULATE =
             InstanceInfoBlendEXT.textureTimesVertexColor();
     static final InstanceInfoBlendEXT BANNER_PATTERN_BLEND =
@@ -166,13 +168,13 @@ public class RemixEntitySubmitter {
      * generated hash is unspecified; a probe pinned to it would miss every lookup
      * if that changed, and a miss here drops the layer with no error raised.
      */
-    record EntityMaterialKey(ResourceLocation textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
+    record EntityMaterialKey(Identifier textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
         @Override
         public int hashCode() {
             return hash(textureId, surfaceMode);
         }
 
-        static int hash(ResourceLocation textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
+        static int hash(Identifier textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
             return 31 * Objects.hashCode(textureId) + Objects.hashCode(surfaceMode);
         }
     }
@@ -183,10 +185,10 @@ public class RemixEntitySubmitter {
      * in the map; hashCode is the record's own helper.
      */
     static final class EntityMaterialLookupKey {
-        private ResourceLocation textureId;
+        private Identifier textureId;
         private RenderLayerUtils.SurfaceMode surfaceMode;
 
-        EntityMaterialLookupKey set(ResourceLocation textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
+        EntityMaterialLookupKey set(Identifier textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
             this.textureId = textureId;
             this.surfaceMode = surfaceMode;
             return this;
@@ -206,7 +208,7 @@ public class RemixEntitySubmitter {
     }
 
     sealed interface RigidMeshKey permits HashedMeshKey, CuboidMeshKey, CanvasMeshKey, RigidMeshLookupKey {
-        ResourceLocation texId();
+        Identifier texId();
     }
 
     /**
@@ -219,7 +221,7 @@ public class RemixEntitySubmitter {
      * the pooled mesh and atlasSurfaceMode narrows item parts one at a time, so
      * two parts of one layer can share a geometry hash and need different materials.
      */
-    record HashedMeshKey(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+    record HashedMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                          RenderLayerUtils.Topology topology,
                          int shellLayer, int vertexCount, long geometryHash)
             implements RigidMeshKey {
@@ -261,7 +263,7 @@ public class RemixEntitySubmitter {
      * and an animating tint (jeb_ sheep, warden fade, wet wolves) is a cheap
      * per-instance update instead of a native mesh create per part per frame.
      */
-    record CuboidMeshKey(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+    record CuboidMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                          int shellLayer, ModelPart.Polygon[] sides, TextureAtlasSprite sprite)
             implements RigidMeshKey {
         @Override
@@ -293,7 +295,7 @@ public class RemixEntitySubmitter {
      * {@link CuboidMeshKey}; {@code sprites} are identities layer by layer; {@code tints}
      * are values, baked as vertex colour.
      */
-    record CanvasMeshKey(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+    record CanvasMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                          int shellLayer, ModelPart.Polygon[] sides, TextureAtlasSprite[] sprites, int[] tints)
             implements RigidMeshKey {
         @Override
@@ -331,7 +333,7 @@ public class RemixEntitySubmitter {
      * explicit hash helpers, which is why the records override hashCode at all.
      */
     static final class RigidMeshLookupKey implements RigidMeshKey {
-        private ResourceLocation texId;
+        private Identifier texId;
         private RenderLayerUtils.SurfaceMode surfaceMode;
         private int shellLayer;
         private RenderLayerUtils.Topology topology;
@@ -350,7 +352,7 @@ public class RemixEntitySubmitter {
         private int canvasFirstPart;
         private int canvasPatternCount;
 
-        void setLayer(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+        void setLayer(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                       int shellLayer) {
             this.texId = texId;
             this.surfaceMode = surfaceMode;
@@ -420,7 +422,7 @@ public class RemixEntitySubmitter {
         }
 
         @Override
-        public ResourceLocation texId() {
+        public Identifier texId() {
             return texId;
         }
 
@@ -467,7 +469,7 @@ public class RemixEntitySubmitter {
             return true;
         }
 
-        static int cuboidHash(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+        static int cuboidHash(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                               int shellLayer, ModelPart.Polygon[] sides, TextureAtlasSprite sprite) {
             return cuboidHash(layerHash(texId, surfaceMode, shellLayer), sides, sprite);
         }
@@ -477,7 +479,7 @@ public class RemixEntitySubmitter {
             return 31 * result + System.identityHashCode(sprite);
         }
 
-        static int hashedHash(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+        static int hashedHash(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                               RenderLayerUtils.Topology topology, int shellLayer,
                               int vertexCount, long geometryHash) {
             return hashedHash(layerHash(texId, surfaceMode, shellLayer),
@@ -491,7 +493,7 @@ public class RemixEntitySubmitter {
             return 31 * result + Long.hashCode(geometryHash);
         }
 
-        static int canvasHashPrefix(ResourceLocation texId, RenderLayerUtils.SurfaceMode surfaceMode,
+        static int canvasHashPrefix(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                                     int shellLayer, ModelPart.Polygon[] sides) {
             return canvasHashPrefix(layerHash(texId, surfaceMode, shellLayer), sides);
         }
@@ -505,7 +507,7 @@ public class RemixEntitySubmitter {
             return 31 * (31 * result + System.identityHashCode(sprite)) + tint;
         }
 
-        private static int layerHash(ResourceLocation texId,
+        private static int layerHash(Identifier texId,
                                      RenderLayerUtils.SurfaceMode surfaceMode,
                                      int shellLayer) {
             int result = Objects.hashCode(texId);
@@ -573,17 +575,17 @@ public class RemixEntitySubmitter {
      */
     private final IdentityHashMap<CopperBeaconBlockEntity, BeaconLensAssets>
             beaconLensAssets = new IdentityHashMap<>();
-    private final Map<ResourceLocation, EntityTextureSet> textureSets = new HashMap<>();
-    private final Map<ResourceLocation, TextureSize> dynamicTextureSizes = new HashMap<>();
-    private final Map<ResourceLocation, Long> dynamicTextureVersions = new HashMap<>();
-    private final Set<ResourceLocation> failedTextures = new HashSet<>();
+    private final Map<Identifier, EntityTextureSet> textureSets = new HashMap<>();
+    private final Map<Identifier, TextureSize> dynamicTextureSizes = new HashMap<>();
+    private final Map<Identifier, Long> dynamicTextureVersions = new HashMap<>();
+    private final Set<Identifier> failedTextures = new HashSet<>();
     /**
      * Texture IDs absent from the resource packs. Only the pack lookup is memoized, not the
      * whole texture set: a downloaded skin also misses the resource manager and arrives later
      * through {@link DynamicTextureCache}, so treating an absent resource as a permanent
      * failure would strand it. Resource presence changes only on a reload, which clears this.
      */
-    private final Set<ResourceLocation> resourceMissing = new HashSet<>();
+    private final Set<Identifier> resourceMissing = new HashSet<>();
     private LabPBRConverter.VariantCache labPBRVariants;
 
     // A captured layer with no material is dropped silently, which is
@@ -842,13 +844,13 @@ public class RemixEntitySubmitter {
                              int baseCategoryFlags,
                              PartCategoryPolicy policy,
                              int layerIndex) {
-        ResourceLocation texId = layer.textureId();
+        Identifier texId = layer.textureId();
         if (texId == null) return;
         RenderType renderLayer = layer.renderLayer();
         RenderLayerUtils.SurfaceMode layerMode = RenderLayerUtils.surfaceMode(renderLayer);
         RenderLayerUtils.SurfaceMode surfaceMode = playerSkinSurfaceMode(layerMode,
                 result.owner() instanceof Player
-                        && renderLayer == RenderType.entityTranslucent(texId));
+                        && renderLayer == RenderTypes.entityTranslucent(texId));
 
         RemixCapturingConsumer consumer = layer.consumer();
         // Guard on parts, not vertices: a cuboid part carries no captured
@@ -927,7 +929,7 @@ public class RemixEntitySubmitter {
      * @param blockItemLayer the terrain layer of the block item the geometry came
      *                       from, or {@link EntityRenderContext#NO_BLOCK_ITEM}
      */
-    static RenderLayerUtils.SurfaceMode atlasSurfaceMode(ResourceLocation texId,
+    static RenderLayerUtils.SurfaceMode atlasSurfaceMode(Identifier texId,
                                                          RenderLayerUtils.SurfaceMode surfaceMode,
                                                          int blockItemLayer) {
         if (!BlockTextureManager.BLOCK_ATLAS_ID.equals(texId)) {
@@ -1048,7 +1050,7 @@ public class RemixEntitySubmitter {
         }
 
         /** Records the bases of a layer; only a translucent pattern-atlas layer holds any. */
-        void collectBases(ResourceLocation texId, RenderLayerUtils.SurfaceMode layerMode,
+        void collectBases(Identifier texId, RenderLayerUtils.SurfaceMode layerMode,
                           RemixCapturingConsumer consumer) {
             beginLayer(texId, layerMode);
             if (!canvasLayer) return;
@@ -1064,7 +1066,7 @@ public class RemixEntitySubmitter {
         }
 
         /** Starts a layer; {@link #next} then classifies its cuboids in part order. */
-        void beginLayer(ResourceLocation texId, RenderLayerUtils.SurfaceMode layerMode) {
+        void beginLayer(Identifier texId, RenderLayerUtils.SurfaceMode layerMode) {
             boolean patternAtlas = needsVertexColorBlend(texId);
             canvasLayer = patternAtlas && layerMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT;
             solidRole = patternAtlas ? PatternCanvasRole.FRAME : PatternCanvasRole.NONE;
@@ -1135,15 +1137,15 @@ public class RemixEntitySubmitter {
     private void collectCanvasBases(RemixEntityPass.EntityCaptureResult result) {
         canvasReader.beginEntity(result.boneData());
         for (RemixVertexConsumerProvider.CapturedLayer layer : result.layers()) {
-            ResourceLocation texId = layer.textureId();
+            Identifier texId = layer.textureId();
             if (texId == null) continue;
             canvasReader.collectBases(texId,
                     RenderLayerUtils.surfaceMode(layer.renderLayer()), layer.consumer());
         }
     }
 
-    private static boolean isDynamicMapTexture(ResourceLocation textureId) {
-        return textureId.getNamespace().equals(ResourceLocation.DEFAULT_NAMESPACE)
+    private static boolean isDynamicMapTexture(Identifier textureId) {
+        return textureId.getNamespace().equals(Identifier.DEFAULT_NAMESPACE)
                 && textureId.getPath().startsWith(DYNAMIC_MAP_TEXTURE_PREFIX);
     }
 
@@ -1156,7 +1158,7 @@ public class RemixEntitySubmitter {
      * runtime resolves them the way it resolves those: soft, unordered and in the
      * transparency layer, rather than as opaque hits taken with the odds of their alpha.
      */
-    static int additionalCategoryFlagsForTexture(ResourceLocation textureId) {
+    static int additionalCategoryFlagsForTexture(Identifier textureId) {
         if (MAP_DECORATIONS_ATLAS_TEXTURE.equals(textureId)) {
             return InstanceCategoryBit.DECAL_NO_OFFSET;
         }
@@ -1172,7 +1174,7 @@ public class RemixEntitySubmitter {
      * half coverage, where the runtime's generated mip levels interpolate back to the
      * authored boundary. Every other texture shows any texel with alpha, as vanilla does.
      */
-    static int cutoutAlphaReferenceValue(ResourceLocation textureId) {
+    static int cutoutAlphaReferenceValue(Identifier textureId) {
         return isDynamicMapTexture(textureId)
                 || MAP_DECORATIONS_ATLAS_TEXTURE.equals(textureId)
                 || DynamicTextureCache.isGlyphPage(textureId)
@@ -1183,7 +1185,7 @@ public class RemixEntitySubmitter {
     private void submitRigidPart(RemixEntityPass.EntityCaptureResult result,
                                  RemixCapturingConsumer consumer,
                                  int partIndex,
-                                 ResourceLocation texId,
+                                 Identifier texId,
                                  RenderLayerUtils.SurfaceMode surfaceMode,
                                  RenderLayerUtils.Topology topology,
                                  boolean transientGeometry,
@@ -1251,7 +1253,7 @@ public class RemixEntitySubmitter {
     private RemixMesh acquireBeaconLensMesh(
             CopperBeaconBlockEntity beacon,
             int vertexCount,
-            ResourceLocation textureId,
+            Identifier textureId,
             int shellLayer,
             ModelPart.Polygon[] sides,
             TextureAtlasSprite sprite) {
@@ -1331,7 +1333,7 @@ public class RemixEntitySubmitter {
                                       RemixCapturingConsumer consumer,
                                       int firstPart,
                                       int patternCount,
-                                      ResourceLocation texId,
+                                      Identifier texId,
                                       RenderLayerUtils.SurfaceMode surfaceMode,
                                       int layerIndex,
                                       Transform worldTransform,
@@ -1438,7 +1440,7 @@ public class RemixEntitySubmitter {
     private RemixMesh acquirePooledMesh(RemixCapturingConsumer consumer,
                                         int startVertex,
                                         int vertexCount,
-                                        ResourceLocation texId,
+                                        Identifier texId,
                                         RenderLayerUtils.SurfaceMode surfaceMode,
                                         RenderLayerUtils.Topology topology,
                                         int shellLayer,
@@ -1476,7 +1478,7 @@ public class RemixEntitySubmitter {
 
     private final RigidMeshLookupKey rigidMeshLookupKey = new RigidMeshLookupKey();
     /** Frame stamp per dynamic texture, so each refreshes once a frame, not once a layer. */
-    private final Object2LongOpenHashMap<ResourceLocation> dynamicTextureCheckFrames =
+    private final Object2LongOpenHashMap<Identifier> dynamicTextureCheckFrames =
             new Object2LongOpenHashMap<>();
 
     /**
@@ -1489,7 +1491,7 @@ public class RemixEntitySubmitter {
             new Long2ObjectOpenHashMap<>();
 
     InstanceInfoBlendEXT blendExtForPart(
-            ResourceLocation textureId,
+            Identifier textureId,
             RenderLayerUtils.SurfaceMode surfaceMode,
             boolean cuboid,
             int tintColor,
@@ -1532,7 +1534,7 @@ public class RemixEntitySubmitter {
      * rule 2 reads is not there. The pattern materials use draw-call alpha state, so this
      * instance state, not the material, decides what blends.
      */
-    InstanceInfoBlendEXT blendExtFor(ResourceLocation textureId,
+    InstanceInfoBlendEXT blendExtFor(Identifier textureId,
                                      RenderLayerUtils.SurfaceMode surfaceMode,
                                      boolean cuboid,
                                      int tintColor,
@@ -1936,7 +1938,7 @@ public class RemixEntitySubmitter {
                                       RemixCapturingConsumer consumer,
                                       int sourceStart,
                                       int vertexCount,
-                                      ResourceLocation textureId,
+                                      Identifier textureId,
                                       RenderLayerUtils.SurfaceMode surfaceMode,
                                       RenderLayerUtils.Topology topology,
                                       int shellLayer) {
@@ -1963,7 +1965,7 @@ public class RemixEntitySubmitter {
     private RemixMesh createTransientMesh(RemixCapturingConsumer consumer,
                                           int sourceStart,
                                           int vertexCount,
-                                          ResourceLocation textureId,
+                                          Identifier textureId,
                                           RenderLayerUtils.SurfaceMode surfaceMode,
                                           RenderLayerUtils.Topology topology,
                                           int shellLayer) {
@@ -1979,7 +1981,7 @@ public class RemixEntitySubmitter {
     private RemixMesh createMesh(RemixCapturingConsumer consumer,
                                  int sourceStart,
                                  int vertexCount,
-                                 ResourceLocation textureId,
+                                 Identifier textureId,
                                  RenderLayerUtils.SurfaceMode surfaceMode,
                                  RenderLayerUtils.Topology topology,
                                  int shellLayer) {
@@ -2007,7 +2009,7 @@ public class RemixEntitySubmitter {
             RemixCapturingConsumer consumer,
             int sourceStart,
             int vertexCount,
-            ResourceLocation textureId,
+            Identifier textureId,
             RenderLayerUtils.Topology topology,
             int shellLayer,
             RemixMaterial material) {
@@ -2091,7 +2093,7 @@ public class RemixEntitySubmitter {
         RemixMaterial cached = materialCache.get(materialKey);
         if (cached != null && !cached.isDeleted()) return;
         if (cached != null) materialCache.remove(materialKey);
-        ResourceLocation textureId = materialKey.textureId();
+        Identifier textureId = materialKey.textureId();
 
         // Item entities borrow the block atlas and its already-built LabPBR materials.
         if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {
@@ -2162,7 +2164,7 @@ public class RemixEntitySubmitter {
         return textures;
     }
 
-    private EntityTextureSet tryCreateTextureSet(ResourceLocation textureId) throws Exception {
+    private EntityTextureSet tryCreateTextureSet(Identifier textureId) throws Exception {
         var client = Minecraft.getInstance();
         if (client == null) return null;
         ResourceManager rm = client.getResourceManager();
@@ -2198,7 +2200,7 @@ public class RemixEntitySubmitter {
             cachedPixels = cached;
         }
 
-        ResourceLocation spriteId = deriveLabPBRSpriteId(textureId);
+        Identifier spriteId = deriveLabPBRSpriteId(textureId);
         NativeImage nImg = loadVariant(rm, spriteId, "_n");
         NativeImage sImg = loadVariant(rm, spriteId, "_s");
         NativeImage sssImg = loadVariant(rm, spriteId, "_sss");
@@ -2226,43 +2228,43 @@ public class RemixEntitySubmitter {
         return textures;
     }
 
-    private NativeImage loadVariant(ResourceManager rm, ResourceLocation spriteId, String suffix) {
+    private NativeImage loadVariant(ResourceManager rm, Identifier spriteId, String suffix) {
         if (spriteId == null) return null;
         if (labPBRVariants == null) labPBRVariants = LabPBRConverter.buildVariantCache(rm);
         return labPBRVariants.loadVariant(spriteId, suffix);
     }
 
     /**
-     * Creates the largest block-entity atlas during renderer warm-up instead of
-     * stalling the first frame in which a bed becomes visible.
+     * Creates the common block-entity atlas during renderer warm-up instead of
+     * stalling the first frame in which a chest becomes visible.
      *
      * @return true only when a live material is cached for the atlas
      */
     public boolean preloadLargeBlockEntityAtlases() {
-        ensureMaterial(BEDS_ATLAS_MATERIAL_KEY);
+        ensureMaterial(LARGE_BLOCK_ENTITY_ATLAS_MATERIAL_KEY);
         return hasLiveLargeBlockEntityAtlasMaterial();
     }
 
-    /** Returns whether the preloaded bed-atlas material is still cached and usable. */
+    /** Returns whether the preloaded block-entity atlas material is still cached and usable. */
     public boolean hasLiveLargeBlockEntityAtlasMaterial() {
-        RemixMaterial material = materialCache.get(BEDS_ATLAS_MATERIAL_KEY);
+        RemixMaterial material = materialCache.get(LARGE_BLOCK_ENTITY_ATLAS_MATERIAL_KEY);
         return material != null && !material.isDeleted();
     }
 
-    static boolean needsVertexColorBlend(ResourceLocation textureId) {
+    static boolean needsVertexColorBlend(Identifier textureId) {
         return BANNER_PATTERNS_ATLAS_TEXTURE.equals(textureId)
                 || SHIELD_PATTERNS_ATLAS_TEXTURE.equals(textureId)
                 || isPatternTexture(textureId, "textures/entity/banner/")
                 || isPatternTexture(textureId, "textures/entity/shield/");
     }
 
-    private static boolean isPatternTexture(ResourceLocation textureId, String pathPrefix) {
+    private static boolean isPatternTexture(Identifier textureId, String pathPrefix) {
         return "minecraft".equals(textureId.getNamespace())
                 && textureId.getPath().startsWith(pathPrefix)
                 && textureId.getPath().endsWith(".png");
     }
 
-    private static boolean isAtlasTexture(ResourceLocation id) {
+    private static boolean isAtlasTexture(Identifier id) {
         return id.getPath().startsWith("textures/atlas/")
                 && id.getPath().endsWith(".png");
     }
@@ -2272,13 +2274,13 @@ public class RemixEntitySubmitter {
      * the block atlas by {@code BlockTextureManager}, the particle atlas by
      * {@code ParticleAtlasManager}. This submitter never destroys them.
      */
-    private static boolean isBorrowedAtlasMaterial(ResourceLocation textureId) {
+    private static boolean isBorrowedAtlasMaterial(Identifier textureId) {
         return BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)
                 || PARTICLE_ATLAS_ID.equals(textureId);
     }
 
     /** Builds parallel LabPBR textures for runtime-stitched entity atlases. */
-    private EntityTextureSet tryCreateAtlasTextureSet(ResourceLocation textureId) {
+    private EntityTextureSet tryCreateAtlasTextureSet(Identifier textureId) {
         if (failedTextures.contains(textureId)) return null;
         try {
             var client = Minecraft.getInstance();
@@ -2314,12 +2316,12 @@ public class RemixEntitySubmitter {
             boolean hasEmissive = false;
             boolean hasSss = false;
             ResourceManager rm = client.getResourceManager();
-            Map<ResourceLocation, TextureAtlasSprite> sprites = ((SpriteAtlasAccessor) atlas).getSprites();
-            for (Map.Entry<ResourceLocation, TextureAtlasSprite> entry : sprites.entrySet()) {
-                ResourceLocation spriteId = entry.getKey();
+            Map<Identifier, TextureAtlasSprite> sprites = ((SpriteAtlasAccessor) atlas).getSprites();
+            for (Map.Entry<Identifier, TextureAtlasSprite> entry : sprites.entrySet()) {
+                Identifier spriteId = entry.getKey();
                 TextureAtlasSprite sprite = entry.getValue();
-                int x = sprite.getX();
-                int y = sprite.getY();
+                int x = SpriteTexels.x(sprite);
+                int y = SpriteTexels.y(sprite);
                 int spriteW = sprite.contents().width();
                 int spriteH = sprite.contents().height();
                 NativeImage nImg = loadVariant(rm, spriteId, "_n");
@@ -2358,6 +2360,15 @@ public class RemixEntitySubmitter {
                 }
             }
 
+            var atlasSprites = ((SpriteAtlasAccessor) atlas).getSprites().values();
+            SpriteTexels.fillPadding(atlasSprites, pixels, w, h, 4);
+            SpriteTexels.fillPadding(atlasSprites, normalData, w, h, 4);
+            SpriteTexels.fillPadding(atlasSprites, heightData, w, h, 1);
+            SpriteTexels.fillPadding(atlasSprites, roughData, w, h, 1);
+            SpriteTexels.fillPadding(atlasSprites, metalData, w, h, 1);
+            SpriteTexels.fillPadding(atlasSprites, emissiveData, w, h, 4);
+            SpriteTexels.fillPadding(atlasSprites, sssData, w, h, 4);
+            SpriteTexels.fillPadding(atlasSprites, sssAlbedoData, w, h, 4);
             EntityTextureSet textures = new EntityTextureSet();
             String name = "atlas_" + textureId;
             textures.albedo = uploadAndOwn(textures, name + "_a", pixels, w, h,
@@ -2400,14 +2411,14 @@ public class RemixEntitySubmitter {
         }
     }
 
-    public static void onMinecraftAtlasUploaded(ResourceLocation atlasId) {
+    public static void onMinecraftAtlasUploaded(Identifier atlasId) {
         RemixEntitySubmitter submitter = activeSubmitter;
         if (submitter != null) {
             submitter.refreshUploadedAtlas(atlasId);
         }
     }
 
-    private void refreshUploadedAtlas(ResourceLocation atlasId) {
+    private void refreshUploadedAtlas(Identifier atlasId) {
         if (!isAtlasTexture(atlasId)) return;
         failedTextures.remove(atlasId);
         if (textureSets.containsKey(atlasId) || isBorrowedAtlasMaterial(atlasId)) {
@@ -2418,7 +2429,7 @@ public class RemixEntitySubmitter {
         }
     }
 
-    private void refreshDynamicTexture(ResourceLocation textureId) {
+    private void refreshDynamicTexture(Identifier textureId) {
         DynamicTextureCache.Pixels pixels = DynamicTextureCache.get(textureId);
         if (pixels == null || pixels.version() <= 0L) return;
 
@@ -2478,7 +2489,7 @@ public class RemixEntitySubmitter {
         }
     }
 
-    private void invalidateMaterialTexture(ResourceLocation textureId) {
+    private void invalidateMaterialTexture(Identifier textureId) {
         invalidateMeshesForTexture(textureId);
         Iterator<Map.Entry<EntityMaterialKey, RemixMaterial>> materials = materialCache.entrySet().iterator();
         while (materials.hasNext()) {
@@ -2497,7 +2508,7 @@ public class RemixEntitySubmitter {
         failedTextures.remove(textureId);
     }
 
-    private void invalidateMeshesForTexture(ResourceLocation textureId) {
+    private void invalidateMeshesForTexture(Identifier textureId) {
         retainedEntityParts.discardIf(
                 part -> textureId.equals(part.meshKey.texId()),
                 RemixEntitySubmitter::destroyRetainedPart);
@@ -2516,10 +2527,10 @@ public class RemixEntitySubmitter {
 
     private record TextureSize(int width, int height) {}
 
-    static ResourceLocation deriveLabPBRSpriteId(ResourceLocation textureId) {
+    static Identifier deriveLabPBRSpriteId(Identifier textureId) {
         String path = textureId.getPath();
         if (path.startsWith("textures/") && path.endsWith(".png")) {
-            return ResourceLocation.fromNamespaceAndPath(textureId.getNamespace(),
+            return Identifier.fromNamespaceAndPath(textureId.getNamespace(),
                     path.substring("textures/".length(), path.length() - ".png".length()));
         }
         // Downloaded player skins use minecraft:skins/<content-hash>. Packs can
@@ -2713,7 +2724,7 @@ public class RemixEntitySubmitter {
         byte[] out = new byte[w * h * 4];
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++) {
-                int abgr = image.getPixelRGBA(x, y);
+                int abgr = image.getPixelABGR(x, y);
                 int idx = (y * w + x) * 4;
                 out[idx]     = (byte) (abgr & 0xFF);
                 out[idx + 1] = (byte) ((abgr >> 8) & 0xFF);

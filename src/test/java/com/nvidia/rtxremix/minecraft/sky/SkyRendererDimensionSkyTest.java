@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import net.minecraft.client.renderer.DimensionSpecialEffects;
+import net.minecraft.world.level.dimension.DimensionType;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -72,21 +72,21 @@ class SkyRendererDimensionSkyTest {
 
     @Test
     void normalSkyHasNoFixedRadiance() {
-        assertNull(SkyRenderer.fixedSkyRadiance(DimensionSpecialEffects.SkyType.NORMAL));
+        assertNull(SkyRenderer.fixedSkyRadiance(DimensionType.Skybox.OVERWORLD));
     }
 
     @Test
     void endSkyPublishesItsConstantForDomeAndAmbient() {
         assertSame(
                 SkyRenderer.END_SKY_RADIANCE,
-                SkyRenderer.fixedSkyRadiance(DimensionSpecialEffects.SkyType.END));
+                SkyRenderer.fixedSkyRadiance(DimensionType.Skybox.END));
     }
 
     @Test
     void skylessSkyIsBlackSoNoAmbientIsPublished() {
         assertArrayEquals(
                 new float[]{0.0f, 0.0f, 0.0f},
-                SkyRenderer.fixedSkyRadiance(DimensionSpecialEffects.SkyType.NONE));
+                SkyRenderer.fixedSkyRadiance(DimensionType.Skybox.NONE));
     }
 
     private static float luminance(float[] radiance) {
