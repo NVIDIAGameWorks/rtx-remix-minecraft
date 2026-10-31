@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.HardcodedVertex;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,75 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DirectQuadWriterTest {
+
+    @Test
+    void eachDustStateIsItsOwnSurfaceOverUnchangedVertices() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        SectionMeshData ordinary = dustMesh(writer, RedstoneEmission.NONE);
+        SectionMeshData unpowered = dustMesh(writer, RedstoneEmission.UNPOWERED);
+        SectionMeshData powered = dustMesh(writer, RedstoneEmission.POWERED);
+        try {
+            SectionMeshData[] meshes = {ordinary, unpowered, powered};
+            for (int i = 0; i < meshes.length; i++) {
+                SectionMeshData.Surface surface = meshes[i].surfaces().getFirst();
+                assertEquals(1, meshes[i].surfaces().size());
+                assertEquals("cutout", surface.bucketKey());
+                assertEquals(RedstoneEmission.values()[i], surface.redstoneEmission());
+                assertEquals(ordinary.surfaces().getFirst().vertexBuffer(), surface.vertexBuffer());
+                assertEquals(new SectionMeshData(meshes[i].surfaces()).contentHash(), meshes[i].contentHash());
+                for (int j = 0; j < i; j++) {
+                    assertNotEquals(meshes[j].contentHash(), meshes[i].contentHash());
+                    assertNotEquals(meshes[j].categoryContentHash(ChunkManager.CAT_CUTOUT),
+                            meshes[i].categoryContentHash(ChunkManager.CAT_CUTOUT));
+                }
+            }
+        } finally {
+            ordinary.release();
+            unpowered.release();
+            powered.release();
+        }
+    }
+
+    @Test
+    void dustStatesShareASectionAndStillRemoveDuplicateBackfaces() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        for (RedstoneEmission emission : RedstoneEmission.values()) {
+            stageCutoutQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFF660000);
+            stageCutoutQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, -1.0f, CUTOUT_SPRITE, 0xFF660000);
+            writer.flushBlock(null, emission);
+        }
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            assertEquals(RedstoneEmission.values().length, mesh.surfaces().size());
+            for (SectionMeshData.Surface surface : mesh.surfaces()) {
+                assertEquals(4, surface.vertexCount());
+            }
+        } finally {
+            mesh.release();
+        }
+    }
+
+    @Test
+    void dustInABlendedLayerKeepsTheOrdinaryMaterial() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        stageQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFF660000, "translucent");
+        writer.flushBlock(null, RedstoneEmission.POWERED);
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            assertEquals(RedstoneEmission.NONE, surface(mesh, "translucent").redstoneEmission());
+        } finally {
+            mesh.release();
+        }
+    }
+
+    private static SectionMeshData dustMesh(DirectQuadWriter writer, RedstoneEmission emission) {
+        writer.beginSection();
+        stageCutoutQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFF660000);
+        writer.flushBlock(null, emission);
+        return writer.buildMeshData();
+    }
 
     private static final Identifier CUTOUT_SPRITE = Identifier.ofVanilla("test/cutout");
     private static final float[] FRONT_POSITIONS = {
@@ -131,7 +201,7 @@ class DirectQuadWriterTest {
 
         stageCutoutQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
         stageCutoutQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, -1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
 
         SectionMeshData.Surface surface = writer.buildMeshData().surfaces().get(0);
         ByteBuffer vertices = surface.vertexBuffer().duplicate().order(ByteOrder.LITTLE_ENDIAN);
@@ -153,7 +223,7 @@ class DirectQuadWriterTest {
         stageCutoutQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
         stageCutoutQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, -1.0f,
                 Identifier.ofVanilla("test/cutout_overlay"), 0xFFFFFFFF);
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
 
         assertEquals(12, totalVertices(writer.buildMeshData()));
     }
@@ -169,11 +239,11 @@ class DirectQuadWriterTest {
         }
         stageCutoutQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
         stageCutoutQuad(writer, displacedBack, DISTINCT_BACK_UVS, -1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
 
         stageQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF, "solid");
         stageQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, -1.0f, CUTOUT_SPRITE, 0xFFFFFFFF, "solid");
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
 
         assertEquals(16, totalVertices(writer.buildMeshData()));
     }
@@ -186,11 +256,11 @@ class DirectQuadWriterTest {
         DirectQuadWriter writer = new DirectQuadWriter();
         writer.beginSection();
         stageQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF, "glass");
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
         stageQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, -1.0f, CUTOUT_SPRITE, 0xFFFFFFFF, "translucent");
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
         stageQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF, "cutout");
-        writer.flushBlock(null);
+        writer.flushBlock(null, RedstoneEmission.NONE);
 
         SectionMeshData meshData = writer.buildMeshData();
         SectionMeshData.Surface glass = surface(meshData, "glass");

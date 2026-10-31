@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.HardcodedVertex;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
@@ -102,6 +103,6 @@ class SectionMeshDataTest {
                 .order(ByteOrder.LITTLE_ENDIAN);
         vertices.putFloat(0, firstPosition);
         return new SectionMeshData.Surface(
-                category, "solid", vertices, vertexCount, indexCount, true);
+                category, "solid", RedstoneEmission.NONE, vertices, vertexCount, indexCount, true);
     }
 }

@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
@@ -360,6 +361,7 @@ public final class BlockQuadEmitter {
         } else {
             emitVanillaBlock(world, state, model, layerName, lx, ly, lz);
         }
+        writer.flushBlock(texManager, RedstoneEmission.of(state));
     }
 
     /**
@@ -410,8 +412,6 @@ public final class BlockQuadEmitter {
                 stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
             }
         }
-
-        writer.flushBlock(texManager);
     }
 
     private void stageBakedQuad(BakedQuad bq, String layerName,
@@ -535,8 +535,6 @@ public final class BlockQuadEmitter {
                     fq.spriteU0(), fq.spriteV0(), fq.spriteU1(), fq.spriteV1(),
                     layerName);
         }
-
-        writer.flushBlock(texManager);
     }
 
     // --- Fluid geometry ---

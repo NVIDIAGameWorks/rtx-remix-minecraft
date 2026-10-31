@@ -245,6 +245,10 @@ diluting the sampler's candidate pool.
   paint order, because Remix orders coplanar decals by primitive index rather
   than by depth; text turns draw order into depth the same way
   (`RemixEntitySubmitter`).
+- Coplanar alpha-tested layers must not overlap: Remix continues a ray past a
+  transparent texel from beyond its plane, so only the first layer hit is seen.
+  Placed redstone dust's layers are cut so each texel is drawn once, by the
+  topmost layer opaque there (`DirectQuadWriter`).
 - A local first-person light is submitted with a zero volumetric radiance scale,
   because the volumetric grid reuses the previous frame's radiance and a
   camera-locked emitter would smear into distant geometry (`LightManager`).

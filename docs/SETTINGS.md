@@ -39,9 +39,10 @@ of the selected style, while Fast and Fancy draw the same geometry here.
 
 **Block Lights** opens a table of multipliers for normal light brightness,
 grouping related block lights into a row; the far left is Off. The Copper
-Beacon is separate: right-click a placed beacon for its own controls. Lanterns
-and sea pickles glow through their surfaces rather than casting separate
-lights, so **Block Glow Intensity** under Materials controls them. Emitting
+Beacon is separate: right-click a placed beacon for its own controls. Lanterns,
+sea pickles, and powered redstone dust glow through their surfaces rather than
+casting separate lights, so **Block Glow Intensity** under Materials controls
+them. Emitting
 surfaces are not sampled directly, so a room lit only by them can be darker
 than one with separate lights.
 
