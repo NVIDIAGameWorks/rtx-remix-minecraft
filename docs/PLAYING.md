@@ -7,14 +7,14 @@ install Java, Fabric, or the RTX Remix runtime yourself.
 ## What You Need
 
 - Windows 10 or 11, x64 or ARM64.
-- Minecraft Java Edition 1.21.1, on a Microsoft account that owns the game.
+- Minecraft Java Edition 26.3, on a Microsoft account that owns the game.
 - A GeForce RTX 30-series or newer GPU with NVIDIA driver 616.92 or newer.
 - About 5 GB of free disk space while installing, for the downloaded archive,
   the game, Java, and the unpacked runtime. About 3 GB stays in use afterwards.
 - An internet connection while the installer runs.
 - 16 GB of system memory is recommended.
 
-Java 21, Fabric, and the RTX Remix runtime are installed for you.
+Java 25, Fabric, and the RTX Remix runtime are installed for you.
 
 ## Before You Start
 
@@ -27,7 +27,7 @@ and there are bugs yet to be found. Two things to know before a long session:
 
 - **Other mods.** It has had limited testing alongside other mods, and mods
   that change rendering or chunk loading are likely to conflict with it.
-- **Scope.** It targets Minecraft 1.21.1 only. Blocks, mobs, dimensions, and
+- **Scope.** It targets Minecraft 26.3 only. Blocks, mobs, dimensions, and
   situations the showcase never reaches have had less care, and some will look
   wrong or run slowly.
 
@@ -83,9 +83,9 @@ Microsoft account.
 
 ### Installing Without The Installer
 
-If you already run a Fabric instance for Minecraft 1.21.1 in a launcher of
-your choice, you can install the mod by hand. The instance needs Java 21,
-Fabric Loader 0.16.5 or newer, and Fabric API 0.116.10+1.21.1 or newer.
+If you already run a Fabric instance for Minecraft 26.3 in a launcher of
+your choice, you can install the mod by hand. The instance needs Java 25,
+Fabric Loader 0.20.1 or newer, and Fabric API 0.165.0+26.3 or newer.
 
 1. Copy the JAR from the archive's `mods\` folder into the instance's `mods\`
    folder. It carries the runtime and its textures and unpacks them into the
@@ -195,7 +195,7 @@ has the details.
 | On a laptop: the game runs but looks like ordinary Minecraft, or is extremely slow | The display is being driven by the built-in graphics chip. In Windows Settings, Display, Graphics, add `javaw.exe` and set it to High performance, then relaunch. |
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start Prism once, then re-run `install.bat`, which detects it. |
 | Very choppy at a high render distance | Lower Minecraft's render distance, or pick a lower tier in Options, RTX Remix Settings, RTX Remix Graphics Settings. |
-| The game will not start at all | Launch the **NVIDIA RTX Remix for Minecraft** profile rather than a plain Minecraft one, and confirm the launcher is set to Java 21. |
+| The game will not start at all | Launch the **NVIDIA RTX Remix for Minecraft** profile rather than a plain Minecraft one, and confirm the launcher is set to Java 25. |
 | A crash, a black screen, or wrong rendering with other mods installed | Remove the other mods and try again. Mods that change rendering or chunk loading are the likely conflict. If one mod turns out to be the cause, say which in your report. |
 
 If none of that helps, the log is the next thing to look at. It is at

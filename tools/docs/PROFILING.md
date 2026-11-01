@@ -9,7 +9,7 @@ or an AI assistant can drive the analysis from it; see
 
 - **Python 3.15 or newer**
 - **uv 0.13 or newer**, using the shared project's lockfile
-- **JDK 21** with the `jfr` CLI on `PATH` (or set `JAVA_HOME`)
+- **JDK 25** with the `jfr` CLI on `PATH` (or set `JAVA_HOME`)
 
 Profiler and benchmark tools share `tools/pyproject.toml`, `tools/uv.lock`,
 and the installed `rtx_tools` package in `tools/.venv/`. Dependencies are pinned
@@ -38,7 +38,7 @@ jfr --version      # should print JDK version
 Profile JSON, Tracy CSV, and Python helper JSON use UTF-8 with strict decoding.
 Invalid byte sequences are not replaced in structured inputs.
 `jfr print --json` also emits UTF-8, as specified by the
-[JDK 21 JSON printer](https://github.com/openjdk/jdk21u/blob/master/src/jdk.jfr/share/classes/jdk/jfr/internal/tool/Print.java).
+[JDK 25 JSON printer](https://github.com/openjdk/jdk25u/blob/master/src/jdk.jfr/share/classes/jdk/jfr/internal/tool/Print.java).
 Its stdout is decoded separately from diagnostic stderr. Human-readable
 `jfr summary` output and JFR error diagnostics use the system locale encoding.
 Replacement decoding is limited to these informational messages and capture logs.
@@ -267,7 +267,7 @@ uv run --project tools python -m rtx_tools.profiler.jfr_events profile.jfr --typ
 uv run --project tools python -m rtx_tools.profiler.jfr_events profile.jfr --type jdk.GCPhaseConcurrent --field "name=Concurrent Mark From Roots"
 ```
 
-On JDK 21 the phases include `Concurrent Mark From Roots` and
+On JDK 25 the phases include `Concurrent Mark From Roots` and
 `Concurrent Rebuild Remembered Sets and Scrub Regions`; `--field` matches the
 whole value. Each pause is a `jdk.GCPhasePause` event, named `GC Pause` for a
 young or mixed collection and `Pause Remark` or `Pause Cleanup` within a
@@ -309,7 +309,7 @@ GPU or architecture does not apply to a JFR-only run.
 paid at that API call rather than sky computation. Check surrounding
 `Interop.VKToGL`, `Interop.GLToVK`, `Remix.Present`, and
 `MinecraftClient.render.swapBuffers` spans; moving a sync point can relabel
-the same wait without removing it. `RenderSystemMixin` defines the current
+the same wait without removing it. `GlSurfaceMixin` defines the current
 swap/present redirection. Turning the sky off also removes its dome light and
 changes GPU lighting work, so it is not a CPU-only control.
 
@@ -346,9 +346,10 @@ The selected runtime's `dxvk_imgui.cpp` and `dxvk_memory_tracker.cpp` are the
 authorities for those counters and controls. Growth in the heap readout with
 flat tracked Remix resources suggests allocations outside that profiler;
 correlate it with GL work rather than declaring the owner from one graph.
-`DynamicBufferUpload` documents a known GL buffer-orphaning mechanism and the
-reuse policy that prevents it. Growth that scales with draw calls/frame rate,
-especially with the debug chart open, warrants checking that path again.
+On 1.21.1 a known GL buffer-orphaning mechanism behind such growth was
+avoided by a buffer reuse policy; 26.x uploads through its own renderpearl
+buffers, so growth that scales with draw calls or frame rate, especially with
+the debug chart open, now points at vanilla's upload path or the interop.
 
 Java RSS growth is a separate question. Use `jfr_gc --heap --rss` and a
 controlled `jcmd <pid> GC.run` outside measured runs to compare the live set

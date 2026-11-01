@@ -133,18 +133,18 @@ You can delete the file to start over.
 The registry is built after `initializeRemix()` because its getters and
 appliers bind to the live renderer managers. A renderer reinitialization path
 must rebuild those bindings. `RtxSettingsFactory` defines controls,
-`RtxOptionFactory` adapts them to vanilla `SimpleOption`, and
+`RtxOptionFactory` adapts them to vanilla `OptionInstance`, and
 `RtxSettingsCategoryScreen` commits pending values on close.
 
 ### Deferred Does Not Mean Apply On Release
 
 `RtxSetting.deferSliderApply()` makes
 `RtxOptionFactory.sliderApplyPolicy` return `applyValueImmediately() == false`.
-In Minecraft 1.21.1, `SimpleOption.OptionSliderWidgetImpl` then rearms
-`timeToApply = now + 600 ms` on each drag step and applies the pending value
-from `renderWidget` after that pause. `SliderWidget.onRelease` does not apply
-it. The category's `close()` also calls
-`OptionListWidget.applyAllPendingValues()`.
+In Minecraft 26.3, `OptionInstance.OptionInstanceSliderButton` then rearms
+`delayedApplyAt = now + 600 ms` on each drag step and applies the pending
+value from `extractWidgetRenderState` after that pause. `onRelease` does not
+apply it. The category's `close()` also calls
+`OptionsList.applyUnsavedChanges()`.
 
 An expensive applier can therefore run once per long pause during a drag, not
 only once at its end. `clouds.vanillaEdgeSmoothness` and `clouds.size` accept
@@ -155,7 +155,7 @@ changed; only then does `RtxRemixMod.rebuildTerrainForMaterialSettings()`
 recreate shared materials and recapture terrain. Keep this separate from the
 Block Lights transaction.
 
-Ordinary `SimpleOption` sliders apply live, but their change-consumer runs only
+Ordinary `OptionInstance` sliders apply live, but their change-consumer runs only
 when the value differs from the option's current value. Returning to a displayed
 default is still a real write when the old value differs. A runtime-backed
 Image & Exposure setting remains a User Settings opinion even after that reset;

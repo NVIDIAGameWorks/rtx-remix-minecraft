@@ -111,7 +111,7 @@ def benchmark_jvm_args(jfr_path: Path, tracy_java_max_depth: int) -> list[str]:
         "-Drtxremix.profile.javaPhases=true",
         f"-Drtxremix.profile.tracyJavaMaxDepth={tracy_java_max_depth}",
         "-XX:FlightRecorderOptions=stackdepth=256",
-        # maxsize=0 lifts JDK 21's 250 MB default disk cap so a long recording keeps its earliest frames.
+        # maxsize=0 lifts the JDK's 250 MB default disk cap so a long recording keeps its earliest frames.
         "-XX:StartFlightRecording=name=rtx-benchmark,settings=profile,disk=true,dumponexit=false,maxsize=0",
     ]
 

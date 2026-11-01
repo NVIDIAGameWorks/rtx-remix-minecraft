@@ -168,6 +168,33 @@ class ZonePersistentStateTest {
         assertEquals(List.of(zone), new ArrayList<>(loaded.snapshot()));
     }
 
+    @Test
+    void readsZonesFromThe121FileEnvelope(@TempDir Path tempDir) throws Exception {
+        ZoneDefinition zone = ZoneDefinition.parse(
+                "rtx zone define legacy --center 1 2 3 --inner 4 --outer 8", 0, 0, 0);
+        ZonePersistentState state = new ZonePersistentState();
+        state.put(zone);
+        // 1.21.1's PersistentState envelope: the state under "data", beside a DataVersion.
+        CompoundTag written = new CompoundTag();
+        written.put("data", state.toNbt());
+        written.putInt("DataVersion", 3955);
+        Path file = tempDir.resolve(ZonePersistentState.LEGACY_FILE);
+        NbtIo.writeCompressed(written, file);
+
+        ZonePersistentState loaded = ZonePersistentState.readLegacy(file);
+
+        assertEquals(List.of(zone), new ArrayList<>(loaded.snapshot()));
+    }
+
+    @Test
+    void aMissingOrUnreadableLegacyFileMigratesNothing(@TempDir Path tempDir) throws Exception {
+        Path file = tempDir.resolve(ZonePersistentState.LEGACY_FILE);
+        assertEquals(null, ZonePersistentState.readLegacy(file));
+
+        java.nio.file.Files.writeString(file, "not nbt");
+        assertEquals(null, ZonePersistentState.readLegacy(file));
+    }
+
     private static ZonePersistentState roundTrip(ZoneDefinition zone) {
         ZonePersistentState state = new ZonePersistentState();
         state.put(zone);

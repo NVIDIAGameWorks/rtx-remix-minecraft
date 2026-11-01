@@ -46,8 +46,6 @@ long a worker may wait.
 | `rtxremix.chunk.neighbourReflagFilter` | Drop vanilla's chunk-load and light-data neighbour rebuild flags when the neighbour's last build already saw the loading column. Set to false to restore those flags. Block updates and the loading column itself stay vanilla | `NeighbourReflagFilter` |
 | `rtxremix.light.vanillaSnapshot` | Set to true to make the client light engine clone its section map every pass as vanilla does. With false, while capture is on, the live map is published as the snapshot, which rests on nothing but the render thread reading client light | `ClientLightSnapshotPolicy` |
 | `rtxremix.light.vanillaSurfaceScan` | Set to true to start each column's sky-light surface walk at the top of the chunk as vanilla does. With false the walk is seeded at the packet's `WORLD_SURFACE` height, which skips the air-over-air pairs that were most of the render thread's chunk-apply cost; the remedy for a sender whose heightmaps do not match its blocks | `SkyLightSurfaceScanPolicy` |
-| `rtxremix.vanillaVisibilityWalk` | Set to true to leave the chunk visibility walk to vanilla with RTX on instead of the mod's allocation-free port, which must produce the same visible set | `ChunkRenderingDataPreparerMixin` |
-| `rtxremix.logVisibleSet` | Log the size and a position hash of every full visibility walk's result whenever it changes, to compare the port against vanilla over one camera | `ChunkRenderingDataPreparerMixin` |
 | `rtxremix.joinHold` | Keep vanilla's terrain-download screen up until frame times settle after a world join, with a short bounded hold, so the first-sight mesh, pipeline, and BLAS costs land behind the screen. Set to false to disable the hold | `JoinBurstHold` |
 
 `BlockDataQueue.acquireCapacity` is authoritative for waiting: a worker
@@ -60,7 +58,7 @@ thread's synchronous builds never wait because it is the sole consumer.
 
 The defaults bound worker captures to 512 items and 128 MiB. An evicted capture
 that still belongs to a resident section is re-flagged through
-`BuiltChunk.scheduleRebuild`, up to 128 per frame, and contributes to
+`LevelExtractor.setSectionDirty`, up to 128 per frame, and contributes to
 `Chunk.CaptureEvicted`. The queue and `ChunkManager` own these limits; consult
 their current constants when interpreting a capture.
 
@@ -213,7 +211,7 @@ game's heap. To add your own arguments, such as an
 ```json
 {
     "launch": {
-        "jvmArgs": ["-Drtxremix.vanillaVisibilityWalk=true", "-Drtxremix.logVisibleSet=true"]
+        "jvmArgs": ["-Drtxremix.light.vanillaSnapshot=true", "-Drtxremix.joinHold=false"]
     }
 }
 ```
@@ -237,7 +235,7 @@ instance gets Prism's global maximum, by default 4096 MiB on a machine with
 Path tracing does not remove Minecraft's allocation rate, it adds a render
 thread that must not be paused.
 
-These are the Minecraft 1.21.1 launcher defaults for supported Windows
+These are the Minecraft 26.3 launcher defaults for supported Windows
 arches: a 2 GB heap with G1GC. Measured on N1X, they showed none of the large
 frame-time spikes seen with generational ZGC. Reducing allocation volume stays
 necessary regardless of collector, since concurrent collector work competes with
@@ -276,7 +274,7 @@ directory for an installed client. Portable Prism keeps the former at
 | `camera-paths/<world-key>/` | you | Your recordings | Loses them, so keep this one |
 | `benchmark/` | benchmark harness | Trigger file, status heartbeat, results, and screenshots | Safe |
 | `saves/<world>/rtx-remix/confs/` | map author | Read when you join that world | Part of the map, not of the install |
-| `saves/<world>/data/rtx_remix_zones.dat` | mod, per save | Zone definitions for that world | Loses the zones defined in that world |
+| `saves/<world>/data/rtx-remix-renderer/zones.dat` | mod, per save | Zone definitions for that world; a 1.21.1 save's `data/rtx_remix_zones.dat` is copied into it on first load | Loses the zones defined in that world |
 | `logs/latest.log` | game | Where the mod reports what it did and why | Safe |
 
 ## Resource Pack Inputs

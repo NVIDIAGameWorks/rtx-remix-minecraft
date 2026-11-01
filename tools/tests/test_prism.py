@@ -735,14 +735,14 @@ def jdk_places(tmp_path, monkeypatch) -> dict[str, Path]:
     monkeypatch.setenv("GRADLE_USER_HOME", str(gradle_home))
     monkeypatch.setenv("ProgramFiles", str(program_files))
     return {
-        "gradle": gradle_home / "jdks" / "eclipse_adoptium-21-amd64-windows.2",
-        "adoptium": program_files / "Eclipse Adoptium" / "jdk-21.0.5.11-hotspot",
-        "microsoft": program_files / "Microsoft" / "jdk-21.0.5.11-hotspot",
-        "oracle": program_files / "Java" / "jdk-21",
+        "gradle": gradle_home / "jdks" / "eclipse_adoptium-25-amd64-windows.2",
+        "adoptium": program_files / "Eclipse Adoptium" / "jdk-25.0.1.8-hotspot",
+        "microsoft": program_files / "Microsoft" / "jdk-25.0.1.8-hotspot",
+        "oracle": program_files / "Java" / "jdk-25",
     }
 
 
-def test_find_game_jdk_uses_java_home_when_it_is_a_jdk_21_for_the_arch(tmp_path, jdk_places):
+def test_find_game_jdk_uses_java_home_when_it_is_a_game_jdk_for_the_arch(tmp_path, jdk_places):
     java_home = write_jdk(tmp_path / "home")
     write_jdk(jdk_places["gradle"])
     assert prism.find_game_jdk("win64", java_home) == java_home
@@ -751,11 +751,12 @@ def test_find_game_jdk_uses_java_home_when_it_is_a_jdk_21_for_the_arch(tmp_path,
 @pytest.mark.parametrize(
     ("version", "machine"),
     [
-        # Prism refuses any major but 21 for Minecraft 1.21.1, newer ones included.
+        # Prism refuses any major but 25 for Minecraft 26.3, older and newer ones alike.
         ("17.0.9", 0x8664),
-        ("25.0.1", 0x8664),
+        ("21.0.5", 0x8664),
+        ("26.0.1", 0x8664),
         # The bridge and runtime load only into a JVM of their own architecture.
-        ("21.0.5", 0xAA64),
+        ("25.0.1", 0xAA64),
     ],
 )
 def test_find_game_jdk_looks_past_a_java_home_prism_cannot_use(tmp_path, jdk_places, version, machine):
@@ -783,28 +784,28 @@ def test_find_game_jdk_skips_another_architecture_and_version(jdk_places):
 
 def test_find_game_jdk_reads_gradles_nested_toolchain_folders(jdk_places):
     # Some Gradle versions unpack the JDK's own top folder inside the toolchain folder.
-    nested = write_jdk(jdk_places["gradle"] / "jdk-21.0.5+11")
+    nested = write_jdk(jdk_places["gradle"] / "jdk-25.0.1+8")
     assert prism.find_game_jdk("win64", None) == nested
 
 
 def test_find_game_jdk_takes_gradles_default_home(tmp_path, jdk_places, monkeypatch):
     monkeypatch.delenv("GRADLE_USER_HOME")
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "me"))
-    found = write_jdk(tmp_path / "me" / ".gradle" / "jdks" / "jdk-21.0.5+11")
+    found = write_jdk(tmp_path / "me" / ".gradle" / "jdks" / "jdk-25.0.1+8")
     write_jdk(jdk_places["adoptium"])
     assert prism.find_game_jdk("win64", None) == found
 
 
 def test_find_game_jdk_takes_the_newest_in_a_folder(jdk_places):
     folder = jdk_places["adoptium"].parent
-    write_jdk(folder / "jdk-21.0.9.10-hotspot", version="21.0.9")
-    newest = write_jdk(folder / "jdk-21.0.10.7-hotspot", version="21.0.10")
-    write_jdk(folder / "jdk-21.0.2.13-hotspot", version="21.0.2")
+    write_jdk(folder / "jdk-25.0.9.10-hotspot", version="25.0.9")
+    newest = write_jdk(folder / "jdk-25.0.10.7-hotspot", version="25.0.10")
+    write_jdk(folder / "jdk-25.0.2.13-hotspot", version="25.0.2")
     assert prism.find_game_jdk("win64", None) == newest
 
 
-def test_find_game_jdk_reads_only_jdk_21_folders_under_program_files(jdk_places):
-    # A vendor folder holds other products; only its jdk-21 folders are JDK candidates.
+def test_find_game_jdk_reads_only_game_jdk_folders_under_program_files(jdk_places):
+    # A vendor folder holds other products; only its jdk-25 folders are JDK candidates.
     write_jdk(jdk_places["microsoft"].parent / "Edge" / "Application")
     write_jdk(jdk_places["microsoft"].parent / "Edge")
     assert prism.find_game_jdk("win64", None) is None
@@ -893,3 +894,8 @@ def test_supports_launch_flags_blocks_when_prism_cannot_run(tmp_path):
     missing = tmp_path / "missing.exe"
     with pytest.raises(client.LaunchBlocked, match=re.escape(f"Prism at {missing} did not answer --help")):
         prism.supports_launch_flags(missing)
+
+
+def test_game_java_major_matches_the_installer():
+    # The installer pins the managed JDK and the Prism instance to the same major the developer tools require.
+    assert int(prism.installer_constant("GAME_JAVA_MAJOR")) == prism.GAME_JAVA_MAJOR

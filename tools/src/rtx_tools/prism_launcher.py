@@ -432,7 +432,7 @@ class PrismLauncher:
 
     def _java(self, arch: str) -> Path:
         """javaw.exe of a JDK Prism accepts for the pinned Minecraft and the game's native libraries load into: the
-        detected JDK when it is a JDK 21 for `arch`, else one installed where JDKs usually are."""
+        detected JDK when it is a JDK of the game's Java major for `arch`, else one installed where JDKs usually are."""
         detected = runner.detect_java_home()
         home = prism.find_game_jdk(arch, detected)
         if home is None:

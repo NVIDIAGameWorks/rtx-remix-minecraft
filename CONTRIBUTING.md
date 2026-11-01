@@ -68,7 +68,7 @@ the change never reaches the scene.
 
 **A mixin that cancels vanilla work inherits its side effects.** Preserve the
 net GL, fog, lightmap and framebuffer state the caller expects, not only the
-entry calls. Never cancel `WorldRenderer.render()` itself: that traversal
+entry calls. Never cancel `LevelRenderer.render()` itself: that traversal
 hosts Remix's frame. See [Cancelling Vanilla Render Work](#cancelling-vanilla-render-work).
 
 **Only mixins live in the mixin package.** Mixin reserves that package, and a
@@ -211,7 +211,7 @@ permanent contracts.
 Cancel only draws that Remix replaces, such as terrain layers, particles and
 clouds. Do not bypass the outer vanilla traversal: camera, frustum, matrices,
 framebuffers, tick delta, in-place entity capture, section scheduling, and
-`WorldRenderEvents` all come from it. Judge a cancellation by its injection
+`LevelRenderEvents` all come from it. Judge a cancellation by its injection
 and state correctness, not only a frame-time delta. A GPU-bound run can hide a
 real render-thread saving.
 
@@ -329,7 +329,7 @@ local runtime. Keep the shipped `packaging/rtx.conf` matched to the runtime too.
 while a client from the checkout is still running.
 
 F1 hides the first-person hand as well as the HUD. Vanilla skips
-`HeldItemRenderer.renderItem` when the HUD is hidden, and Remix captures from
+`FirstPersonHandsAndItemsRenderer.submitHandsWithItems` when the HUD is hidden, and Remix captures from
 that call. Do not use F1 for a hand or held-item comparison. To avoid chat text,
 wait eleven seconds after the last command, beyond its ten-second fade.
 

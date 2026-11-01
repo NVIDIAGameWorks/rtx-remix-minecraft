@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
 
-from .. import client
+from .. import client, prism
 from .. import config as tools_config
 from .. import sdk as runtime_sdk
 from . import catalog, gitmeta, gpu_telemetry, machine, tracy, util
@@ -202,7 +202,7 @@ def verify_jvm_matches_arch(arch: str) -> None:
     raise RuntimeError(
         f"benchmark arch {arch} does not match the JVM architecture {jvm_raw} "
         f"reported by {java_executable()}; the native SDK and JNI bridge must "
-        "match the JVM. On ARM64 runners install Microsoft Build of OpenJDK 21 "
+        f"match the JVM. On ARM64 runners install Microsoft Build of OpenJDK {prism.GAME_JAVA_MAJOR} "
         "(ARM64) and remove any x64 Adoptium JDK or stale JAVA_HOME; see "
         "tools/docs/BENCHMARKING.md."
     )
@@ -2064,7 +2064,7 @@ def doctor_report(
     if java_home:
         add("ok", "java", f"JAVA_HOME={java_home}", javaArch=java_arch or "", processArch=process_arch or "")
     else:
-        add("error", "java", "Could not find a Java 21-style JDK with include/jni.h.")
+        add("error", "java", f"Could not find a JDK {prism.GAME_JAVA_MAJOR} with include/jni.h.")
 
     launcher_description = "Client launcher"
     try:

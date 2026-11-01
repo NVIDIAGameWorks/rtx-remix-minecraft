@@ -1,4 +1,8 @@
-accessWidener	v2	official
+accessWidener v2 official
+
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 accessible	class	net/minecraft/client/OptionInstance$SliderableValueSet
 accessible	class	net/minecraft/client/model/geom/ModelPart$Polygon
 accessible	class	net/minecraft/client/model/geom/ModelPart$Vertex

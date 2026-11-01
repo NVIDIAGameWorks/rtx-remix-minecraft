@@ -20,6 +20,12 @@ also part of every mod file name.
   forwarded from the GPU-side animation tick.
 - The Copper Beacon lens textures are 48 pixels square, the same six texels
   drawn 8 by 8, so they no longer cap the block atlas at one mip level.
+- The installer sets up Minecraft 26.3 with Fabric Loader 0.20.1 and Fabric
+  API 0.165.0+26.3, and installs JDK 25 when it needs one: Adoptium Temurin on
+  x64, the Microsoft Build of OpenJDK on ARM64. Upgrading moves a Prism
+  instance an earlier release set up for 1.21.1 to these versions.
+- The developer tools launch the game on a JDK 25, the only Java Prism accepts
+  for Minecraft 26.3.
 
 ### Added
 
@@ -35,6 +41,11 @@ also part of every mod file name.
 - Distant blocks no longer pick up dark outlines and colour from their atlas
   neighbours: every atlas the mod copies fills the padding vanilla 26.x leaves
   around each sprite.
+- Zones saved with `/rtx zone define` in a 1.21.1 world carry over: the first
+  load in 26.3 copies them from `data/rtx_remix_zones.dat` into the new
+  `data/rtx-remix-renderer/zones.dat`.
+- The diagnostic tools find the game window of any Minecraft version, not only
+  a 1.x one.
 
 ## 0.1.0 - 2026-10-23
 

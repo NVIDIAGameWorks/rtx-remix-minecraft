@@ -7,15 +7,21 @@ package com.nvidia.rtxremix.minecraft.logic;
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NumericTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -29,15 +35,20 @@ import java.util.Objects;
  * integrated single-player server. The renderer consumes a copied projection
  * in {@link ZoneRegistry}; it never reads this server-thread state directly.
  *
- * <p>The state is attached to the overworld's persistent-state manager so all
+ * <p>The state lives in the server's save-wide data storage, so all
  * definitions live in one {@code data/rtx-remix-renderer/zones.dat} file, and a
- * zone is global to the save rather than scoped to a dimension. Saves written by
- * the 1.21.1 build used {@code data/rtx_remix_zones.dat}, which 26.x no longer
- * reads; re-define such zones or move the file.</p>
+ * zone is global to the save rather than scoped to a dimension.</p>
+ *
+ * <p>The 1.21.1 build kept them in {@code data/rtx_remix_zones.dat}, a name
+ * Minecraft's own world upgrade does not know and leaves in place. The first
+ * lookup in a world without the current file copies that file's zones into
+ * it; the legacy file is left untouched, so an older build still reads it.</p>
  */
 public final class ZonePersistentState extends SavedData {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZonePersistentState.class);
     private static final int SCHEMA_VERSION = 1;
+    /** The 1.21.1 build's file, relative to the world's {@code data} folder. */
+    static final String LEGACY_FILE = "rtx_remix_zones.dat";
 
     private static final String VERSION_KEY = "version";
     private static final String ZONES_KEY = "zones";
@@ -74,7 +85,8 @@ public final class ZonePersistentState extends SavedData {
      * object it does not need.</p>
      */
     public static ZonePersistentState getOrCreate(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(TYPE);
+        ZonePersistentState state = getIfPresent(server);
+        return state != null ? state : server.getDataStorage().computeIfAbsent(TYPE);
     }
 
     /**
@@ -89,7 +101,38 @@ public final class ZonePersistentState extends SavedData {
      * depends on that behavior staying as it is.</p>
      */
     public static ZonePersistentState getIfPresent(MinecraftServer server) {
-        return server.overworld().getDataStorage().get(TYPE);
+        ZonePersistentState state = server.getDataStorage().get(TYPE);
+        if (state != null) {
+            return state;
+        }
+        ZonePersistentState legacy = readLegacy(server.getWorldPath(LevelResource.DATA).resolve(LEGACY_FILE));
+        if (legacy == null) {
+            return null;
+        }
+        // Copied into a fresh state, which saves under the current name with the world.
+        ZonePersistentState migrated = server.getDataStorage().computeIfAbsent(TYPE);
+        for (ZoneDefinition zone : legacy.snapshot()) {
+            migrated.put(zone);
+        }
+        LOGGER.info("Migrated {} RTX Remix zone(s) from the 1.21.1 file {}", legacy.zonesByName.size(), LEGACY_FILE);
+        return migrated;
+    }
+
+    /**
+     * The zones in a file the 1.21.1 build wrote, or null when there is no such file or it cannot be read. That
+     * build saved the same schema inside the {@code data} envelope every persistent state used.
+     */
+    static ZonePersistentState readLegacy(Path file) {
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        try {
+            CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
+            return fromNbt(root.getCompoundOrEmpty("data"));
+        } catch (IOException | RuntimeException e) {
+            LOGGER.warn("Could not read the 1.21.1 RTX Remix zone file {}: {}", file, e.getMessage());
+            return null;
+        }
     }
 
     /** Immutable, name-sorted copy safe to publish to the client/render registry. */
