@@ -25,3 +25,31 @@ jobs:
       # The pinned runtime comes from public Packman; no credentials are used.
       - name: Build and test
         run: '& "$env:GITHUB_WORKSPACE\gradlew.bat" build test'
+
+  legacy-interop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "8"
+      - name: Compile and test legacy OpenGL bridge
+        shell: powershell
+        run: '& "$env:GITHUB_WORKSPACE\forge-1.12.2\scripts\build-bridge.ps1" -JdkPath $env:JAVA_HOME'
+
+  forge:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "8"
+      - name: Build and test Forge 1.12.2
+        working-directory: forge-1.12.2
+        run: '.\gradlew.bat build test diagnosticJar'

@@ -169,3 +169,8 @@ MICROSOFT. Minecraft is a trademark of Mojang Synergies AB.
 
 NVIDIA, GeForce, and RTX are trademarks and/or registered trademarks of NVIDIA
 Corporation in the U.S. and other countries.
+
+## Experimental Forge 1.12.2
+
+The [Forge module](forge-1.12.2/README.md) provides a separate Windows x64 build.
+Its guide describes the implemented rendering features and current limitations.
