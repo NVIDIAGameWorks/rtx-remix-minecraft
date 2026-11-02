@@ -9,6 +9,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.world.chunk.ChunkNibbleArray;
+import net.minecraft.world.chunk.light.SkyLightStorage;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -16,8 +17,10 @@ import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServerLightSnapshotTest {
 
@@ -39,6 +42,7 @@ class ServerLightSnapshotTest {
         List<Long2IntOpenHashMap> columnClones = new ArrayList<>();
 
         for (int pass = 0; pass < 400; pass++) {
+            liveColumns.defaultReturnValue(MIN_SECTION - pass / 7);
             // Enough passes of every size that layers merge many times and the base rebuilds.
             int operations = pass < 20 ? 60 : 1 + random.nextInt(12);
             for (int i = 0; i < operations; i++) {
@@ -72,6 +76,7 @@ class ServerLightSnapshotTest {
             Long2IntOpenHashMap expectedColumns = columnClones.get(i);
             assertEquals(expected.size(), view.size(), "size of publish " + i);
             assertEquals(expectedColumns.size(), columns.size(), "column count of publish " + i);
+            assertEquals(expectedColumns.defaultReturnValue(), columns.defaultReturnValue(), "minimum section of publish " + i);
             for (int x = 0; x < COLUMNS; x++) {
                 for (int z = 0; z < COLUMNS; z++) {
                     long column = ChunkSectionPos.asLong(x, 0, z);
@@ -85,6 +90,70 @@ class ServerLightSnapshotTest {
                 }
             }
         }
+    }
+
+    @Test
+    void lowerSectionCanChangeTheMinimumWithoutMutatingPublishedData() {
+        ServerLightSnapshot snapshot = new ServerLightSnapshot();
+        Long2ObjectOpenHashMap<ChunkNibbleArray> live = new Long2ObjectOpenHashMap<>();
+        Long2IntOpenHashMap columns = new Long2IntOpenHashMap();
+        SkyLightStorage.Data engine = new SkyLightStorage.Data(live, columns, 6);
+        long highSection = ChunkSectionPos.asLong(0, 6, 0);
+        long column = ChunkSectionPos.withZeroY(highSection);
+        long missing = ChunkSectionPos.asLong(1, 0, 1);
+        live.put(highSection, new ChunkNibbleArray(new byte[2048]));
+        columns.put(column, 7);
+        ServerLightSnapshot.Published high = snapshot.publish(live, columns, LongOpenHashSet.of(highSection));
+        SkyLightStorage.Data earlier = new SkyLightStorage.Data(high.sections(), high.columns(), engine.minSectionY);
+
+        long lowerSection = ChunkSectionPos.asLong(0, -5, 0);
+        live.put(lowerSection, new ChunkNibbleArray(new byte[2048]));
+        // SkyLightStorage.onLoadSection updates both before notifyChanges publishes.
+        engine.minSectionY = -5;
+        columns.defaultReturnValue(engine.minSectionY);
+        ServerLightSnapshot.Published lower = snapshot.publish(live, columns, LongOpenHashSet.of(lowerSection));
+        SkyLightStorage.Data published = new SkyLightStorage.Data(lower.sections(), lower.columns(), engine.minSectionY);
+        SkyLightStorage.Data vanilla = engine.copy();
+
+        assertEquals(vanilla.minSectionY, published.minSectionY);
+        assertEquals(vanilla.columnToTopSection.get(column), published.columnToTopSection.get(column));
+        assertEquals(vanilla.columnToTopSection.get(missing), published.columnToTopSection.get(missing));
+        assertEquals(6, earlier.columnToTopSection.get(missing));
+        assertEquals(6, earlier.columnToTopSection.defaultReturnValue());
+    }
+
+    @Test
+    void changedMinimumAppliesToMissingAndRemovedColumnsButNotStoredHeights() {
+        ServerLightSnapshot snapshot = new ServerLightSnapshot();
+        Long2ObjectOpenHashMap<ChunkNibbleArray> live = new Long2ObjectOpenHashMap<>();
+        Long2IntOpenHashMap columns = new Long2IntOpenHashMap();
+        columns.defaultReturnValue(6);
+        long keptSection = ChunkSectionPos.asLong(0, 5, 0);
+        long removedSection = ChunkSectionPos.asLong(1, 6, 0);
+        long keptColumn = ChunkSectionPos.withZeroY(keptSection);
+        long removedColumn = ChunkSectionPos.withZeroY(removedSection);
+        long missing = ChunkSectionPos.asLong(2, 0, 0);
+        live.put(keptSection, new ChunkNibbleArray(new byte[2048]));
+        live.put(removedSection, new ChunkNibbleArray(new byte[2048]));
+        columns.put(keptColumn, 6);
+        columns.put(removedColumn, 7);
+        ServerLightSnapshot.Published earlier = snapshot.publish(live, columns,
+                LongOpenHashSet.of(keptSection, removedSection));
+
+        live.remove(removedSection);
+        columns.remove(removedColumn);
+        columns.defaultReturnValue(-5);
+        ServerLightSnapshot.Published later = snapshot.publish(live, columns, LongOpenHashSet.of(removedSection));
+
+        assertEquals(6, later.columns().get(keptColumn));
+        assertTrue(later.columns().containsKey(keptColumn));
+        assertEquals(-5, later.columns().get(removedColumn));
+        assertFalse(later.columns().containsKey(removedColumn));
+        assertEquals(-5, later.columns().get(missing));
+        later.columns().defaultReturnValue(-5);
+        assertThrows(UnsupportedOperationException.class, () -> later.columns().defaultReturnValue(6));
+        assertEquals(6, earlier.columns().get(missing));
+        assertEquals(7, earlier.columns().get(removedColumn));
     }
 
     @Test
