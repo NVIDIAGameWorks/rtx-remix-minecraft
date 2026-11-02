@@ -36,9 +36,10 @@ import java.util.List;
  * animations, maps, and item-specific transforms. The captured model is
  * attached to the camera in world space and submitted through Remix's
  * view-model camera for scene isolation. The hand-to-world FOV adjustment and
- * camera-relative view-model scale are folded into the captured rigid-part
- * transforms so Remix's view-model correction can remain an identity transform
- * and preserve precise motion history.
+ * camera-relative view-model scale are folded into the capture's root transform,
+ * covering both rigid parts and vertices already posed by vanilla consumer wrappers.
+ * Remix's view-model correction can remain an identity transform and preserve
+ * precise motion history.
  */
 public final class RemixFirstPersonPass implements AutoCloseable {
 
@@ -48,7 +49,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
 
     /**
      * Camera-relative scale used to pull first-person geometry in front of
-     * nearby world surfaces. This is baked into captured pivots instead of
+     * nearby world surfaces. This is baked into the capture root instead of
      * {@code rtx.viewModel.scale}, keeping Remix's current/previous perspective
      * correction at identity for stable motion vectors.
      */
@@ -56,10 +57,10 @@ public final class RemixFirstPersonPass implements AutoCloseable {
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final CapturingImmediate immediate = new CapturingImmediate(provider);
-    private final Transform cameraToWorld = new Transform();
+    private final Transform captureToWorld = new Transform();
     private final Transform heldLightTransform = new Transform();
-    private final Matrix4f correctedBone = new Matrix4f();
     private final Matrix4f viewCorrection = new Matrix4f();
+    private final float[] viewCorrectionData = new float[12];
     private final Matrix4f inverseModelView = new Matrix4f();
     private final Vector3f eye = new Vector3f();
 
@@ -110,8 +111,9 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             setViewCorrection(viewCorrection, modelView, fovScale);
 
             int boneCount = context.getBoneCount();
-            reusableBoneData = snapshotCorrectedBones(context, boneCount, reusableBoneData);
-            setCameraToWorld(camera, cameraToWorld);
+            reusableBoneData = context.snapshotBoneTransforms(reusableBoneData);
+            setCameraToWorld(camera, captureToWorld);
+            applyViewCorrection(captureToWorld, viewCorrection, viewCorrectionData);
             pendingMainHandLightPosition = findHeldBlockLightPosition(
                     layers, context, reusableBoneData, boneCount, Hand.MAIN_HAND);
             pendingOffHandLightPosition = findHeldBlockLightPosition(
@@ -161,7 +163,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         if (result == null) {
             return;
         }
-        submitter.submitEntity(result, cameraToWorld, InstanceCategoryBit.VIEW_MODEL,
+        submitter.submitEntity(result, captureToWorld, InstanceCategoryBit.VIEW_MODEL,
                 RemixEntitySubmitter.NO_EXTRA_CATEGORIES);
     }
 
@@ -214,7 +216,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             minZ = Math.min(minZ, pz[i]); maxZ = Math.max(maxZ, pz[i]);
         }
 
-        RemixEntitySubmitter.composeRigidTransform(cameraToWorld, transformData,
+        RemixEntitySubmitter.composeRigidTransform(captureToWorld, transformData,
                 transformCount, bestTransform, heldLightTransform);
         return transformPoint(heldLightTransform,
                 (minX + maxX) * 0.5f,
@@ -230,33 +232,18 @@ public final class RemixFirstPersonPass implements AutoCloseable {
                 m[8] * x + m[9] * y + m[10] * z + m[11]);
     }
 
-    private float[] snapshotCorrectedBones(EntityRenderContext context,
-                                           int boneCount,
-                                           float[] reuse) {
-        if (boneCount == 0) {
-            return EMPTY_BONES;
+    /**
+     * Corrects the common capture space, including vertices that have no rigid pivot.
+     * Vanilla's glint union poses its quads before forwarding them, so those vertices
+     * carry no bone for a per-bone correction to reach.
+     */
+    static void applyViewCorrection(Transform captureToWorld, Matrix4f correction, float[] scratch) {
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 4; col++) {
+                scratch[row * 4 + col] = correction.get(col, row);
+            }
         }
-
-        int required = boneCount * 12;
-        float[] data = reuse.length >= required ? reuse : new float[required];
-        List<Matrix4f> bones = context.getBoneTransforms();
-        for (int i = 0; i < boneCount; i++) {
-            viewCorrection.mul(bones.get(i), correctedBone);
-            int off = i * 12;
-            data[off] = correctedBone.m00();
-            data[off + 1] = correctedBone.m10();
-            data[off + 2] = correctedBone.m20();
-            data[off + 3] = correctedBone.m30();
-            data[off + 4] = correctedBone.m01();
-            data[off + 5] = correctedBone.m11();
-            data[off + 6] = correctedBone.m21();
-            data[off + 7] = correctedBone.m31();
-            data[off + 8] = correctedBone.m02();
-            data[off + 9] = correctedBone.m12();
-            data[off + 10] = correctedBone.m22();
-            data[off + 11] = correctedBone.m32();
-        }
-        return data;
+        RemixEntitySubmitter.composeRigidTransform(captureToWorld, scratch, 1, 0, captureToWorld);
     }
 
     private static float calculateFovScale(MinecraftClient client, Camera camera, float tickDelta) {
