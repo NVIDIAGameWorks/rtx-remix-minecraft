@@ -23,7 +23,7 @@ import java.util.WeakHashMap;
  * identity is read. Its {@link RenderPhase} state, reached through the access
  * widener, gives the texture the layer is submitted under, if any, the
  * {@link SurfaceMode} Remix shades with, and whether the geometry is streamed
-     * afresh every frame; its draw mode gives the {@link Topology} and whether an
+ * afresh every frame; its draw mode gives the {@link Topology} and whether an
  * untextured layer carries geometry worth submitting at all.
  */
 final class RenderLayerUtils {
@@ -34,13 +34,19 @@ final class RenderLayerUtils {
         CUTOUT,
         TRANSLUCENT,
         EMISSIVE,
+        /** Color-additive enchantment overlay: its texture alpha is not coverage. */
+        GLINT,
         /**
          * Clear glass on the block atlas: blended, through the refracting material
          * terrain gives placed clear glass. No render phase encodes it, since vanilla
          * draws clear glass as a cutout; {@code RemixEntitySubmitter.atlasSurfaceMode}
          * assigns it to geometry from a clear-glass block item.
          */
-        GLASS
+        GLASS;
+
+        boolean emitsAlbedo() {
+            return this == EMISSIVE || this == GLINT;
+        }
     }
 
     /** How a layer's captured vertex stream turns into Remix triangles. */
@@ -189,6 +195,7 @@ final class RenderLayerUtils {
         }
 
         RenderLayer.MultiPhaseParameters phases = multiPhase.getPhases();
+        if (phases.transparency == RenderPhase.GLINT_TRANSPARENCY) return SurfaceMode.GLINT;
         return classifySurfaceMode(
                 phases.program == RenderPhase.EYES_PROGRAM
                         || phases.program == RenderPhase.ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM,

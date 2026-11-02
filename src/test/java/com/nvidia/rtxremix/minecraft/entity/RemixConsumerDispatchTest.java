@@ -124,7 +124,11 @@ class RemixConsumerDispatchTest {
                 RenderLayer.getArmorEntityGlint(), RenderLayer.getDirectEntityGlint(), RenderLayer.getGlintTranslucent());
         ModelPart.Cuboid cuboid = cuboid();
         MatrixStack matrices = new MatrixStack();
-        for (RenderLayer glint : glints) cuboid.renderCuboid(matrices.peek(), provider.getBuffer(glint), 0, OverlayTexture.DEFAULT_UV, -1);
+        for (RenderLayer glint : glints) {
+            assertEquals(RenderLayerUtils.SurfaceMode.GLINT, RenderLayerUtils.surfaceMode(glint),
+                    "an enchantment overlay must not become an opaque cutout shell");
+            cuboid.renderCuboid(matrices.peek(), provider.getBuffer(glint), 0, OverlayTexture.DEFAULT_UV, -1);
+        }
         cuboid.renderCuboid(matrices.peek(), provider.getBuffer(RenderLayer.getEntityCutout(BlockTextureManager.BLOCK_ATLAS_ID)),
                 0, OverlayTexture.DEFAULT_UV, -1);
         var layers = provider.endEntity();

@@ -930,7 +930,8 @@ public class RemixEntitySubmitter {
     static RenderLayerUtils.SurfaceMode atlasSurfaceMode(Identifier texId,
                                                          RenderLayerUtils.SurfaceMode surfaceMode,
                                                          int blockItemLayer) {
-        if (!BlockTextureManager.BLOCK_ATLAS_ID.equals(texId)) {
+        if (!BlockTextureManager.BLOCK_ATLAS_ID.equals(texId)
+                || surfaceMode == RenderLayerUtils.SurfaceMode.GLINT) {
             return surfaceMode;
         }
         if (blockItemLayer == BlockTextureManager.L_GLASS) {
@@ -1537,7 +1538,8 @@ public class RemixEntitySubmitter {
                                      boolean cuboid,
                                      int tintColor,
                                      PatternCanvasRole role) {
-        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {
+        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)
+                && surfaceMode != RenderLayerUtils.SurfaceMode.GLINT) {
             return surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT
                     || surfaceMode == RenderLayerUtils.SurfaceMode.GLASS
                     ? BlockTextureManager.ATLAS_TRANSLUCENT_BLEND
@@ -2093,8 +2095,9 @@ public class RemixEntitySubmitter {
         if (cached != null) materialCache.remove(materialKey);
         Identifier textureId = materialKey.textureId();
 
-        // Item entities borrow the block atlas and its already-built LabPBR materials.
-        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)) {
+        // Ordinary item surfaces borrow terrain's atlas materials; glint owns its additive blend.
+        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)
+                && materialKey.surfaceMode() != RenderLayerUtils.SurfaceMode.GLINT) {
             BlockTextureManager btm = BlockTextureManager.get();
             if (btm == null || !btm.isInitialized()) return;
             // A held translucent or clear-glass block gets the same atlas material
@@ -2588,28 +2591,35 @@ public class RemixEntitySubmitter {
         }
     }
 
-    private RemixMaterial createMaterial(EntityMaterialKey key, EntityTextureSet textures) {
-        MaterialInfoOpaqueEXT.Builder opaque = MaterialInfoOpaqueEXT.builder()
-                .albedoConstant(1f, 1f, 1f)
-                .roughnessConstant(textures.roughness != null ? 1f : 0.7f)
-                .metallicConstant(textures.metallic != null ? 1f : 0f);
-
-        switch (key.surfaceMode()) {
+    /** Material-owned coverage and blending, independent of the mesh's texture-stage tint. */
+    static MaterialInfoOpaqueEXT.Builder materialSurfaceState(Identifier textureId, RenderLayerUtils.SurfaceMode mode) {
+        MaterialInfoOpaqueEXT.Builder opaque = MaterialInfoOpaqueEXT.builder();
+        switch (mode) {
             case OPAQUE -> { }
             case CUTOUT -> opaque.alphaTestType(4)
-                    .alphaReferenceValue(cutoutAlphaReferenceValue(key.textureId()));
+                    .alphaReferenceValue(cutoutAlphaReferenceValue(textureId));
             case TRANSLUCENT -> opaque.blendEnabled(true)
                     .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA);
             case EMISSIVE -> opaque.blendEnabled(true)
                     .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA_EMISSIVE);
+            case GLINT -> opaque.blendEnabled(true)
+                    .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_COLOR_EMISSIVE);
         }
+        return opaque;
+    }
+
+    private RemixMaterial createMaterial(EntityMaterialKey key, EntityTextureSet textures) {
+        MaterialInfoOpaqueEXT.Builder opaque = materialSurfaceState(key.textureId(), key.surfaceMode())
+                .albedoConstant(1f, 1f, 1f)
+                .roughnessConstant(textures.roughness != null ? 1f : 0.7f)
+                .metallicConstant(textures.metallic != null ? 1f : 0f);
         if (MAP_DECORATIONS_ATLAS_TEXTURE.equals(key.textureId())
                 && key.surfaceMode() == RenderLayerUtils.SurfaceMode.CUTOUT) {
             // Remix recognizes decal categories only for blend-enabled materials. The
             // half-coverage alpha test above still rejects the empty atlas texels.
             opaque.blendEnabled(true).blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA);
         }
-        if (needsVertexColorBlend(key.textureId())) {
+        if (needsVertexColorBlend(key.textureId()) && key.surfaceMode() != RenderLayerUtils.SurfaceMode.GLINT) {
             // Banner bases and pattern decals share one atlas material.
             // It's the instance info that determines which surfaces are opaque and which blend, not the material itself.
             opaque.useDrawCallAlphaState(true);
@@ -2629,7 +2639,7 @@ public class RemixEntitySubmitter {
         MaterialInfo.Builder materialBuilder = MaterialInfo.builder()
                 .albedoTexture(textures.albedo.getHandle()).filterMode(0);
         if (textures.normal != null) materialBuilder.normalTexture(textures.normal.getHandle());
-        RemixTexture emissive = key.surfaceMode() == RenderLayerUtils.SurfaceMode.EMISSIVE
+        RemixTexture emissive = key.surfaceMode().emitsAlbedo()
                 ? textures.albedo : textures.emissive;
         if (emissive != null) {
             materialBuilder.emissiveTexture(emissive.getHandle())
@@ -2653,7 +2663,7 @@ public class RemixEntitySubmitter {
                                           RenderLayerUtils.SurfaceMode surfaceMode) {
         return hasSssMask
                 && surfaceMode != RenderLayerUtils.SurfaceMode.TRANSLUCENT
-                && surfaceMode != RenderLayerUtils.SurfaceMode.EMISSIVE;
+                && !surfaceMode.emitsAlbedo();
     }
 
     static boolean shouldUseDiffusionProfile(RenderLayerUtils.SurfaceMode surfaceMode) {
