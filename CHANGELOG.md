@@ -15,6 +15,10 @@ also part of every mod file name.
 
 - Blocks that a mod draws through Fabric's renderer API keep their colour tint
   with path tracing on, such as the runes on Twilight Forest's castle doors.
+- The installer runs on PCs that give every program administrator rights, such
+  as with User Account Control turned off or in the built-in Administrator
+  account. It still refuses administrator rights as an account other than the
+  one signed in, whose folders it would otherwise install into.
 
 ## 0.1.0 - 2026-10-23
 

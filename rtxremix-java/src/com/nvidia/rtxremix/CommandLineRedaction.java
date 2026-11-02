@@ -23,10 +23,31 @@ final class CommandLineRedaction {
     static final char BLANK = '*';
 
     /** The blanked command line, and how many option values it blanked. */
-    record Result(String commandLine, int blankedValues) {}
+    static final class Result {
+        private final String commandLine;
+        private final int blankedValues;
+
+        Result(String commandLine, int blankedValues) {
+            this.commandLine = commandLine;
+            this.blankedValues = blankedValues;
+        }
+
+        String commandLine() { return commandLine; }
+        int blankedValues() { return blankedValues; }
+    }
 
     /** One argument: its text after unquoting, and its span in the raw command line. */
-    private record Argument(String text, int start, int end) {}
+    private static final class Argument {
+        private final String text;
+        private final int start;
+        private final int end;
+
+        Argument(String text, int start, int end) {
+            this.text = text;
+            this.start = start;
+            this.end = end;
+        }
+    }
 
     private CommandLineRedaction() {}
 
@@ -44,18 +65,18 @@ final class CommandLineRedaction {
         int blankedValues = 0;
         for (int i = 1; i < arguments.size(); i++) {
             Argument argument = arguments.get(i);
-            if (options.contains(argument.text())) {
+            if (options.contains(argument.text)) {
                 if (i + 1 < arguments.size()) {
                     Argument value = arguments.get(i + 1);
-                    blank(chars, value.start(), value.end());
+                    blank(chars, value.start, value.end);
                     blankedValues++;
                 }
                 continue;
             }
-            int separator = argument.text().indexOf('=');
-            if (separator > 0 && options.contains(argument.text().substring(0, separator))) {
+            int separator = argument.text.indexOf('=');
+            if (separator > 0 && options.contains(argument.text.substring(0, separator))) {
                 // Option names hold no quotes, so the first raw '=' is the separator.
-                blank(chars, commandLine.indexOf('=', argument.start()) + 1, argument.end());
+                blank(chars, commandLine.indexOf('=', argument.start) + 1, argument.end);
                 blankedValues++;
             }
         }
@@ -115,7 +136,9 @@ final class CommandLineRedaction {
                     }
                     backslashes /= 2;
                 }
-                text.repeat('\\', backslashes);
+                for (int i = 0; i < backslashes; i++) {
+                    text.append('\\');
+                }
                 if (pos == length || (!inQuotes && isBlank(line.charAt(pos)))) {
                     break;
                 }

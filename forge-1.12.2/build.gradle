@@ -1,0 +1,63 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net/' }
+        mavenCentral()
+    }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:3.0.197' }
+}
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'java'
+
+group = 'com.nvidia.rtxremix.forge'
+version = '0.1.0'
+archivesBaseName = 'rtx-remix-forge'
+sourceCompatibility = targetCompatibility = '1.8'
+
+repositories { mavenCentral() }
+minecraft { mappings channel: 'stable', version: '39-1.12' }
+
+configurations { bundled }
+configurations.implementation.extendsFrom(configurations.bundled)
+sourceSets {
+    main.java.srcDirs += ['bridge/src/main/java', '../rtxremix-java/src']
+    diagnostic {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2860'
+    bundled 'org.joml:joml:1.10.5'
+    testImplementation 'junit:junit:4.13.2'
+}
+tasks.withType(JavaCompile) { options.encoding = 'UTF-8' }
+jar {
+    manifest {
+        attributes(
+            'FMLCorePlugin': 'com.nvidia.rtxremix.forge.core.RemixCorePlugin',
+            'FMLCorePluginContainsFMLMod': 'true',
+            'Implementation-Title': 'Experimental RTX Remix for Forge 1.12.2',
+            'Implementation-Version': project.version
+        )
+    }
+    from({ configurations.bundled.collect { zipTree(it) } }) {
+        exclude 'META-INF/MANIFEST.MF', 'module-info.class', 'META-INF/versions/**'
+        eachFile { if (it.path == 'META-INF/LICENSE') it.path = 'META-INF/licenses/JOML-LICENSE.txt' }
+    }
+    from('../LICENSE')
+    from('../NOTICE')
+}
+jar.finalizedBy('reobfJar')
+
+task diagnosticJar(type: Jar) {
+    dependsOn diagnosticClasses
+    classifier = 'diagnostic'
+    from sourceSets.diagnostic.output
+}
+reobf { diagnosticJar {} }
+diagnosticJar.finalizedBy('reobfDiagnosticJar')
+
+apply from: 'packaging.gradle'
