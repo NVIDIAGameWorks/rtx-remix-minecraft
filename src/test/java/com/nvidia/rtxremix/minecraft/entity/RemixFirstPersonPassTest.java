@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.Transform;
+import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import net.minecraft.Bootstrap;
 import net.minecraft.SharedConstants;
@@ -121,6 +122,46 @@ class RemixFirstPersonPassTest {
                 pass.clearPending();
                 assertFalse(pass.getPendingHeldLightPosition(slot, anchor));
             }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-170, 6, 1", "45, 35, 0.8", "0, -70, 1.3"})
+    void firstPersonGlintStaysOutsideTheSubstrateAfterRayContinuation(float yaw, float pitch, float fovScale) {
+        Camera camera = new TestCamera(yaw, pitch, 211, 64, 51);
+        Matrix4f modelView = new Matrix4f().rotation(camera.getRotation()).invert();
+        try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
+            VertexConsumerProvider provider = pass.beginCapture(modelView);
+            itemConsumer(provider, true).quad(handMatrices(camera, 0.5f).peek(), quad(null),
+                    1, 1, 1, 1, 0, OverlayTexture.DEFAULT_UV);
+            var result = pass.finishCapture(this, camera, fovScale);
+            assertNotNull(result);
+            var layer = result.layers().stream().filter(l -> RenderLayerUtils.isGlint(l.renderLayer())).findFirst().orElseThrow();
+            RemixCapturingConsumer captured = layer.consumer();
+            Transform transform = new Transform();
+            RemixEntitySubmitter.composeRigidTransform(captureRoot(camera, modelView, fovScale),
+                    result.boneData(), result.boneCount(), captured.getPartBone(0), transform);
+            Vector3f base = new Vector3f(), alongX = new Vector3f(), alongY = new Vector3f();
+            RemixFirstPersonPass.transformPoint(transform, 0, 0, 0, base);
+            RemixFirstPersonPass.transformPoint(transform, 1, 0, 0, alongX);
+            RemixFirstPersonPass.transformPoint(transform, 0, 1, 0, alongY);
+            Vector3f worldNormal = alongX.sub(base).cross(alongY.sub(base)).normalize();
+            float depth = RemixEntitySubmitter.meshLayerDepth(layer.textureId(),
+                    RenderLayerUtils.surfaceMode(layer.renderLayer()), layer.layerIndex(), InstanceCategoryBit.VIEW_MODEL);
+            Vector3f glint = new Vector3f();
+            RemixFirstPersonPass.transformPoint(transform, 0, 0, depth, glint);
+
+            // The runtime advances a transparent ray by four float ULPs along its normal.
+            // This coordinate range reproduces the stationary pickaxe artifact.
+            float continuation = Math.max(Math.abs(glint.x), Math.max(Math.abs(glint.y), Math.abs(glint.z)))
+                    * 4f * Math.ulp(1f);
+            assertTrue(glint.sub(base).dot(worldNormal) > continuation,
+                    "continuing through glint must still hit the gold surface");
+            Vector3f uncorrected = new Vector3f();
+            RemixFirstPersonPass.transformPoint(transform, 0, 0,
+                    RemixEntitySubmitter.surfaceDepth(false, layer.layerIndex(), 0), uncorrected);
+            assertTrue(uncorrected.sub(base).dot(worldNormal) < continuation,
+                    "the fixture must reproduce the old layer gap being skipped");
         }
     }
 
@@ -337,8 +378,12 @@ class RemixFirstPersonPassTest {
 
     private static final class TestCamera extends Camera {
         TestCamera(float yaw, float pitch) {
+            this(yaw, pitch, 12, 64, -8);
+        }
+
+        TestCamera(float yaw, float pitch, double x, double y, double z) {
             setRotation(yaw, pitch);
-            setPos(12, 64, -8);
+            setPos(x, y, z);
         }
     }
 }

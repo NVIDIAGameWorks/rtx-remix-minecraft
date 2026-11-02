@@ -221,12 +221,12 @@ public class RemixEntitySubmitter {
      */
     record HashedMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                          RenderLayerUtils.Topology topology,
-                         int shellLayer, int vertexCount, long geometryHash)
+                         float shellDepth, int vertexCount, long geometryHash)
             implements RigidMeshKey {
         @Override
         public int hashCode() {
             return RigidMeshLookupKey.hashedHash(
-                    texId, surfaceMode, topology, shellLayer, vertexCount, geometryHash);
+                    texId, surfaceMode, topology, shellDepth, vertexCount, geometryHash);
         }
     }
 
@@ -253,7 +253,7 @@ public class RemixEntitySubmitter {
      * <p>The other components are the things proven to vary for one cuboid within a
      * single frame. {@code texId} separates iron from diamond armour on the shared
      * armour model. {@code surfaceMode} varies per entity via playerSkinSurfaceMode.
-     * {@code shellLayer} scales the shell offset baked into the vertices, so dropping
+     * {@code shellDepth} is the offset baked into the vertices, so dropping
      * it collapses a dyed-leather overlay onto the body.
      *
      * <p>Tint is deliberately NOT part of the key. It rides the instance as a
@@ -262,21 +262,21 @@ public class RemixEntitySubmitter {
      * per-instance update instead of a native mesh create per part per frame.
      */
     record CuboidMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                         int shellLayer, ModelPart.Quad[] sides, Sprite sprite)
+                         float shellDepth, ModelPart.Quad[] sides, Sprite sprite)
             implements RigidMeshKey {
         @Override
         public boolean equals(Object other) {
             return other instanceof CuboidMeshKey key
                     && Objects.equals(texId, key.texId)
                     && surfaceMode == key.surfaceMode
-                    && shellLayer == key.shellLayer
+                    && Float.compare(shellDepth, key.shellDepth) == 0
                     && sides == key.sides
                     && sprite == key.sprite;
         }
 
         @Override
         public int hashCode() {
-            return RigidMeshLookupKey.cuboidHash(texId, surfaceMode, shellLayer, sides, sprite);
+            return RigidMeshLookupKey.cuboidHash(texId, surfaceMode, shellDepth, sides, sprite);
         }
     }
 
@@ -288,20 +288,20 @@ public class RemixEntitySubmitter {
      * <p>One mesh rather than one per pattern because the runtime orders the coplanar
      * decals a ray crosses by primitive index, not by depth. Separate single-cuboid meshes
      * carry identical primitive indices, so their layers tie and composite in traversal
-     * order; one mesh keeps them in paint order. {@code shellLayer} is the stack's base
+     * order; one mesh keeps them in paint order. {@code shellDepth} is the stack's base
      * depth: layer k sits {@code k + 1} shells beyond it. {@code sides} is identity, as in
      * {@link CuboidMeshKey}; {@code sprites} are identities layer by layer; {@code tints}
      * are values, baked as vertex colour.
      */
     record CanvasMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                         int shellLayer, ModelPart.Quad[] sides, Sprite[] sprites, int[] tints)
+                         float shellDepth, ModelPart.Quad[] sides, Sprite[] sprites, int[] tints)
             implements RigidMeshKey {
         @Override
         public boolean equals(Object other) {
             if (!(other instanceof CanvasMeshKey key)
                     || !Objects.equals(texId, key.texId)
                     || surfaceMode != key.surfaceMode
-                    || shellLayer != key.shellLayer
+                    || Float.compare(shellDepth, key.shellDepth) != 0
                     || sides != key.sides
                     || sprites.length != key.sprites.length
                     || !Arrays.equals(tints, key.tints)) {
@@ -315,7 +315,7 @@ public class RemixEntitySubmitter {
 
         @Override
         public int hashCode() {
-            int result = RigidMeshLookupKey.canvasHashPrefix(texId, surfaceMode, shellLayer, sides);
+            int result = RigidMeshLookupKey.canvasHashPrefix(texId, surfaceMode, shellDepth, sides);
             for (int i = 0; i < sprites.length; i++) {
                 result = RigidMeshLookupKey.foldCanvasLayer(result, sprites[i], tints[i]);
             }
@@ -333,7 +333,7 @@ public class RemixEntitySubmitter {
     static final class RigidMeshLookupKey implements RigidMeshKey {
         private Identifier texId;
         private RenderLayerUtils.SurfaceMode surfaceMode;
-        private int shellLayer;
+        private float shellDepth;
         private RenderLayerUtils.Topology topology;
         private int vertexCount;
         private long geometryHash;
@@ -351,11 +351,11 @@ public class RemixEntitySubmitter {
         private int canvasPatternCount;
 
         void setLayer(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                      int shellLayer) {
+                      float shellDepth) {
             this.texId = texId;
             this.surfaceMode = surfaceMode;
-            this.shellLayer = shellLayer;
-            this.layerHashPrefix = layerHash(texId, surfaceMode, shellLayer);
+            this.shellDepth = shellDepth;
+            this.layerHashPrefix = layerHash(texId, surfaceMode, shellDepth);
         }
 
         void setCuboid(ModelPart.Quad[] sides, Sprite sprite) {
@@ -403,8 +403,8 @@ public class RemixEntitySubmitter {
 
         RigidMeshKey immutableCopy() {
             return switch (form) {
-                case CUBOID -> new CuboidMeshKey(texId, surfaceMode, shellLayer, sides, sprite);
-                case HASHED -> new HashedMeshKey(texId, surfaceMode, topology, shellLayer,
+                case CUBOID -> new CuboidMeshKey(texId, surfaceMode, shellDepth, sides, sprite);
+                case HASHED -> new HashedMeshKey(texId, surfaceMode, topology, shellDepth,
                         vertexCount, geometryHash);
                 case CANVAS -> {
                     Sprite[] sprites = new Sprite[canvasPatternCount];
@@ -414,7 +414,7 @@ public class RemixEntitySubmitter {
                         sprites[i] = canvasSource.getPartSprite(part);
                         tints[i] = canvasSource.getPartTint(part);
                     }
-                    yield new CanvasMeshKey(texId, surfaceMode, shellLayer, sides, sprites, tints);
+                    yield new CanvasMeshKey(texId, surfaceMode, shellDepth, sides, sprites, tints);
                 }
             };
         }
@@ -435,14 +435,14 @@ public class RemixEntitySubmitter {
                 case CUBOID -> other instanceof CuboidMeshKey key
                         && Objects.equals(texId, key.texId())
                         && surfaceMode == key.surfaceMode()
-                        && shellLayer == key.shellLayer()
+                        && Float.compare(shellDepth, key.shellDepth()) == 0
                         && sides == key.sides()
                         && sprite == key.sprite();
                 case HASHED -> other instanceof HashedMeshKey key
                         && Objects.equals(texId, key.texId())
                         && surfaceMode == key.surfaceMode()
                         && topology == key.topology()
-                        && shellLayer == key.shellLayer()
+                        && Float.compare(shellDepth, key.shellDepth()) == 0
                         && vertexCount == key.vertexCount()
                         && geometryHash == key.geometryHash();
                 case CANVAS -> other instanceof CanvasMeshKey key && equalsCanvas(key);
@@ -452,7 +452,7 @@ public class RemixEntitySubmitter {
         private boolean equalsCanvas(CanvasMeshKey key) {
             if (!Objects.equals(texId, key.texId())
                     || surfaceMode != key.surfaceMode()
-                    || shellLayer != key.shellLayer()
+                    || Float.compare(shellDepth, key.shellDepth()) != 0
                     || sides != key.sides()
                     || canvasPatternCount != key.sprites().length) {
                 return false;
@@ -468,8 +468,8 @@ public class RemixEntitySubmitter {
         }
 
         static int cuboidHash(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                              int shellLayer, ModelPart.Quad[] sides, Sprite sprite) {
-            return cuboidHash(layerHash(texId, surfaceMode, shellLayer), sides, sprite);
+                              float shellDepth, ModelPart.Quad[] sides, Sprite sprite) {
+            return cuboidHash(layerHash(texId, surfaceMode, shellDepth), sides, sprite);
         }
 
         private static int cuboidHash(int layerHashPrefix, ModelPart.Quad[] sides, Sprite sprite) {
@@ -478,9 +478,9 @@ public class RemixEntitySubmitter {
         }
 
         static int hashedHash(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                              RenderLayerUtils.Topology topology, int shellLayer,
+                              RenderLayerUtils.Topology topology, float shellDepth,
                               int vertexCount, long geometryHash) {
-            return hashedHash(layerHash(texId, surfaceMode, shellLayer),
+            return hashedHash(layerHash(texId, surfaceMode, shellDepth),
                     topology, vertexCount, geometryHash);
         }
 
@@ -492,8 +492,8 @@ public class RemixEntitySubmitter {
         }
 
         static int canvasHashPrefix(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                                    int shellLayer, ModelPart.Quad[] sides) {
-            return canvasHashPrefix(layerHash(texId, surfaceMode, shellLayer), sides);
+                                    float shellDepth, ModelPart.Quad[] sides) {
+            return canvasHashPrefix(layerHash(texId, surfaceMode, shellDepth), sides);
         }
 
         private static int canvasHashPrefix(int layerHashPrefix, ModelPart.Quad[] sides) {
@@ -507,10 +507,10 @@ public class RemixEntitySubmitter {
 
         private static int layerHash(Identifier texId,
                                      RenderLayerUtils.SurfaceMode surfaceMode,
-                                     int shellLayer) {
+                                     float shellDepth) {
             int result = Objects.hashCode(texId);
             result = 31 * result + Objects.hashCode(surfaceMode);
-            return 31 * result + shellLayer;
+            return 31 * result + Float.hashCode(shellDepth);
         }
     }
 
@@ -1197,10 +1197,11 @@ public class RemixEntitySubmitter {
         int vertexCount = consumer.getPartVertexCount(partIndex);
         ModelPart.Quad[] sides = consumer.getPartSides(partIndex);
         Sprite sprite = consumer.getPartSprite(partIndex);
+        float shellDepth = meshLayerDepth(texId, surfaceMode, shellLayer, categoryFlags);
         // Key and material both derive from this part's narrowed mode, so a
         // pooled mesh is never handed to a part whose material differs from the
         // one baked into it.
-        rigidMeshLookupKey.setLayer(texId, surfaceMode, shellLayer);
+        rigidMeshLookupKey.setLayer(texId, surfaceMode, shellDepth);
         if (sides != null) {
             rigidMeshLookupKey.setCuboid(sides, sprite);
         } else {
@@ -1218,12 +1219,12 @@ public class RemixEntitySubmitter {
                         sprite.getContents().getId());
         RemixMesh mesh = emissiveBeaconLens
                 ? acquireBeaconLensMesh(
-                        beacon, vertexCount, texId, shellLayer, sides, sprite)
+                        beacon, vertexCount, texId, shellDepth, sides, sprite)
                 : transientGeometry && sides == null
                         ? createTransientMesh(consumer, startVertex, vertexCount,
-                                texId, surfaceMode, topology, shellLayer)
+                                texId, surfaceMode, topology, shellDepth)
                         : acquirePooledMesh(consumer, startVertex, vertexCount,
-                                texId, surfaceMode, topology, shellLayer, sides, sprite);
+                                texId, surfaceMode, topology, shellDepth, sides, sprite);
         if (mesh == null) return;
 
         drawRetainedPart(result, consumer.getPartBone(partIndex), layerIndex, partIndex,
@@ -1253,7 +1254,7 @@ public class RemixEntitySubmitter {
             CopperBeaconBlockEntity beacon,
             int vertexCount,
             Identifier textureId,
-            int shellLayer,
+            float shellDepth,
             ModelPart.Quad[] sides,
             Sprite sprite) {
         if (sides == null) {
@@ -1292,7 +1293,7 @@ public class RemixEntitySubmitter {
                     vertexCount,
                     textureId,
                     RenderLayerUtils.Topology.QUADS,
-                    shellLayer,
+                    shellDepth,
                     material);
             if (mesh == null) {
                 textures.destroyEmissionScaledAtlasMaterial(material);
@@ -1337,7 +1338,7 @@ public class RemixEntitySubmitter {
                                       int layerIndex,
                                       Transform worldTransform,
                                       int categoryFlags) {
-        rigidMeshLookupKey.setLayer(texId, surfaceMode, layerIndex);
+        rigidMeshLookupKey.setLayer(texId, surfaceMode, surfaceDepth(false, layerIndex, 0));
         rigidMeshLookupKey.setCanvas(consumer.getPartSides(firstPart), consumer, firstPart, patternCount);
         pendingPartKey = null;
         RemixMesh mesh = pooledMesh();
@@ -1442,7 +1443,7 @@ public class RemixEntitySubmitter {
                                         Identifier texId,
                                         RenderLayerUtils.SurfaceMode surfaceMode,
                                         RenderLayerUtils.Topology topology,
-                                        int shellLayer,
+                                        float shellDepth,
                                         ModelPart.Quad[] sides,
                                         Sprite sprite) {
         RemixMesh pooled = pooledMesh();
@@ -1452,7 +1453,7 @@ public class RemixEntitySubmitter {
         pendingPartKey = meshKey;
         if (sides == null) {
             return createRigidMesh(meshKey, consumer, startVertex, vertexCount,
-                    texId, surfaceMode, topology, shellLayer);
+                    texId, surfaceMode, topology, shellDepth);
         }
         // Rebuild through the same emitter and the same buildSurface the captured
         // path uses, so there is one geometry path rather than two that can drift.
@@ -1464,7 +1465,7 @@ public class RemixEntitySubmitter {
         rebuildScratch.finishOpenVertex();
         // A cuboid is quads by construction, whatever topology its layer draws.
         return createRigidMesh(meshKey, rebuildScratch, 0, vertexCount,
-                texId, surfaceMode, RenderLayerUtils.Topology.QUADS, shellLayer);
+                texId, surfaceMode, RenderLayerUtils.Topology.QUADS, shellDepth);
     }
 
     private RetainedEntityPart createPendingRetainedPart() {
@@ -1634,6 +1635,20 @@ public class RemixEntitySubmitter {
         return text
                 ? shellLayer * TEXT_LAYER_STEP + quadIndex * TEXT_QUAD_STEP
                 : shellLayer * SHELL_OFFSET;
+    }
+
+    /**
+     * Glint must retain its layer separation after the first-person root scales
+     * the model down. Otherwise a transparent hit can advance the runtime's ray
+     * past the substrate. The resulting local depth is mesh identity, so a view
+     * model never reuses the more tightly spaced third-person glint mesh.
+     */
+    static float meshLayerDepth(Identifier textureId, RenderLayerUtils.SurfaceMode mode,
+                                int shellLayer, int categoryFlags) {
+        float depth = surfaceDepth(DynamicTextureCache.isGlyphPage(textureId), shellLayer, 0);
+        return mode == RenderLayerUtils.SurfaceMode.GLINT
+                && (categoryFlags & InstanceCategoryBit.VIEW_MODEL) != 0
+                ? depth / RemixFirstPersonPass.VIEW_MODEL_SCALE : depth;
     }
 
     /** Distance from a face's plane within which a vertex counts as standing on it, in blocks. */
@@ -1830,11 +1845,11 @@ public class RemixEntitySubmitter {
     }
     /** Per-vertex displacement of a text part: each quad steps along its normal by its draw order. */
     private static void textOffsets(float[] nx, float[] ny, float[] nz,
-                                    int start, int count, int shellLayer,
+                                    int start, int count, float shellDepth,
                                     float[] ox, float[] oy, float[] oz) {
         for (int i = 0; i < count; i++) {
             int source = start + i;
-            float depth = surfaceDepth(true, shellLayer, i >> 2);
+            float depth = shellDepth + (i >> 2) * TEXT_QUAD_STEP;
             ox[i] = nx[source] * depth;
             oy[i] = ny[source] * depth;
             oz[i] = nz[source] * depth;
@@ -1851,7 +1866,7 @@ public class RemixEntitySubmitter {
                                           int vertCount,
                                           RenderLayerUtils.Topology topology,
                                           boolean text,
-                                          int shellLayer,
+                                          float shellDepth,
                                           RemixMaterial mat) {
         float[] cpx = consumer.getPx(), cpy = consumer.getPy(), cpz = consumer.getPz();
         float[] cnx = consumer.getNx(), cny = consumer.getNy(), cnz = consumer.getNz();
@@ -1861,7 +1876,7 @@ public class RemixEntitySubmitter {
         int[] boundsMax = consumer.getTexcoordBoundsMax();
 
         // Text steps its quads even on the base layer; anything else on the base layer stays put.
-        boolean offset = text || shellLayer > 0;
+        boolean offset = text || shellDepth > 0;
         if (offset) {
             if (shellOffsetX.length < vertCount) {
                 shellOffsetX = new float[vertCount];
@@ -1869,11 +1884,11 @@ public class RemixEntitySubmitter {
                 shellOffsetZ = new float[vertCount];
             }
             if (text) {
-                textOffsets(cnx, cny, cnz, sourceStart, vertCount, shellLayer,
+                textOffsets(cnx, cny, cnz, sourceStart, vertCount, shellDepth,
                         shellOffsetX, shellOffsetY, shellOffsetZ);
             } else {
                 shellOffsets(cpx, cpy, cpz, cnx, cny, cnz, sourceStart, vertCount,
-                        surfaceDepth(false, shellLayer, 0), topology,
+                        shellDepth, topology,
                         consumer.cardFaceOfPartStartingAt(sourceStart),
                         shellOffsetX, shellOffsetY, shellOffsetZ);
             }
@@ -1941,9 +1956,9 @@ public class RemixEntitySubmitter {
                                       Identifier textureId,
                                       RenderLayerUtils.SurfaceMode surfaceMode,
                                       RenderLayerUtils.Topology topology,
-                                      int shellLayer) {
+                                      float shellDepth) {
         RemixMesh mesh = createMesh(consumer, sourceStart, vertexCount,
-                textureId, surfaceMode, topology, shellLayer);
+                textureId, surfaceMode, topology, shellDepth);
         if (mesh != null) {
             rigidMeshPool.put(meshKey, new PooledMesh(mesh, frameIndex()));
         }
@@ -1968,9 +1983,9 @@ public class RemixEntitySubmitter {
                                           Identifier textureId,
                                           RenderLayerUtils.SurfaceMode surfaceMode,
                                           RenderLayerUtils.Topology topology,
-                                          int shellLayer) {
+                                          float shellDepth) {
         RemixMesh mesh = createMesh(consumer, sourceStart, vertexCount,
-                textureId, surfaceMode, topology, shellLayer);
+                textureId, surfaceMode, topology, shellDepth);
         if (mesh != null) {
             transientMeshes.add(mesh);
         }
@@ -1984,7 +1999,7 @@ public class RemixEntitySubmitter {
                                  Identifier textureId,
                                  RenderLayerUtils.SurfaceMode surfaceMode,
                                  RenderLayerUtils.Topology topology,
-                                 int shellLayer) {
+                                 float shellDepth) {
         RemixMaterial material = materialCache.get(materialLookupKey.set(textureId, surfaceMode));
         if (material == null || material.isDeleted()) {
             EntityMaterialKey materialKey = new EntityMaterialKey(textureId, surfaceMode);
@@ -2001,7 +2016,7 @@ public class RemixEntitySubmitter {
                 vertexCount,
                 textureId,
                 topology,
-                shellLayer,
+                shellDepth,
                 material);
     }
 
@@ -2011,19 +2026,19 @@ public class RemixEntitySubmitter {
             int vertexCount,
             Identifier textureId,
             RenderLayerUtils.Topology topology,
-            int shellLayer,
+            float shellDepth,
             RemixMaterial material) {
         boolean strip = topology == RenderLayerUtils.Topology.TRIANGLE_STRIP;
         boolean valid = strip
                 ? vertexCount >= STRIP_MIN_VERTICES
                 : vertexCount >= 4 && vertexCount % 4 == 0;
         if (!valid) {
-            LOGGER.warn("Invalid entity mesh vertex count ({}) for {} {} shell layer {}",
-                    vertexCount, textureId, topology, shellLayer);
+            LOGGER.warn("Invalid entity mesh vertex count ({}) for {} {} shell depth {}",
+                    vertexCount, textureId, topology, shellDepth);
             return null;
         }
         RemixMeshSurface surface = buildSurface(consumer, sourceStart, vertexCount,
-                topology, DynamicTextureCache.isGlyphPage(textureId), shellLayer, material);
+                topology, DynamicTextureCache.isGlyphPage(textureId), shellDepth, material);
         try {
             RemixMesh mesh = new RemixMesh(new RemixMeshSurface[]{surface});
             try (ProfileScope createScope = ProfileScope.begin("Entity createRigidMesh")) {
@@ -2031,8 +2046,8 @@ public class RemixEntitySubmitter {
                 RemixMeshStore.get().create(mesh);
             }
             lastMeshCreateCount++;
-            LOGGER.debug("Created entity mesh for {} {} ({} verts, shell layer {})",
-                    textureId, topology, vertexCount, shellLayer);
+            LOGGER.debug("Created entity mesh for {} {} ({} verts, shell depth {})",
+                    textureId, topology, vertexCount, shellDepth);
             return mesh;
         } catch (RemixException e) {
             LOGGER.error("Failed to create entity mesh for {} {}: {}",

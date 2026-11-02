@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
+import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 class GlintMaterialTest {
     private static final Identifier GLINT = Identifier.of("minecraft", "textures/misc/enchanted_glint_item.png");
@@ -32,6 +34,28 @@ class GlintMaterialTest {
         assertEquals(RenderLayerUtils.SurfaceMode.GLINT, RemixEntitySubmitter.atlasSurfaceMode(
                 BlockTextureManager.BLOCK_ATLAS_ID, RenderLayerUtils.SurfaceMode.GLINT, BlockTextureManager.L_GLASS),
                 "the substrate's glass classification must not replace the enchantment blend");
+    }
+
+    @Test
+    void viewModelGlintDepthCannotReuseTheThirdPersonMesh() {
+        float worldDepth = RemixEntitySubmitter.meshLayerDepth(GLINT, RenderLayerUtils.SurfaceMode.GLINT, 1, 0);
+        float viewDepth = RemixEntitySubmitter.meshLayerDepth(GLINT, RenderLayerUtils.SurfaceMode.GLINT,
+                1, InstanceCategoryBit.VIEW_MODEL);
+        assertEquals(worldDepth, viewDepth * RemixFirstPersonPass.VIEW_MODEL_SCALE, 1e-9f);
+        assertEquals(worldDepth, RemixEntitySubmitter.meshLayerDepth(GLINT,
+                RenderLayerUtils.SurfaceMode.CUTOUT, 1, InstanceCategoryBit.VIEW_MODEL),
+                "the substrate keeps its existing depth");
+        var worldKey = new RemixEntitySubmitter.HashedMeshKey(GLINT, RenderLayerUtils.SurfaceMode.GLINT,
+                RenderLayerUtils.Topology.QUADS, worldDepth, 4, 123);
+        var lookup = new RemixEntitySubmitter.RigidMeshLookupKey();
+        lookup.setLayer(GLINT, RenderLayerUtils.SurfaceMode.GLINT, viewDepth);
+        lookup.setHashed(RenderLayerUtils.Topology.QUADS, 4, 123);
+        var viewKey = lookup.immutableCopy();
+        assertNotEquals(worldKey, viewKey);
+        assertEquals(viewKey, lookup.immutableCopy());
+        assertEquals(viewKey.hashCode(), lookup.hashCode());
+        assertTrue(lookup.equals(viewKey));
+        assertFalse(lookup.equals(worldKey));
     }
 
     @Test
