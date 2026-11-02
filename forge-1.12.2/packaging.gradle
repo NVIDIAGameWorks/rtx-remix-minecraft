@@ -1,0 +1,128 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// Forge's LWJGL 2 bridge currently supports Windows x64 only.
+def sdk = file('../remix-runtime/win64')
+def nativeBridge = file('bridge/build/native/win64/remixbridge.dll')
+def inventory = file("$buildDir/packaging/forge-runtime.sha256")
+def exclusionPolicy = file('config/runtime-payload-excludes.txt')
+def exclusions = exclusionPolicy.readLines('UTF-8').findAll {
+    !it.trim().empty && !it.trim().startsWith('#')
+}.collect { java.util.regex.Pattern.compile(it) }
+def selectedPayload = null
+def payload = {
+    if (selectedPayload != null) return selectedPayload
+    def files = new TreeMap<String, File>(String.CASE_INSENSITIVE_ORDER)
+    fileTree(sdk).files.each { f ->
+        def relative = sdk.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+        if (!exclusions.any { it.matcher(relative).find() }) {
+            def member = "remix-sdk/$relative".toString()
+            if (files.containsKey(member)) throw new GradleException("Duplicate runtime member: $relative")
+            if (files.size() >= 8190 || f.length() > 2L * 1024 * 1024 * 1024) {
+                throw new GradleException('The runtime inventory exceeds the extraction limits')
+            }
+            def path = f.toPath()
+            while (path != sdk.toPath()) {
+                def attributes = java.nio.file.Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes,
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (attributes.isSymbolicLink() || attributes.isOther()) {
+                    throw new GradleException("Linked runtime member is unsupported: $relative")
+                }
+                path = path.parent
+            }
+            files[member] = f
+        }
+    }
+    if (!files.containsKey('remix-sdk/d3d9.dll')) throw new GradleException('The runtime source is missing d3d9.dll')
+    files['remix-sdk/remixbridge.dll'] = nativeBridge
+    files['rtx.conf'] = file('config/rtx.conf')
+    selectedPayload = files
+}
+
+task compilePackageBridge(type: Exec) {
+    description = 'Builds and validates the Java 8 JNI bridge for packaging'
+    // Windows PowerShell must not load PowerShell 7 modules inherited through Gradle.
+    environment.keySet().removeAll { it.equalsIgnoreCase('PSModulePath') }
+    commandLine 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            file('scripts/build-bridge.ps1').absolutePath, '-JdkPath', System.getProperty('java.home')
+    doFirst {
+        // A Java 8 JVM may report the JDK's nested jre directory.
+        def jdk = file(System.getProperty('java.home'))
+        if (jdk.name == 'jre') jdk = jdk.parentFile
+        args = args[0..-2] + [jdk.absolutePath]
+    }
+}
+
+task runtimeInventory {
+    dependsOn compilePackageBridge
+    inputs.dir sdk
+    inputs.file file('config/rtx.conf')
+    inputs.file nativeBridge
+    inputs.file exclusionPolicy
+    outputs.file inventory
+    doLast {
+        if (!new File(sdk, 'd3d9.dll').isFile()) {
+            throw new GradleException('Stage the pinned win64 SDK with tools/rtx.bat sdk packman --arch win64 before packaging.')
+        }
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        def buffer = new byte[1024 * 1024]
+        inventory.parentFile.mkdirs()
+        inventory.withWriter('UTF-8') { writer ->
+            payload().each { name, source ->
+                digest.reset()
+                source.withInputStream { stream ->
+                    int count
+                    while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count)
+                }
+                writer.write("${digest.digest().encodeHex()} ${source.length()} $name\n")
+            }
+        }
+    }
+}
+
+task packageForge(type: Zip) {
+    description = 'Builds an installable Windows x64 Forge JAR with the pinned runtime and license texts'
+    group = 'build'
+    dependsOn build, runtimeInventory
+    archiveName = "${archivesBaseName}-${version}-win64.jar"
+    destinationDir = file("$buildDir/distributions")
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    zip64 = true
+    from { zipTree(jar.archivePath) }
+    from(inventory) { into 'native' }
+    from(sdk) {
+        into 'native/remix-sdk'
+        include { details -> details.directory || payload()["remix-sdk/${details.relativePath.pathString}".toString()] == details.file }
+    }
+    from(nativeBridge) { into 'native/remix-sdk' }
+    from('config/rtx.conf') { into 'native' }
+    from('../packaging/licenses') { into 'packaging/licenses' }
+    from('../THIRD_PARTY_NOTICES.md')
+    doLast {
+        def zip = new java.util.zip.ZipFile(archivePath)
+        try {
+            def expected = payload().keySet().collect { "native/$it".toString() }
+            expected.addAll(fileTree('../packaging/licenses').files.collect {
+                'packaging/licenses/' + file('../packaging/licenses').toPath().relativize(it.toPath()).toString().replace('\\', '/')
+            })
+            expected.addAll(['META-INF/MANIFEST.MF', 'native/forge-runtime.sha256', 'THIRD_PARTY_NOTICES.md',
+                    'META-INF/licenses/JOML-LICENSE.txt', 'org/joml/Quaternionf.class', 'mcmod.info'])
+            if (zip.getEntry('com/nvidia/rtxremix/forge/client/BootstrapDiagnostic.class') != null) {
+                throw new GradleException('Diagnostic classes must not ship in the renderer package')
+            }
+            if (zip.getEntry('module-info.class') != null ||
+                    zip.entries().any { it.name.startsWith('META-INF/versions/') }) {
+                throw new GradleException('Forge 1.12.2 cannot scan Java 9 module or multi-release classes')
+            }
+            def missing = expected.findAll { zip.getEntry(it) == null }
+            if (!missing.empty) throw new GradleException("Incomplete Forge package: $missing")
+            def actualPayload = zip.entries().findAll { !it.directory && it.name.startsWith('native/') &&
+                    it.name != 'native/forge-runtime.sha256' }.collect { it.name }.toSet()
+            if (actualPayload != payload().keySet().collect { "native/$it".toString() }.toSet()) {
+                throw new GradleException('Packaged native files and extraction inventory disagree')
+            }
+        } finally { zip.close() }
+    }
+}
