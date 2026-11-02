@@ -190,14 +190,6 @@ public final class EntityRenderContext {
         return index;
     }
 
-    /**
-     * Returns the most recently pushed bone index. Individual consumers retain
-     * their own pose's index, since layer dispatch can interleave them.
-     */
-    public int currentBoneIndex() {
-        return boneCounter > 0 ? boneCounter - 1 : -1;
-    }
-
     /** Marks subsequent first-person transforms as belonging to {@code hand}. */
     public void setActiveHand(Hand hand) {
         activeHand = hand;
@@ -251,15 +243,10 @@ public final class EntityRenderContext {
     /**
      * Returns the collected rigid pivot transforms. The list is valid until the
      * next outermost {@link #begin} restarts bone numbering.
-     * Returns a subList view, no allocation.
+     * Returns a view over the pooled matrices.
      */
     public List<Matrix4f> getBoneTransforms() {
         return boneTransforms.subList(0, boneCounter);
-    }
-
-    /** A live pooled pose, valid until the next capture reuses its slot. */
-    Matrix4f boneTransform(int index) {
-        return boneTransforms.get(index);
     }
 
     /**

@@ -93,8 +93,7 @@ class RemixFirstPersonPassTest {
                 var result = pass.finishCapture(this, camera, fovScale);
                 assertNotNull(result);
                 assertEquals(enchanted ? 2 : 1, result.layers().size());
-                Transform root = new Transform();
-                RemixFirstPersonPass.setCameraToWorld(camera, root);
+                Transform root = captureRoot(camera, modelView, fovScale);
                 for (var layer : result.layers()) {
                     RemixCapturingConsumer captured = layer.consumer();
                     assertEquals(8, captured.getVertexCount());
@@ -129,7 +128,7 @@ class RemixFirstPersonPassTest {
     void cameraTurnsKeepTheSameLocalMeshAndPreviousFramePose() {
         try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
             long[] previousHashes = null;
-            float[] previousBones = null;
+            Vector3f previousCameraPoint = null;
             for (float yaw : new float[] {0, 45, -120}) {
                 resetContext();
                 Camera camera = new TestCamera(yaw, 35);
@@ -141,11 +140,19 @@ class RemixFirstPersonPassTest {
                 long[] hashes = result.layers().stream().mapToLong(layer -> layer.consumer().getPartHash(0)).toArray();
                 if (previousHashes != null) {
                     assertArrayEquals(previousHashes, hashes, "camera motion must not rebuild local geometry");
-                    assertArrayEquals(previousBones, result.boneData(), EPSILON,
-                            "the same local vertex retains its camera-relative pose across frames");
                 }
+                var layer = result.layers().getFirst();
+                Transform partToWorld = new Transform();
+                RemixEntitySubmitter.composeRigidTransform(captureRoot(camera,
+                                new Matrix4f().rotation(camera.getRotation()).invert(), 1),
+                        result.boneData(), result.boneCount(), layer.consumer().getPartBone(0), partToWorld);
+                Vector3f cameraPoint = new Vector3f();
+                RemixFirstPersonPass.transformPoint(partToWorld, 0, 0, 0, cameraPoint);
+                cameraPoint.sub(12, 64, -8);
+                camera.getRotation().transformInverse(cameraPoint);
+                if (previousCameraPoint != null) assertVector(previousCameraPoint, cameraPoint);
                 previousHashes = hashes;
-                previousBones = result.boneData().clone();
+                previousCameraPoint = cameraPoint;
             }
         }
     }
@@ -241,7 +248,7 @@ class RemixFirstPersonPassTest {
                 assertEquals(1, capture.getPartCount());
                 assertSame(cuboid.sides, capture.getPartSides(0));
                 assertSame(sprite, capture.getPartSprite(0));
-                assertEquals(matrices.peek().getPositionMatrix(), EntityRenderContext.get().boneTransform(capture.getPartBone(0)));
+                assertEquals(matrices.peek().getPositionMatrix(), EntityRenderContext.get().getBoneTransforms().get(capture.getPartBone(0)));
             }
         }
     }
@@ -279,6 +286,14 @@ class RemixFirstPersonPassTest {
     private static VertexConsumer itemConsumer(VertexConsumerProvider provider, boolean glint) {
         return ItemRenderer.getDirectItemGlintConsumer(provider,
                 RenderLayer.getEntityCutout(BlockTextureManager.BLOCK_ATLAS_ID), true, glint);
+    }
+
+    private static Transform captureRoot(Camera camera, Matrix4f modelView, float fovScale) {
+        Matrix4f correction = new Matrix4f();
+        RemixFirstPersonPass.setViewCorrection(correction, modelView, fovScale);
+        Transform root = new Transform();
+        RemixFirstPersonPass.setCaptureToWorld(camera, correction, new Matrix4f(), root);
+        return root;
     }
 
     private static MatrixStack handMatrices(Camera camera, float handX) {

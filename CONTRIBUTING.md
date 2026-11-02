@@ -264,11 +264,13 @@ in injection annotations. Remove the diagnostic flag and export afterwards.
 .\gradlew.bat test
 ```
 
-The suite covers JVM-side behavior and data contracts. `test` also runs
+The suite covers JVM-side behavior and data contracts. `check` also runs
 `fabricTest`: tests tagged `fabric` load Minecraft through Fabric Loader so
 capture mixins and access wideners are exercised without launching the game.
 The other tests run in a separate JVM against untransformed classes. Run
-`gradlew.bat fabricTest` to execute only the Fabric integration tests.
+`gradlew.bat fabricTest` to execute only the Fabric integration tests; use that
+task's `--tests` filter to select an integration test. `gradlew.bat test --tests`
+selects only plain JVM tests. Both suites run during `gradlew.bat build`.
 
 It does not cross the JNI boundary and it does not render, so it cannot tell you
 that a change looks right. Two things follow. First, `test` still needs the C++

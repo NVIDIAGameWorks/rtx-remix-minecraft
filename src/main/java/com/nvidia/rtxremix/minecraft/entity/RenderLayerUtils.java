@@ -23,7 +23,7 @@ import java.util.WeakHashMap;
  * identity is read. Its {@link RenderPhase} state, reached through the access
  * widener, gives the texture the layer is submitted under, if any, the
  * {@link SurfaceMode} Remix shades with, and whether the geometry is streamed
- * afresh every frame; its draw mode gives the {@link Topology} and whether an
+     * afresh every frame; its draw mode gives the {@link Topology} and whether an
  * untextured layer carries geometry worth submitting at all.
  */
 final class RenderLayerUtils {
@@ -58,6 +58,12 @@ final class RenderLayerUtils {
             Identifier.of("rtxremix", "untextured_entity_layer");
 
     private RenderLayerUtils() {}
+
+    /** Glint is painted over its substrate even when vanilla requests its buffer first. */
+    static boolean isGlint(RenderLayer layer) {
+        return layer instanceof RenderLayer.MultiPhase multiPhase
+                && multiPhase.getPhases().transparency == RenderPhase.GLINT_TRANSPARENCY;
+    }
 
     /**
      * Cache of RenderLayer -> capturable texture. Most RenderLayer instances are reused,
@@ -150,6 +156,8 @@ final class RenderLayerUtils {
      * (the lead between a mob and its holder), and the beacon beam, whose texture
      * coordinate scrolls with world time. Everything else it draws is rigid: a
      * model part or baked quad whose pose changes while its local vertices do not.
+     * Consumers additionally mark fully posed vertex streams as transient when a
+     * wrapper has removed their local pose, as projected glint does.
      */
     static boolean isStreamedPerFrame(RenderLayer layer) {
         return streamedPerFrameCache.computeIfAbsent(layer, RenderLayerUtils::isStreamedPerFrameUncached);

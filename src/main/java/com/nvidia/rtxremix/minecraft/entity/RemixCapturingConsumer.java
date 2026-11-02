@@ -56,6 +56,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * on it.
      */
     private boolean transientGeometry;
+    /** Fully posed streams have no local mesh to retain in the static cache. */
+    private boolean unposedGeometry;
 
     // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC) ----
     private int vertexCount = 0;
@@ -224,13 +226,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
     }
 
     /**
-     * Registers a cuboid's pivot and keeps this consumer's own bone tracking in step.
-     *
-     * <p>The pivot must be pushed through here rather than straight into
-     * {@link EntityRenderContext}: {@link #detectBoneChange} skips its own push when a
-     * later vertex's pose equals {@link #lastPose}, so a pivot this consumer never saw
-     * would let unrelated quads inherit the cuboid's bone index and merge into its
-     * rigid part. One bone index belongs to one source part.
+     * Registers a cuboid's pivot and remembers this consumer's pose index.
+     * Each cuboid owns a new rigid part even when its pose equals the preceding one.
      *
      * @return the bone index assigned to this cuboid
      */
@@ -349,10 +346,18 @@ public class RemixCapturingConsumer implements VertexConsumer {
         return this;
     }
 
+    /** OverlayVertexConsumer writes its generated UV after normal(), so keep this vertex open. */
+    public VertexConsumer projectedNormal(float x, float y, float z) {
+        vnx = x; vny = y; vnz = z;
+        explicitNormal = true;
+        return this;
+    }
+
     // ---- Vertex finalization ----
 
     private void beginVertex(int boneIndex) {
         flushOpenVertex();
+        unposedGeometry |= boneIndex < 0;
         vertexOpen = true;
         explicitNormal = false;
         currentVertexBoneIndex = boneIndex;
@@ -626,6 +631,10 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private final float[] quadUnitBrightness = {1.0f, 1.0f, 1.0f, 1.0f};
     private final int[] quadLightScratch = new int[4];
     private final int[] quadColors = new int[4];
+    private final int[] cardCornerX = new int[4];
+    private final int[] cardCornerY = new int[4];
+    private final float[] cardCornerU = new float[4];
+    private final float[] cardCornerV = new float[4];
 
     /**
      * Allocation-free replacement for the vanilla default, which allocates two
@@ -893,10 +902,10 @@ public class RemixCapturingConsumer implements VertexConsumer {
         int w = contents.getWidth();
         int h = contents.getHeight();
         float z = Float.intBitsToFloat(vd[2]);
-        int[] cornerX = new int[4];
-        int[] cornerY = new int[4];
-        float[] cornerU = new float[4];
-        float[] cornerV = new float[4];
+        int[] cornerX = cardCornerX;
+        int[] cornerY = cardCornerY;
+        float[] cornerU = cardCornerU;
+        float[] cornerV = cardCornerV;
         for (int v = 0; v < 4; v++) {
             int off = v * 8;
             int cx = Float.intBitsToFloat(vd[off]) == 0f ? 0 : 1;
@@ -1326,7 +1335,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     public Identifier getTextureId() { return textureId; }
     public RenderLayerUtils.Topology getTopology() { return topology; }
-    public boolean isTransientGeometry() { return transientGeometry; }
+    public boolean isTransientGeometry() { return transientGeometry || unposedGeometry; }
     public int getVertexCount() { return vertexCount; }
 
     public float[] getPx() { return px; }
@@ -1360,5 +1369,6 @@ public class RemixCapturingConsumer implements VertexConsumer {
         resetOpenVertexState();
         lastPoseValid = false;
         lastPoseBone = -1;
+        unposedGeometry = false;
     }
 }

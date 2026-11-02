@@ -1516,8 +1516,8 @@ public class RemixEntitySubmitter {
      *   <li>Block atlas: the blend terrain pairs with the same material, so a held block
      *   carries the instance state of its placed counterpart. A white cuboid mesh makes the
      *   vertex-colour modulate an identity.</li>
-     *   <li>Pattern atlas, hashed part (a glinted shield's handle and backing plate, or any
-     *   canvas the cuboid path did not intercept): colour and coverage from the baked
+     *   <li>Pattern atlas, hashed part (geometry whose wrappers do not retain cuboids):
+     *   colour and coverage from the baked
      *   vertices, alpha blended.</li>
      *   <li>Pattern atlas, cuboid part: the canvas role decides. The dyed base is texture
      *   times tint with the texture's own alpha and no blend, so it is opaque and the tint's

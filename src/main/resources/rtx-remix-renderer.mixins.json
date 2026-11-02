@@ -53,6 +53,7 @@
         "NativeImageAccessor",
         "NativeImageBackedTextureMixin",
         "NativeImageUploadMixin",
+        "OverlayVertexConsumerMixin",
         "PackedIntegerArrayMixin",
         "ParticleAccessor",
         "ParticleManagerAccessor",

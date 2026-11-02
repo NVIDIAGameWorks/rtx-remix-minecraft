@@ -30,14 +30,14 @@ public final class RemixConsumerDispatch {
     }
 
     private static int size(VertexConsumer consumer) {
-        return consumer instanceof VertexConsumers.Dual ? 2 : ((VertexConsumers.Union) consumer).delegates.length;
+        return consumer instanceof VertexConsumers.Dual ? 2 : ((VertexConsumers.Union) consumer).delegates().length;
     }
 
     private static VertexConsumer delegate(VertexConsumer consumer, int index) {
         if (consumer instanceof VertexConsumers.Dual dual) {
             return index == 0 ? dual.first : dual.second;
         }
-        return ((VertexConsumers.Union) consumer).delegates[index];
+        return ((VertexConsumers.Union) consumer).delegates()[index];
     }
 
     public static boolean quad(VertexConsumer consumer, MatrixStack.Entry entry, BakedQuad quad,
@@ -83,34 +83,56 @@ public final class RemixConsumerDispatch {
         return true;
     }
 
-    /** Captures a complete cuboid only when every branch can retain its local geometry. */
-    public static boolean cuboid(VertexConsumer consumer, ModelPart.Quad[] sides, int color, Matrix4f pose) {
-        if (!EntityRenderContext.get().isRemixPass() || !canCaptureCuboid(consumer, false)) return false;
-        captureCuboid(consumer, sides, color, pose, null);
+    /** Finds a capture leaf through sprite wrappers and unions, without reading thread-local state. */
+    public static RemixCapturingConsumer findCapture(VertexConsumer consumer) {
+        if (consumer instanceof RemixCapturingConsumer capture) return capture;
+        if (consumer instanceof SpriteTexturedVertexConsumer wrapped) return findCapture(wrapped.delegate);
+        if (consumer instanceof VertexConsumers.Dual dual) {
+            RemixCapturingConsumer first = findCapture(dual.first);
+            return first != null ? first : findCapture(dual.second);
+        }
+        if (consumer instanceof VertexConsumers.Union union) {
+            for (VertexConsumer branch : union.delegates()) {
+                RemixCapturingConsumer capture = findCapture(branch);
+                if (capture != null) return capture;
+            }
+        }
+        return null;
+    }
+
+    /** Retains capture leaves independently while other branches keep their normal vertex rendering. */
+    public static boolean cuboid(VertexConsumer consumer, ModelPart.Cuboid cuboid, MatrixStack.Entry entry,
+                                 int light, int overlay, int color) {
+        RemixCapturingConsumer capture = findCapture(consumer);
+        if (capture == null || !capture.isRemixCaptureActive()) return false;
+        renderCuboid(consumer, cuboid, entry, light, overlay, color, null);
         return true;
     }
 
-    private static boolean canCaptureCuboid(VertexConsumer consumer, boolean hasSprite) {
-        if (consumer instanceof RemixCapturingConsumer) return true;
-        if (consumer instanceof SpriteTexturedVertexConsumer wrapped) {
-            return !hasSprite && canCaptureCuboid(wrapped.delegate, true);
-        }
-        if (!isUnion(consumer)) return false;
-        for (int i = 0, count = size(consumer); i < count; i++) {
-            if (!canCaptureCuboid(delegate(consumer, i), hasSprite)) return false;
-        }
-        return true;
-    }
-
-    private static void captureCuboid(VertexConsumer consumer, ModelPart.Quad[] sides,
-                                      int color, Matrix4f pose, Sprite sprite) {
+    private static void renderCuboid(VertexConsumer consumer, ModelPart.Cuboid cuboid, MatrixStack.Entry entry,
+                                      int light, int overlay, int color, Sprite sprite) {
         if (consumer instanceof RemixCapturingConsumer capture) {
-            capture.acceptCuboid(sides, color, pose, sprite);
-        } else if (consumer instanceof SpriteTexturedVertexConsumer wrapped) {
-            captureCuboid(wrapped.delegate, sides, color, pose, wrapped.sprite);
-        } else {
+            capture.acceptCuboid(cuboid.sides, RemixCapturingConsumer.applyEntityOverlay(color, overlay),
+                    entry.getPositionMatrix(), sprite);
+        } else if (consumer instanceof SpriteTexturedVertexConsumer wrapped && sprite == null) {
+            renderCuboid(wrapped.delegate, cuboid, entry, light, overlay, color, wrapped.sprite);
+        } else if (isUnion(consumer)) {
             for (int i = 0, count = size(consumer); i < count; i++) {
-                captureCuboid(delegate(consumer, i), sides, color, pose, sprite);
+                renderCuboid(delegate(consumer, i), cuboid, entry, light, overlay, color, sprite);
+            }
+        } else if (!RemixVertexConsumerProvider.isDiscarding(consumer)) {
+            if (sprite == null) cuboid.renderCuboid(entry, consumer, light, overlay, color);
+            else emitSpriteCuboid(consumer, cuboid, entry, light, overlay, color, sprite);
+        }
+    }
+
+    private static void emitSpriteCuboid(VertexConsumer consumer, ModelPart.Cuboid cuboid, MatrixStack.Entry entry,
+                                         int light, int overlay, int color, Sprite sprite) {
+        for (ModelPart.Quad side : cuboid.sides) {
+            for (ModelPart.Vertex vertex : side.vertices) {
+                consumer.vertex(entry, vertex.pos.x / 16f, vertex.pos.y / 16f, vertex.pos.z / 16f)
+                        .color(color).texture(sprite.getFrameU(vertex.u), sprite.getFrameV(vertex.v))
+                        .overlay(overlay).light(light).normal(entry, side.direction.x, side.direction.y, side.direction.z);
             }
         }
     }

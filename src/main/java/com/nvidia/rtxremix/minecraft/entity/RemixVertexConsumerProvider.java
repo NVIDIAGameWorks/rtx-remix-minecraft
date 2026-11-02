@@ -73,12 +73,17 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
      */
     public List<CapturedLayer> endEntity() {
         resultBuffer.clear();
+        int glintCount = 0;
+        for (int i = 0; i < activeCount; i++) if (RenderLayerUtils.isGlint(activeLayers[i])) glintCount++;
+        int baseIndex = 0;
+        int glintIndex = activeCount - glintCount;
         for (int i = 0; i < activeCount; i++) {
             RemixCapturingConsumer consumer = activeConsumers[i];
+            consumer.setLayerIndex(RenderLayerUtils.isGlint(activeLayers[i]) ? glintIndex++ : baseIndex++);
             consumer.finishOpenVertex();
             // A cuboid part carries no vertices, so a layer can be non-empty with zero
-            // captured vertices. layerIndex is assigned at first request, so dropping
-            // an empty layer here cannot shift the others.
+            // captured vertices. Rank all requested layers before dropping empty ones,
+            // so empty geometry cannot shift the shell order or retained identities.
             if (consumer.getVertexCount() > 0 || consumer.getPartCount() > 0) {
                 CapturedLayer layer = consumer.capturedLayer();
                 layer.bind(activeLayers[i]);
@@ -161,7 +166,7 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
         public RenderLayer renderLayer() { return renderLayer; }
         public RemixCapturingConsumer consumer() { return consumer; }
         public int vertexCount() { return consumer.getVertexCount(); }
-        /** Order in which the entity first requested this layer; scales the shell offset. */
+        /** Shell order among requested layers, with glint after its substrate. */
         public int layerIndex() { return consumer.getLayerIndex(); }
         /** How to read the vertices as triangles. */
         public RenderLayerUtils.Topology topology() { return consumer.getTopology(); }
@@ -170,6 +175,10 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
     }
 
     // ---- No-op consumer for layers Remix cannot draw ----
+
+    static boolean isDiscarding(VertexConsumer consumer) {
+        return consumer == NoOpVertexConsumer.INSTANCE;
+    }
 
     private static class NoOpVertexConsumer implements VertexConsumer {
         static final NoOpVertexConsumer INSTANCE = new NoOpVertexConsumer();

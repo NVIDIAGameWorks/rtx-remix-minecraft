@@ -858,7 +858,7 @@ public class RemixRenderer {
 
                 // The first-person pass is captured from GameRenderer.renderHand just
                 // before this scene is submitted. It intentionally uses the same
-                // entity mesh/material path, but with a camera-to-world root transform.
+                // entity mesh/material path with a camera-relative, corrected capture root.
                 if (firstPersonPass != null && firstPersonPass.hasPendingCapture()) {
                     try (ProfileScope firstPersonScope = ProfileScope.begin("FirstPersonModel")) {
                         firstPersonPass.submitPending(entitySubmitter);
