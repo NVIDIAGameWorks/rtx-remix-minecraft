@@ -266,6 +266,7 @@ if you are wiping it anyway.
 |---|---|
 | The installer says it is running as another account, not as the one signed in to this desktop | It was started with another account's rights, such as an administrator's through Run as administrator, and would install into that account's folders. Close that window and start `install.bat` by double-clicking it |
 | `The installer is running as administrator and cannot tell which account is signed in to this desktop.` | Start `install.bat` by double-clicking it. If Windows starts every program as administrator, run the `runas /trustlevel:0x20000` command the installer prints, in Command Prompt |
+| `More than one mod JAR is in` the `mods` folder, and Install is greyed out | A newer download was extracted over an older one. Extract the download into an empty folder and run `install.bat` from there |
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start it once, then re-run `install.bat`, which detects it |
 | The Prism download fails | Check the firewall and retry. The installer asks GitHub for the newest Prism release, and a shared network address can hit GitHub's anonymous rate limit. If GitHub reports a rate limit, wait before retrying |
 | `Download failed after 3 attempts from` followed by an Adoptium URL and the error details | The Adoptium API at `api.adoptium.net` has to be reachable. Check the firewall and re-run |

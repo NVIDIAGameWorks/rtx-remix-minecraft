@@ -307,6 +307,9 @@ $script:PRISM_INSTALLER_RECORD_KEYS = @('JvmArgs', 'OverrideMemory', 'MinMemAllo
 # Resolve the directory the script lives in (used to find the sibling mods/
 # staged by the dist archive).
 $script:SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+# What the detected state shows as the packaged mod when mods\ holds more than
+# one, usually because a newer download was extracted over an older one.
+$script:AMBIGUOUS_MOD_PACKAGE = '(more than one mod JAR)'
 
 # The baseline textures ship inside the mod JAR. This resource pack held them
 # before; an enabled copy above Fabric's mod pack masks the JAR's textures, so
@@ -989,7 +992,7 @@ function Get-DistModJar {
     if ($candidates.Count -eq 0) { return $null }
     if ($candidates.Count -gt 1) {
         $names = ($candidates | Select-Object -ExpandProperty Name) -join ', '
-        throw "Ambiguous mod JAR in dist: found $($candidates.Count) candidates ($names). The archive should ship exactly one runtime JAR. Fix the dist pipeline or remove extras."
+        throw "More than one mod JAR is in ${path}: $names. A download carries exactly one. Extract the download into an empty folder and run the installer again."
     }
     return $candidates[0].FullName
 }
@@ -1181,8 +1184,10 @@ function Get-DetectedState {
       Ms_FabricReady       : MS has both the versions dir AND the profile
                              entry for the pinned fabric-loader-{ver}-{mc}
       ModInstalled         : hashtable { Prism=<filename>, Microsoft=<filename> }
-      ModPackage           : basename of the JAR in dist/mods/, or $null
+      ModPackage           : basename of the JAR in dist/mods/, $null, or
+                             $script:AMBIGUOUS_MOD_PACKAGE for more than one
       Status               : 'install' | 'upgrade' | 'repair' | 'no-package'
+                             | 'ambiguous-package'
                              (coarse summary of what the main menu should
                               highlight; see Get-InstallStatus)
     #>
@@ -1281,10 +1286,9 @@ function Get-DetectedState {
         $p = Get-DistModJar
         if ($p) { $packageMod = Split-Path -Leaf $p }
     } catch {
-        # Ambiguous dist is a real error but we don't want to fail the main
-        # menu over it, so surface the ambiguity when the user actually picks
-        # Install.
-        $packageMod = '(ambiguous, see Install)'
+        # More than one JAR is a real error, but the main menu still opens and
+        # says how to fix it; Get-InstallStatus reports it as its own status.
+        $packageMod = $script:AMBIGUOUS_MOD_PACKAGE
     }
 
     return [pscustomobject]@{
@@ -1316,12 +1320,14 @@ function Get-InstallStatus {
         'upgrade'   : installed somewhere, version differs from package
         'repair'    : installed somewhere, version equals package (exact
                       filename match incl. timestamp + git hash)
-        'no-package': we can't tell because dist/mods/ is empty or ambiguous
+        'no-package': we can't tell because dist/mods/ is empty
+        'ambiguous-package': dist/mods/ holds more than one mod JAR
       When the user has BOTH launchers with different versions, 'upgrade'
       takes precedence over 'repair'.
     #>
     param([pscustomobject]$State)
-    if (-not $State.ModPackage -or $State.ModPackage -like '(ambiguous*') { return 'no-package' }
+    if ($State.ModPackage -eq $script:AMBIGUOUS_MOD_PACKAGE) { return 'ambiguous-package' }
+    if (-not $State.ModPackage) { return 'no-package' }
     if ($State.ModInstalled.Count -eq 0) { return 'install' }
     $anyDiff = $false
     $anyMatch = $false
@@ -1411,7 +1417,9 @@ function Write-DetectedStateBlock {
     }
 
     # Mod
-    $pkgShown = if ($State.ModPackage) { $State.ModPackage } else { "$($script:C_YELLOW)no dist JAR in $(Join-Path $script:SCRIPT_DIR 'mods')$($script:C_RESET)" }
+    $pkgShown = if ($State.ModPackage -eq $script:AMBIGUOUS_MOD_PACKAGE) {
+        "$($script:C_YELLOW)$($State.ModPackage)$($script:C_RESET)"
+    } elseif ($State.ModPackage) { $State.ModPackage } else { "$($script:C_YELLOW)no dist JAR in $(Join-Path $script:SCRIPT_DIR 'mods')$($script:C_RESET)" }
     Write-Host "$(_fmtKey 'Mod package:')$pkgShown"
     if ($State.ModInstalled.Count -eq 0) {
         Write-Host "$(_fmtKey 'Mod installed:')$($script:C_DIM)(none)$($script:C_RESET)"
@@ -3862,8 +3870,11 @@ function Show-MainMenu {
         'upgrade'    { "An $($script:C_BOLD)upgrade$($script:C_RESET) is available; installed version differs from package." }
         'repair'     { "Package version matches installed version; pick $($script:C_BOLD)Repair$($script:C_RESET) to reinstall packaged files." }
         'no-package' { "$($script:C_YELLOW)No package mod JAR found in $(Join-Path $script:SCRIPT_DIR 'mods'); Install/Upgrade/Repair will fail until a dist archive is present.$($script:C_RESET)" }
+        'ambiguous-package' { "$($script:C_YELLOW)More than one mod JAR is in $(Join-Path $script:SCRIPT_DIR 'mods'). Extract the download into an empty folder and run the installer again.$($script:C_RESET)" }
         default      { '' }
     }
+    # Install, Upgrade and Repair all need exactly one packaged mod JAR.
+    $noPackage = $status -in @('no-package', 'ambiguous-package')
     $header = {
         Write-Banner -Title 'RTX Remix for Minecraft - Installer' -Subtitle "v$($script:APP_VERSION)"
         Write-DetectedStateBlock -State $state
@@ -3891,11 +3902,12 @@ function Show-MainMenu {
         'upgrade'    { "update to $($state.ModPackage)" }
         'repair'     { 'reinstall the matching version' }
         'no-package' { 'no mod JAR in dist/mods/' }
+        'ambiguous-package' { 'more than one mod JAR in mods\' }
         default      { '' }
     }
 
     $items = @(
-        [pscustomobject]@{ Label = $installLabel; Hint = $installHint; Value = $installValue; Disabled = ($status -eq 'no-package') }
+        [pscustomobject]@{ Label = $installLabel; Hint = $installHint; Value = $installValue; Disabled = $noPackage }
     )
     # If the primary action is Upgrade or Repair, also offer Install
     # (forces fresh-install UX even when we detected an existing one) and
@@ -3913,7 +3925,7 @@ function Show-MainMenu {
         } else {
             'choose the launcher'
         }
-        $items += [pscustomobject]@{ Label = 'Install'; Hint = $switchHint; Value = 'Install'; Disabled = ($status -eq 'no-package') }
+        $items += [pscustomobject]@{ Label = 'Install'; Hint = $switchHint; Value = 'Install'; Disabled = $noPackage }
     }
     if ($installValue -eq 'Upgrade') {
         # User could also repair-at-current-version by forcing Install; keep it simple, don't add a separate Repair alongside Upgrade.
