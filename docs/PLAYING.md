@@ -237,7 +237,7 @@ following:
 | Which resource packs are on | Options, Resource Packs. Material bugs depend on this. |
 | The output of `/rtx status` | Type it in chat and copy the lines. |
 | `latest.log` and `remix-dxvk.log` | `latest.log` is at the paths above, and `remix-dxvk.log` is in `rtx-remix\logs\` in the same game folder. Attach the files rather than pasting part of them. |
-| For a crash, the crash files | Zip whatever the game folder has of `crash\`, `crash-reports\`, and `hs_err_pid*.log`, and attach the zip. |
+| For a crash, the crash files | Copy `rtx-remix\logs\remix-dxvk.log` before you start the game again, because the next launch replaces it. Its `Sentry session id` line finds the report RTX Remix sent, if crash reporting is on. Then zip whatever the game folder has of `crash-reports\`, `hs_err_pid*.log`, and `crash\`, and attach the zip with the logs. |
 | A screenshot of the problem | F2 saves one to the `screenshots\` folder. |
 | For a visual bug, a matching pair | Take the shot, type `/rtx off`, take a second shot from the same spot, then `/rtx on`. The pair shows what changed. |
 

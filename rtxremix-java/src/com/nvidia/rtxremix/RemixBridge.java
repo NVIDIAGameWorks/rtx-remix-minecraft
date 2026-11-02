@@ -60,6 +60,16 @@ public final class RemixBridge {
                     long clientDoneSemaphore_ValueToWait,
                     int disableCpuWaitForExternalSemaphores);
 
+    /**
+     * Deliberately faults inside a guarded Remix call on the calling thread,
+     * to check where a native crash there is reported: in {@code d3d9.dll},
+     * which reaches the runtime's crash reporter, or with {@code insideJvm}
+     * in {@code jvm.dll}, which HotSpot keeps. Diagnostic only.
+     *
+     * @return an error code only if the runtime rejected the call before faulting
+     */
+    public static native int faultInRemixCall(boolean insideJvm);
+
     public static native int dxvkGetInteropInfo(InteropInfo outInfo);
 
     // ─── materials ───────────────────────────────────────────────────────

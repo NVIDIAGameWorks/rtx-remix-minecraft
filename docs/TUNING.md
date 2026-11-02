@@ -140,6 +140,7 @@ their distance.
 | `rtxremix.profile.clientTasks` | Enable per-client-task JFR events; only read when Java phase events are on | `ProfileScope` |
 | `rtxremix.profile.clientTaskSlowThresholdNs` | A client task slower than this gets its own JFR event | `ProfileScope` |
 | `rtxremix.debug.entityTypeSummary` | Enable a periodic per-entity-type capture summary in the log. It costs a map probe per entity per frame and a sort and format pass on the render thread, so it is a diagnostic, not a setting | `RemixEntityPass` |
+| `rtxremix.debug.faultInRemixCall` | Crash the game on the 120th presented frame to check crash reporting. `runtime` faults inside `d3d9.dll` during a Remix call on the render thread, which the runtime's crash reporter should catch; `jvm` faults inside `jvm.dll` under the same call, which HotSpot should still report in `hs_err_pid*.log`. Set `RTX_SENTRY_TEST_DSN` to an unreachable endpoint to keep the report on disk under `rtx-remix\logs\.sentry-native\` | `RemixRenderer` |
 
 Tracy zones only appear when the staged runtime was built with Tracy support.
 JFR works with any runtime.

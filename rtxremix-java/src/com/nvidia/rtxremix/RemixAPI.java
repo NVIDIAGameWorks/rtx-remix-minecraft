@@ -188,6 +188,18 @@ public class RemixAPI {
         }
     }
 
+    /**
+     * Crashes the process from inside a Remix call on this thread, to check
+     * crash reporting; see {@link RemixBridge#faultInRemixCall}.
+     *
+     * @throws RemixException if the runtime rejected the call without faulting
+     */
+    public void faultInRemixCall(boolean insideJvm) {
+        checkInitialized();
+        int result = RemixBridge.faultInRemixCall(insideJvm);
+        throw new RemixException("Remix call did not fault", result);
+    }
+
     // ─── materials ───────────────────────────────────────────────────────
 
     public long createMaterial(MaterialInfo info) {

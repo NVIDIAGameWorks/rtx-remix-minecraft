@@ -287,6 +287,114 @@ static void uninstallCrashHandler() {
     g_prevFilter = nullptr;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Remix call guard: a fault under a Remix call is reported as unhandled.
+//
+// Remix calls run on Java threads. On x64, HotSpot's own SEH frames sit between
+// a fault in the runtime and the unhandled-exception filter. HotSpot sees such
+// a fault first, writes hs_err_pid*.log, and exits with code 1, so neither
+// Crashpad's filter nor crashExceptionFilter would ever run. remixCall puts a
+// __try frame between the runtime and HotSpot. Its filter runs only after
+// every handler inside the runtime has declined the exception, and passes a
+// fatal fault to the process's top-level filter as though nothing had handled
+// it. While Crashpad is up that filter never returns: its handler process
+// writes the dump and terminates the game with the exception code. If it does
+// return, HotSpot reports the fault as it always has.
+// ════════════════════════════════════════════════════════════════════════════
+
+static uintptr_t g_jvmImageBegin = 0;
+static uintptr_t g_jvmImageEnd   = 0;
+
+// Records where jvm.dll is mapped, so the filter can tell a HotSpot fault
+// without asking the loader, whose lock the faulting thread may hold.
+static void recordJvmImage() {
+    HMODULE jvm = GetModuleHandleW(L"jvm.dll");
+    if (!jvm) return;
+    auto dos = (const IMAGE_DOS_HEADER*)jvm;
+    auto nt  = (const IMAGE_NT_HEADERS*)((const uint8_t*)jvm + dos->e_lfanew);
+    g_jvmImageBegin = (uintptr_t)jvm;
+    g_jvmImageEnd   = g_jvmImageBegin + nt->OptionalHeader.SizeOfImage;
+}
+
+// Faults HotSpot can only report. A C++ exception counts because one that
+// reaches the guard has escaped the runtime: any catch inside it would have
+// ended the search first. Left to HotSpot: stack overflow and guard pages,
+// since HotSpot owns a Java thread's guard zones, lets native code run on into
+// the yellow zone, and a filter on an exhausted stack can fault itself;
+// floating-point exceptions, which it recovers from by resetting MXCSR; and
+// breakpoints.
+static bool isFatalRemixFault(DWORD code) {
+    switch (code) {
+        case EXCEPTION_ACCESS_VIOLATION:
+        case EXCEPTION_IN_PAGE_ERROR:
+        case EXCEPTION_ILLEGAL_INSTRUCTION:
+        case EXCEPTION_PRIV_INSTRUCTION:
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        case EXCEPTION_INT_OVERFLOW:
+        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+        case EXCEPTION_DATATYPE_MISALIGNMENT:
+        case EXCEPTION_NONCONTINUABLE_EXCEPTION:
+        case 0xE06D7363: // MSVC C++ exception
+            return true;
+        default:
+            return false;
+    }
+}
+
+static LONG remixFaultFilter(EXCEPTION_POINTERS* ep) {
+    const EXCEPTION_RECORD* record = ep->ExceptionRecord;
+    if (!isFatalRemixFault(record->ExceptionCode))
+        return EXCEPTION_CONTINUE_SEARCH;
+
+    const uintptr_t pc = (uintptr_t)record->ExceptionAddress;
+    if (pc >= g_jvmImageBegin && pc < g_jvmImageEnd)
+        return EXCEPTION_CONTINUE_SEARCH;
+
+    // An access inside this thread's own stack reservation means the stack
+    // ran out, and the forwarded filter would need stack the thread lacks.
+    if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
+        ULONG_PTR stackLow = 0, stackHigh = 0;
+        GetCurrentThreadStackLimits(&stackLow, &stackHigh);
+        const ULONG_PTR target = record->ExceptionInformation[1];
+        if (target >= stackLow && target < stackHigh)
+            return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    // An unhandled exception goes to a debugger, not the top-level filter.
+    if (IsDebuggerPresent())
+        return EXCEPTION_CONTINUE_SEARCH;
+
+    // Forward once. A fault inside the forwarded filter, or a second thread
+    // faulting meanwhile, goes to HotSpot.
+    static volatile LONG forwarded = 0;
+    if (InterlockedCompareExchange(&forwarded, 1, 0) != 0)
+        return EXCEPTION_CONTINUE_SEARCH;
+
+    // Windows has no getter for the top-level filter, only a setter that
+    // returns the one it replaces.
+    LPTOP_LEVEL_EXCEPTION_FILTER topLevel = SetUnhandledExceptionFilter(nullptr);
+    SetUnhandledExceptionFilter(topLevel);
+    if (topLevel)
+        topLevel(ep);
+
+    // Whatever the forwarded filter answered, HotSpot still owns this thread
+    // and is the one to end the process.
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Runs one call into the runtime under the guard. Keep the body to the call
+// itself, so a fault in the bridge's own marshalling is not reported as one in
+// the runtime. The filter never returns EXCEPTION_EXECUTE_HANDLER, so the
+// __except block is unreachable.
+template <typename Call>
+static auto remixCall(Call&& call) -> decltype(call()) {
+    __try {
+        return call();
+    } __except (remixFaultFilter(GetExceptionInformation())) {
+    }
+    return decltype(call())();
+}
+
 // Tracy profiling: resolve ___tracy_* symbols from d3d9.dll at runtime so
 // Java zones appear on the same timeline as dxvk-remix zones. We can't use
 // TRACY_IMPORTS because we link against the Windows SDK d3d9.lib which
@@ -530,7 +638,8 @@ static jint initializeRuntime(const wchar_t* dllPath)
 
     memset(&g_remix, 0, sizeof(g_remix));
 
-    remixapi_ErrorCode rc = pfnInit(&initInfo, &g_remix);
+    recordJvmImage();
+    remixapi_ErrorCode rc = remixCall([&] { return pfnInit(&initInfo, &g_remix); });
     if (rc == REMIXAPI_ERROR_CODE_SUCCESS) {
         // ABI sanity check: every function pointer we rely on at runtime must be
         // populated. A partially-filled vtable indicates the loaded d3d9.dll is
@@ -667,7 +776,7 @@ Java_com_nvidia_rtxremix_RemixBridge_startup(JNIEnv*, jclass,
     info.editorModeEnabled             = editorMode;
     info.combineGuiInFinalColor        = combineGui;
     info.interopImage                  = interopImage;
-    return (jint)g_remix.Startup(&info);
+    return (jint)remixCall([&] { return g_remix.Startup(&info); });
 }
 
 JNIEXPORT jint JNICALL
@@ -682,7 +791,7 @@ Java_com_nvidia_rtxremix_RemixBridge_shutdown(JNIEnv*, jclass)
         s_tracyEnabled = false;
         resetTracyFunctionsLocked();
     }
-    jint rc = (jint)shutdown();
+    jint rc = (jint)remixCall([&] { return shutdown(); });
     if (g_remixDll) { FreeLibrary(g_remixDll); g_remixDll = nullptr; }
     memset(&g_remix, 0, sizeof(g_remix));
     return rc;
@@ -696,7 +805,7 @@ Java_com_nvidia_rtxremix_RemixBridge_submit(JNIEnv*, jclass,
     remixapi_SubmitInfo info = {};
     info.sType = REMIXAPI_STRUCT_TYPE_SUBMIT_INFO;
     info.interopFlags = (uint32_t)interopFlags;
-    return (jint)g_remix.Submit(&info);
+    return (jint)remixCall([&] { return g_remix.Submit(&info); });
 }
 
 JNIEXPORT jint JNICALL
@@ -709,7 +818,7 @@ Java_com_nvidia_rtxremix_RemixBridge_present(JNIEnv*, jclass,
 {
     if (!g_inited || !g_remix.Present) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     if (hwndOverride == 0) {
-        return (jint)g_remix.Present(nullptr);
+        return (jint)remixCall([&] { return g_remix.Present(nullptr); });
     }
     remixapi_PresentInfo info = {};
     info.sType        = REMIXAPI_STRUCT_TYPE_PRESENT_INFO;
@@ -718,7 +827,22 @@ Java_com_nvidia_rtxremix_RemixBridge_present(JNIEnv*, jclass,
     info.interopFlipY = (bool)interopFlipY;
     info.clientDoneSemaphore_ValueToWait = (uint64_t)clientDoneSemaphore_ValueToWait;
     info.disableCpuWaitForExternalSemaphores = (bool)disableCpuWaitForExternalSemaphores;
-    return (jint)g_remix.Present(&info);
+    return (jint)remixCall([&] { return g_remix.Present(&info); });
+}
+
+// Faults under the Remix call guard, to check where such a crash is reported.
+// By default DrawInstance gets an unmapped pointer, which the runtime reads on
+// this thread before it queues any work, so d3d9.dll faults and Crashpad
+// should receive it. insideJvm faults in jvm.dll instead, which the guard must
+// leave to HotSpot. Returns only if nothing faulted.
+JNIEXPORT jint JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_faultInRemixCall(JNIEnv* env, jclass, jboolean insideJvm)
+{
+    if (!g_inited || !g_remix.DrawInstance) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    const uintptr_t unmapped = 0x100;
+    if (insideJvm)
+        return remixCall([&] { return env->GetArrayLength((jarray)unmapped); });
+    return (jint)remixCall([&] { return g_remix.DrawInstance((const remixapi_InstanceInfo*)unmapped); });
 }
 
 JNIEXPORT jint JNICALL
@@ -727,7 +851,7 @@ Java_com_nvidia_rtxremix_RemixBridge_dxvkGetInteropInfo(JNIEnv* env, jclass, job
     if (!g_inited || !g_remix.dxvk_GetInteropInfo) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
 
     remixapi_dxvk_InteropInfo info = {};
-    remixapi_ErrorCode r = g_remix.dxvk_GetInteropInfo(&info);
+    remixapi_ErrorCode r = remixCall([&] { return g_remix.dxvk_GetInteropInfo(&info); });
     if (r != REMIXAPI_ERROR_CODE_SUCCESS) return (jint)r;
 
     // Get class of Java interop info object
@@ -792,7 +916,7 @@ Java_com_nvidia_rtxremix_RemixBridge_createMaterial(JNIEnv*, jclass,
     info.wrapModeV          = (uint8_t)wrapV;
 
     remixapi_MaterialHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.CreateMaterial(&info, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.CreateMaterial(&info, &handle); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
 }
 
@@ -824,15 +948,15 @@ Java_com_nvidia_rtxremix_RemixBridge_updateMaterial(JNIEnv*, jclass,
     info.wrapModeU          = (uint8_t)wrapU;
     info.wrapModeV          = (uint8_t)wrapV;
 
-    return (jint)g_remix.UpdateMaterial(
-        (remixapi_MaterialHandle)(uintptr_t)h, &info);
+    return (jint)remixCall([&] { return g_remix.UpdateMaterial(
+        (remixapi_MaterialHandle)(uintptr_t)h, &info); });
 }
 
 JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_destroyMaterial(JNIEnv*, jclass, jlong h)
 {
     if (!g_inited || !g_remix.DestroyMaterial) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.DestroyMaterial((remixapi_MaterialHandle)(uintptr_t)h);
+    return (jint)remixCall([&] { return g_remix.DestroyMaterial((remixapi_MaterialHandle)(uintptr_t)h); });
 }
 
 // ─── textures ────────────────────────────────────────────────────────────
@@ -853,7 +977,7 @@ Java_com_nvidia_rtxremix_RemixBridge_createTextureFromMemory(JNIEnv* env, jclass
     info.purpose   = (remixapi_TexturePurpose)purpose;
 
     remixapi_TextureHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.CreateTextureFromMemory(&info, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.CreateTextureFromMemory(&info, &handle); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
 }
 
@@ -869,7 +993,7 @@ Java_com_nvidia_rtxremix_RemixBridge_createTextureFromFile(JNIEnv* env, jclass, 
     env->ReleaseStringUTFChars(jPath, utf8);
 
     remixapi_TextureHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.CreateTextureFromFile(wpath, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.CreateTextureFromFile(wpath, &handle); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
 }
 
@@ -877,7 +1001,7 @@ JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_destroyTexture(JNIEnv*, jclass, jlong h)
 {
     if (!g_inited || !g_remix.DestroyTexture) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.DestroyTexture((remixapi_TextureHandle)(uintptr_t)h);
+    return (jint)remixCall([&] { return g_remix.DestroyTexture((remixapi_TextureHandle)(uintptr_t)h); });
 }
 
 // Returns bytes-per-pixel for a given remixapi_TextureFormat, or 0 for an
@@ -1049,7 +1173,7 @@ Java_com_nvidia_rtxremix_RemixBridge_updateTextureFromMemory(JNIEnv* env, jclass
     info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_PATCH_INFO;
     info.entryCount = (uint32_t)entryCount;
     info.entries = entries.data();
-    return (jint)g_remix.UpdateTextureFromMemory(&info);
+    return (jint)remixCall([&] { return g_remix.UpdateTextureFromMemory(&info); });
 }
 
 // ─── meshes ──────────────────────────────────────────────────────────────
@@ -1082,7 +1206,7 @@ Java_com_nvidia_rtxremix_RemixBridge_createMesh(JNIEnv* env, jclass,
     info.surfaces_count = (uint32_t)surfaceCount;
 
     remixapi_MeshHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.CreateMesh(&info, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.CreateMesh(&info, &handle); });
 
     freeSurfaces(surfs, stackBuf);
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
@@ -1092,7 +1216,7 @@ JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_destroyMesh(JNIEnv*, jclass, jlong h)
 {
     if (!g_inited || !g_remix.DestroyMesh) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.DestroyMesh((remixapi_MeshHandle)(uintptr_t)h);
+    return (jint)remixCall([&] { return g_remix.DestroyMesh((remixapi_MeshHandle)(uintptr_t)h); });
 }
 
 // ─── camera ──────────────────────────────────────────────────────────────
@@ -1116,7 +1240,7 @@ Java_com_nvidia_rtxremix_RemixBridge_setupCamera(JNIEnv* env, jclass,
     memcpy(&info.projection, p, 16 * sizeof(float));
     env->ReleasePrimitiveArrayCritical(jProj, p, JNI_ABORT);
 
-    return (jint)g_remix.SetupCamera(&info);
+    return (jint)remixCall([&] { return g_remix.SetupCamera(&info); });
 }
 
 JNIEXPORT jint JNICALL
@@ -1128,7 +1252,7 @@ Java_com_nvidia_rtxremix_RemixBridge_setCameraMediumMaterial(JNIEnv*, jclass, jl
     info.sType = REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_INFO;
     info.medium = (remixapi_MaterialHandle)(uintptr_t)materialHandle;
 
-    return (jint)g_remix.SetCameraMediumMaterial(&info);
+    return (jint)remixCall([&] { return g_remix.SetCameraMediumMaterial(&info); });
 }
 
 // ─── instances ───────────────────────────────────────────────────────────
@@ -1159,7 +1283,7 @@ Java_com_nvidia_rtxremix_RemixBridge_drawInstance(JNIEnv* env, jclass,
     remixapi_InstanceInfo info;
     fillInstanceInfo(env, info, meshHandle, jTransform, categoryFlags,
                      doubleSided, pNext);
-    return (jint)g_remix.DrawInstance(&info);
+    return (jint)remixCall([&] { return g_remix.DrawInstance(&info); });
 }
 
 JNIEXPORT jlong JNICALL
@@ -1174,7 +1298,7 @@ Java_com_nvidia_rtxremix_RemixBridge_sceneInstanceAdd(JNIEnv* env, jclass,
                      doubleSided, pNext);
 
     remixapi_SceneInstanceHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.SceneInstanceAdd(&info, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.SceneInstanceAdd(&info, &handle); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
 }
 
@@ -1190,8 +1314,8 @@ Java_com_nvidia_rtxremix_RemixBridge_sceneInstanceUpdate(JNIEnv* env, jclass,
     remixapi_InstanceInfo info;
     fillInstanceInfo(env, info, meshHandle, jTransform, categoryFlags,
                      doubleSided, pNext);
-    return (jint)g_remix.SceneInstanceUpdate(
-        (remixapi_SceneInstanceHandle)(uintptr_t)sceneInstanceHandle, &info);
+    return (jint)remixCall([&] { return g_remix.SceneInstanceUpdate(
+        (remixapi_SceneInstanceHandle)(uintptr_t)sceneInstanceHandle, &info); });
 }
 
 JNIEXPORT jint JNICALL
@@ -1201,8 +1325,8 @@ Java_com_nvidia_rtxremix_RemixBridge_sceneInstanceRemove(JNIEnv*, jclass,
     if (!g_inited || !g_remix.SceneInstanceRemove) {
         return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     }
-    return (jint)g_remix.SceneInstanceRemove(
-        (remixapi_SceneInstanceHandle)(uintptr_t)sceneInstanceHandle);
+    return (jint)remixCall([&] { return g_remix.SceneInstanceRemove(
+        (remixapi_SceneInstanceHandle)(uintptr_t)sceneInstanceHandle); });
 }
 
 // ─── lights ──────────────────────────────────────────────────────────────
@@ -1220,7 +1344,7 @@ Java_com_nvidia_rtxremix_RemixBridge_createLight(JNIEnv*, jclass,
     info.radiance = { radR, radG, radB };
 
     remixapi_LightHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.CreateLight(&info, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.CreateLight(&info, &handle); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
 }
 
@@ -1228,14 +1352,14 @@ JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_destroyLight(JNIEnv*, jclass, jlong h)
 {
     if (!g_inited || !g_remix.DestroyLight) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.DestroyLight((remixapi_LightHandle)(uintptr_t)h);
+    return (jint)remixCall([&] { return g_remix.DestroyLight((remixapi_LightHandle)(uintptr_t)h); });
 }
 
 JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_drawLightInstance(JNIEnv*, jclass, jlong h)
 {
     if (!g_inited || !g_remix.DrawLightInstance) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.DrawLightInstance((remixapi_LightHandle)(uintptr_t)h);
+    return (jint)remixCall([&] { return g_remix.DrawLightInstance((remixapi_LightHandle)(uintptr_t)h); });
 }
 
 // ─── config ──────────────────────────────────────────────────────────────
@@ -1247,7 +1371,7 @@ Java_com_nvidia_rtxremix_RemixBridge_setConfigVariable(JNIEnv* env, jclass,
     if (!g_inited || !g_remix.SetConfigVariable) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     const char* key   = env->GetStringUTFChars(jKey, nullptr);
     const char* value = env->GetStringUTFChars(jValue, nullptr);
-    jint rc = (jint)g_remix.SetConfigVariable(key, value);
+    jint rc = (jint)remixCall([&] { return g_remix.SetConfigVariable(key, value); });
     env->ReleaseStringUTFChars(jKey, key);
     env->ReleaseStringUTFChars(jValue, value);
     return rc;
@@ -1265,7 +1389,7 @@ Java_com_nvidia_rtxremix_RemixBridge_getConfigVariableResolved(JNIEnv* env, jcla
     info.key = key;
     info.value = (char*)value;
     info.valueSize = jValue ? (uint32_t)env->GetArrayLength(jValue) : 0;
-    remixapi_ErrorCode rc = g_remix.GetConfigVariableResolved(&info);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.GetConfigVariableResolved(&info); });
     if (value) {
         env->ReleaseByteArrayElements(jValue, value,
             rc == REMIXAPI_ERROR_CODE_SUCCESS ? 0 : JNI_ABORT);
@@ -1285,8 +1409,8 @@ Java_com_nvidia_rtxremix_RemixBridge_acquireConfigLayer(JNIEnv* env, jclass,
     if (!g_inited || !g_remix.AcquireConfigLayer) return 0;
     const char* path = env->GetStringUTFChars(jPath, nullptr);
     remixapi_ConfigLayerHandle handle = nullptr;
-    remixapi_ErrorCode rc = g_remix.AcquireConfigLayer(
-        path, (float)priority, (float)blendThreshold, &handle);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.AcquireConfigLayer(
+        path, (float)priority, (float)blendThreshold, &handle); });
     env->ReleaseStringUTFChars(jPath, path);
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)handle : 0;
 }
@@ -1296,17 +1420,17 @@ Java_com_nvidia_rtxremix_RemixBridge_setConfigLayerBlending(JNIEnv*, jclass,
     jlong handle, jfloat strength, jfloat blendThreshold)
 {
     if (!g_inited || !g_remix.SetConfigLayerBlending) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.SetConfigLayerBlending(
+    return (jint)remixCall([&] { return g_remix.SetConfigLayerBlending(
         (remixapi_ConfigLayerHandle)(uintptr_t)handle,
         (float)strength,
-        (float)blendThreshold);
+        (float)blendThreshold); });
 }
 
 JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_releaseConfigLayer(JNIEnv*, jclass, jlong handle)
 {
     if (!g_inited || !g_remix.ReleaseConfigLayer) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.ReleaseConfigLayer((remixapi_ConfigLayerHandle)(uintptr_t)handle);
+    return (jint)remixCall([&] { return g_remix.ReleaseConfigLayer((remixapi_ConfigLayerHandle)(uintptr_t)handle); });
 }
 
 /** @return JNI_TRUE when the loaded runtime exposes the config-layer API (API >= 0.9.0) */
@@ -1326,7 +1450,7 @@ Java_com_nvidia_rtxremix_RemixBridge_dxvkCreateD3D9(JNIEnv*, jclass, jboolean ed
 {
     if (!g_inited || !g_remix.dxvk_CreateD3D9) return 0;
     IDirect3D9Ex* pD3D9 = nullptr;
-    remixapi_ErrorCode rc = g_remix.dxvk_CreateD3D9(editorMode ? 1 : 0, &pD3D9);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.dxvk_CreateD3D9(editorMode ? 1 : 0, &pD3D9); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)(uintptr_t)pD3D9 : 0;
 }
 
@@ -1334,7 +1458,7 @@ JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_dxvkRegisterD3D9Device(JNIEnv*, jclass, jlong device)
 {
     if (!g_inited || !g_remix.dxvk_RegisterD3D9Device) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.dxvk_RegisterD3D9Device((IDirect3DDevice9Ex*)(uintptr_t)device);
+    return (jint)remixCall([&] { return g_remix.dxvk_RegisterD3D9Device((IDirect3DDevice9Ex*)(uintptr_t)device); });
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -1342,7 +1466,7 @@ Java_com_nvidia_rtxremix_RemixBridge_dxvkGetExternalSwapchain(JNIEnv* env, jclas
 {
     if (!g_inited || !g_remix.dxvk_GetExternalSwapchain) return nullptr;
     uint64_t vkImage = 0, semDone = 0, semResume = 0;
-    remixapi_ErrorCode rc = g_remix.dxvk_GetExternalSwapchain(&vkImage, &semDone, &semResume);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.dxvk_GetExternalSwapchain(&vkImage, &semDone, &semResume); });
     if (rc != REMIXAPI_ERROR_CODE_SUCCESS) return nullptr;
 
     jlongArray arr = env->NewLongArray(3);
@@ -1356,8 +1480,8 @@ Java_com_nvidia_rtxremix_RemixBridge_dxvkGetVkImage(JNIEnv*, jclass, jlong surfa
 {
     if (!g_inited || !g_remix.dxvk_GetVkImage) return 0;
     uint64_t vkImage = 0;
-    remixapi_ErrorCode rc = g_remix.dxvk_GetVkImage(
-        (IDirect3DSurface9*)(uintptr_t)surface, &vkImage);
+    remixapi_ErrorCode rc = remixCall([&] { return g_remix.dxvk_GetVkImage(
+        (IDirect3DSurface9*)(uintptr_t)surface, &vkImage); });
     return (rc == REMIXAPI_ERROR_CODE_SUCCESS) ? (jlong)vkImage : 0;
 }
 
@@ -1366,9 +1490,9 @@ Java_com_nvidia_rtxremix_RemixBridge_dxvkCopyRenderingOutput(JNIEnv*, jclass,
     jlong surface, jint type)
 {
     if (!g_inited || !g_remix.dxvk_CopyRenderingOutput) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    return (jint)g_remix.dxvk_CopyRenderingOutput(
+    return (jint)remixCall([&] { return g_remix.dxvk_CopyRenderingOutput(
         (IDirect3DSurface9*)(uintptr_t)surface,
-        (remixapi_dxvk_CopyRenderingOutputType)type);
+        (remixapi_dxvk_CopyRenderingOutputType)type); });
 }
 
 JNIEXPORT jint JNICALL
@@ -1377,8 +1501,8 @@ Java_com_nvidia_rtxremix_RemixBridge_dxvkSetDefaultOutput(JNIEnv*, jclass,
 {
     if (!g_inited || !g_remix.dxvk_SetDefaultOutput) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     remixapi_Float4D color = { r, g, b, a };
-    return (jint)g_remix.dxvk_SetDefaultOutput(
-        (remixapi_dxvk_CopyRenderingOutputType)type, &color);
+    return (jint)remixCall([&] { return g_remix.dxvk_SetDefaultOutput(
+        (remixapi_dxvk_CopyRenderingOutputType)type, &color); });
 }
 
 // ─── D3D9 COM helpers ────────────────────────────────────────────────────
@@ -1423,7 +1547,9 @@ Java_com_nvidia_rtxremix_RemixBridge_d3d9CreateDevice(JNIEnv*, jclass,
     auto pfnCreate = (PFN_CreateDeviceEx)vtable[20];
 
     IDirect3DDevice9Ex* pDevice = nullptr;
-    HRESULT hr = pfnCreate(pD3D9Ex, 0, 1/*HAL*/, nullptr, behaviorFlags, &pp, nullptr, (void**)&pDevice);
+    HRESULT hr = remixCall([&] {
+        return pfnCreate(pD3D9Ex, 0, 1/*HAL*/, nullptr, behaviorFlags, &pp, nullptr, (void**)&pDevice);
+    });
     return (SUCCEEDED(hr) && pDevice) ? (jlong)(uintptr_t)pDevice : 0;
 }
 
@@ -1440,9 +1566,11 @@ Java_com_nvidia_rtxremix_RemixBridge_d3d9CreateRenderTarget(JNIEnv*, jclass,
     auto pfnCreateRT = (PFN_CreateRT)vtable[28];
 
     IDirect3DSurface9* pSurface = nullptr;
-    HRESULT hr = pfnCreateRT(pDevice, (UINT)width, (UINT)height,
-                              (UINT)format, 0/*NONE*/, 0, FALSE,
-                              (void**)&pSurface, nullptr);
+    HRESULT hr = remixCall([&] {
+        return pfnCreateRT(pDevice, (UINT)width, (UINT)height,
+                           (UINT)format, 0/*NONE*/, 0, FALSE,
+                           (void**)&pSurface, nullptr);
+    });
     return (SUCCEEDED(hr) && pSurface) ? (jlong)(uintptr_t)pSurface : 0;
 }
 
@@ -1479,7 +1607,7 @@ Java_com_nvidia_rtxremix_RemixBridge_d3d9Reset(JNIEnv*, jclass,
     // vtable[16] = Reset
     typedef HRESULT(__stdcall* PFN_Reset)(IDirect3DDevice9Ex*, void*);
     auto pfnReset = (PFN_Reset)vtable[16];
-    return (jint)pfnReset(pDevice, &pp);
+    return (jint)remixCall([&] { return pfnReset(pDevice, &pp); });
 }
 
 JNIEXPORT jint JNICALL
@@ -1490,7 +1618,7 @@ Java_com_nvidia_rtxremix_RemixBridge_d3d9Present(JNIEnv*, jclass, jlong pDeviceJ
     // vtable[17] = Present
     typedef HRESULT(__stdcall* PFN_Present)(IDirect3DDevice9Ex*, void*, void*, HWND, void*);
     auto pfnPresent = (PFN_Present)vtable[17];
-    return (jint)pfnPresent(pDevice, nullptr, nullptr, nullptr, nullptr);
+    return (jint)remixCall([&] { return pfnPresent(pDevice, nullptr, nullptr, nullptr, nullptr); });
 }
 
 JNIEXPORT jint JNICALL
@@ -1498,7 +1626,7 @@ Java_com_nvidia_rtxremix_RemixBridge_d3d9Release(JNIEnv*, jclass, jlong comPtr)
 {
     if (comPtr == 0) return 0;
     auto pUnk = (IUnknown*)(uintptr_t)comPtr;
-    return (jint)pUnk->Release();
+    return (jint)remixCall([&] { return pUnk->Release(); });
 }
 
 // ─── extension allocation ────────────────────────────────────────────────
@@ -1868,10 +1996,10 @@ JNIEXPORT jlong JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyZoneBegin(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked()) return 0;
     const char* cname = env->GetStringUTFChars(name, nullptr);
-    uint64_t srcloc = s_allocSrclocName(
-        0, "Java", 4, cname, strlen(cname), cname, strlen(cname));
+    uint64_t srcloc = remixCall([&] { return s_allocSrclocName(
+        0, "Java", 4, cname, strlen(cname), cname, strlen(cname)); });
     env->ReleaseStringUTFChars(name, cname);
-    TracyCZoneCtx ctx = s_emitZoneBeginAlloc(srcloc, 1);
+    TracyCZoneCtx ctx = remixCall([&] { return s_emitZoneBeginAlloc(srcloc, 1); });
     return (jlong)ctx.id | ((jlong)ctx.active << 32);
 }
 
@@ -1883,7 +2011,7 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyZoneEnd(
     TracyCZoneCtx ctx;
     ctx.id     = (uint32_t)(packed & 0xFFFFFFFF);
     ctx.active = (int32_t)(packed >> 32);
-    s_emitZoneEnd(ctx);
+    remixCall([&] { s_emitZoneEnd(ctx); });
 }
 
 JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracySetThreadName(
@@ -1892,7 +2020,7 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracySetThreadName(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked() || !s_setThreadName) return;
     const char* cname = env->GetStringUTFChars(name, nullptr);
-    s_setThreadName(cname);
+    remixCall([&] { s_setThreadName(cname); });
     env->ReleaseStringUTFChars(name, cname);
 }
 
@@ -1916,7 +2044,7 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyPlot(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked() || !s_emitPlot) return;
     const char* stable = internPlotName(env, name);
-    if (stable) s_emitPlot(stable, (double)value);
+    if (stable) remixCall([&] { s_emitPlot(stable, (double)value); });
 }
 
 JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyMessage(
@@ -1925,7 +2053,7 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyMessage(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked() || !s_emitMessage) return;
     const char* cmessage = env->GetStringUTFChars(message, nullptr);
-    s_emitMessage(cmessage, strlen(cmessage), 0);
+    remixCall([&] { s_emitMessage(cmessage, strlen(cmessage), 0); });
     env->ReleaseStringUTFChars(message, cmessage);
 }
 
@@ -1938,7 +2066,7 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyFrameMark(
     if (name) {
         cname = env->GetStringUTFChars(name, nullptr);
     }
-    s_emitFrameMark(cname);
+    remixCall([&] { s_emitFrameMark(cname); });
     if (name) {
         env->ReleaseStringUTFChars(name, cname);
     }

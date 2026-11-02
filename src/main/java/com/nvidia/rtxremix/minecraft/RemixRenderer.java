@@ -103,6 +103,15 @@ public class RemixRenderer {
     private static final List<String> ACCOUNT_OPTIONS =
             List.of("--username", "--accessToken", "--uuid", "--xuid", "--clientId");
 
+    /**
+     * {@code runtime} crashes the game inside a Remix call on the render thread
+     * once {@link #FAULT_IN_REMIX_CALL_FRAME} frames have been presented, and
+     * {@code jvm} faults inside {@code jvm.dll} under the same call instead.
+     * Checks where a native crash on the render thread is reported.
+     */
+    private static final String FAULT_IN_REMIX_CALL = System.getProperty("rtxremix.debug.faultInRemixCall", "");
+    private static final int FAULT_IN_REMIX_CALL_FRAME = 120;
+
     // Remix API instance
     private RemixAPI remixApi;
     private boolean initialized = false;
@@ -112,6 +121,7 @@ public class RemixRenderer {
     
     private boolean submitFrameCalled = false;
     private boolean presentFailureLogged = false;
+    private int presentedFrames = 0;
 
     // Scene managers
     private ChunkManager chunkManager;
@@ -1329,6 +1339,9 @@ public class RemixRenderer {
      * per run rather than once per frame.
      */
     public void presentFrameVk() {
+        if (!FAULT_IN_REMIX_CALL.isEmpty() && ++presentedFrames == FAULT_IN_REMIX_CALL_FRAME) {
+            faultInRemixCall();
+        }
         boolean failed = false;
         try {
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
@@ -1354,6 +1367,22 @@ public class RemixRenderer {
         }
         if (!failed) {
             presentFailureLogged = false;
+        }
+    }
+
+    private void faultInRemixCall() {
+        boolean insideJvm = FAULT_IN_REMIX_CALL.equals("jvm");
+        if (!insideJvm && !FAULT_IN_REMIX_CALL.equals("runtime")) {
+            LOGGER.warn("Ignoring rtxremix.debug.faultInRemixCall={}: expected runtime or jvm",
+                    FAULT_IN_REMIX_CALL);
+            return;
+        }
+        LOGGER.warn("Crashing inside a Remix call ({}), as rtxremix.debug.faultInRemixCall asks",
+                FAULT_IN_REMIX_CALL);
+        try {
+            remixApi.faultInRemixCall(insideJvm);
+        } catch (RemixException e) {
+            LOGGER.error("Could not crash inside a Remix call: {} (code: {})", e.getMessage(), e.getErrorCode());
         }
     }
 

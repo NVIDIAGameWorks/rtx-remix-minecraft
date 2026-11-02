@@ -403,6 +403,13 @@ are left alone. Run source-management commands from the repository root:
 - Bridge-only builds use `gradlew.bat compileNativeWin64 compileNativeArm64`,
   or `rtxremix-java/native/build_native.bat x64` or `arm64`.
 
+Every call from the bridge into the runtime, the Remix C API, its D3D9
+objects, and its Tracy exports, goes through `remixCall`. Remix calls run on
+Java threads, where HotSpot catches a native fault before any unhandled-exception
+filter; the guard hands a fatal fault in the runtime to the runtime's crash
+reporter first and leaves faults in `jvm.dll`, stack overflows, and
+floating-point exceptions to HotSpot. Keep the guarded body to the call itself.
+
 The C API is reached only through JNI, never a JNA interface table. Java-side
 handles stay raw `long` values, not JNA `Pointer`s or wrapper objects. Native
 methods that require direct `ByteBuffer`s must never receive heap buffers;
