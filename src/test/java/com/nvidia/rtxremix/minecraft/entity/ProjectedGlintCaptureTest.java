@@ -79,10 +79,10 @@ class ProjectedGlintCaptureTest {
             int glintOrder = -1, baseOrder = -1;
             for (var layer : result.layers()) {
                 RemixCapturingConsumer captured = layer.consumer();
-                boolean glint = RenderLayerUtils.isGlint(layer.renderLayer());
+                boolean glint = layer.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT;
                 if (glint) glintOrder = layer.layerIndex();
                 else baseOrder = layer.layerIndex();
-                assertEquals(glint, layer.transientGeometry(), "posed projection is streamed instead of filling the mesh cache");
+                assertEquals(glint, layer.transientGeometry(0), "posed projection is streamed instead of filling the mesh cache");
                 assertEquals(4, captured.getVertexCount());
                 Transform part = new Transform();
                 RemixEntitySubmitter.composeRigidTransform(root, result.boneData(), result.boneCount(),

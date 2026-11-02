@@ -11,9 +11,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -72,21 +70,36 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
      * {@link #beginEntity()} call.
      */
     public List<CapturedLayer> endEntity() {
+        return finishEntity(true);
+    }
+
+    /** Finalizes a replay whose non-empty layers already carry their captured ranks. */
+    public List<CapturedLayer> endReplay() {
+        return finishEntity(false);
+    }
+
+    private List<CapturedLayer> finishEntity(boolean rankLayers) {
         resultBuffer.clear();
         int glintCount = 0;
-        for (int i = 0; i < activeCount; i++) if (RenderLayerUtils.isGlint(activeLayers[i])) glintCount++;
+        if (rankLayers) {
+            for (int i = 0; i < activeCount; i++) {
+                if (activeConsumers[i].capturedLayer().surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT) glintCount++;
+            }
+        }
         int baseIndex = 0;
         int glintIndex = activeCount - glintCount;
         for (int i = 0; i < activeCount; i++) {
             RemixCapturingConsumer consumer = activeConsumers[i];
-            consumer.setLayerIndex(RenderLayerUtils.isGlint(activeLayers[i]) ? glintIndex++ : baseIndex++);
+            if (rankLayers) {
+                consumer.setLayerIndex(consumer.capturedLayer().surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT
+                        ? glintIndex++ : baseIndex++);
+            }
             consumer.finishOpenVertex();
             // A cuboid part carries no vertices, so a layer can be non-empty with zero
-            // captured vertices. Rank all requested layers before dropping empty ones,
+            // captured vertices. Live captures rank requested layers before dropping empty ones,
             // so empty geometry cannot shift the shell order or retained identities.
             if (consumer.getVertexCount() > 0 || consumer.getPartCount() > 0) {
                 CapturedLayer layer = consumer.capturedLayer();
-                layer.bind(activeLayers[i]);
                 resultBuffer.add(layer);
             }
         }
@@ -130,11 +143,11 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
         } else {
             consumer = new RemixCapturingConsumer(textureId, true, topology, transientGeometry);
         }
-        consumer.setLayerIndex(activeCount);
         if (activeCount == activeLayers.length) {
             activeLayers = Arrays.copyOf(activeLayers, activeCount * 2);
             activeConsumers = Arrays.copyOf(activeConsumers, activeCount * 2);
         }
+        consumer.capturedLayer().bind(layer);
         activeLayers[activeCount] = layer;
         activeConsumers[activeCount] = consumer;
         activeCount++;
@@ -153,6 +166,7 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
     public static final class CapturedLayer {
         private final RemixCapturingConsumer consumer;
         private RenderLayer renderLayer;
+        private RenderLayerUtils.LayerState state;
 
         CapturedLayer(RemixCapturingConsumer consumer) {
             this.consumer = consumer;
@@ -160,18 +174,21 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
 
         void bind(RenderLayer renderLayer) {
             this.renderLayer = renderLayer;
+            this.state = RenderLayerUtils.state(renderLayer);
         }
 
         public Identifier textureId() { return consumer.getTextureId(); }
         public RenderLayer renderLayer() { return renderLayer; }
+        RenderLayerUtils.SurfaceMode surfaceMode() { return state.surfaceMode(); }
+        boolean text() { return state.text(); }
         public RemixCapturingConsumer consumer() { return consumer; }
         public int vertexCount() { return consumer.getVertexCount(); }
-        /** Shell order among requested layers, with glint after its substrate. */
+        /** Stable layer rank; submission puts glint beyond any canvas pattern stack. */
         public int layerIndex() { return consumer.getLayerIndex(); }
         /** How to read the vertices as triangles. */
         public RenderLayerUtils.Topology topology() { return consumer.getTopology(); }
-        /** Whether the layer's vertex content differs every frame, so a mesh built from it must not be pooled. */
-        public boolean transientGeometry() { return consumer.isTransientGeometry(); }
+        /** Whether this part changes its local vertices each frame. Cuboids remain reusable. */
+        public boolean transientGeometry(int part) { return consumer.isPartTransientGeometry(part); }
     }
 
     // ---- No-op consumer for layers Remix cannot draw ----

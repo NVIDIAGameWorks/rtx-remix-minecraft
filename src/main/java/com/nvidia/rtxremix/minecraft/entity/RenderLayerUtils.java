@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexFormatElement;
@@ -64,12 +65,6 @@ final class RenderLayerUtils {
             Identifier.of("rtxremix", "untextured_entity_layer");
 
     private RenderLayerUtils() {}
-
-    /** Glint is painted over its substrate even when vanilla requests its buffer first. */
-    static boolean isGlint(RenderLayer layer) {
-        return layer instanceof RenderLayer.MultiPhase multiPhase
-                && multiPhase.getPhases().transparency == RenderPhase.GLINT_TRANSPARENCY;
-    }
 
     /**
      * Cache of RenderLayer -> capturable texture. Most RenderLayer instances are reused,
@@ -162,8 +157,8 @@ final class RenderLayerUtils {
      * (the lead between a mob and its holder), and the beacon beam, whose texture
      * coordinate scrolls with world time. Everything else it draws is rigid: a
      * model part or baked quad whose pose changes while its local vertices do not.
-     * Consumers additionally mark fully posed vertex streams as transient when a
-     * wrapper has removed their local pose, as projected glint does.
+     * Consumers additionally classify individual fully posed parts as transient when
+     * a wrapper has removed their local pose, as projected glint does.
      */
     static boolean isStreamedPerFrame(RenderLayer layer) {
         return streamedPerFrameCache.computeIfAbsent(layer, RenderLayerUtils::isStreamedPerFrameUncached);
@@ -179,6 +174,19 @@ final class RenderLayerUtils {
         return topology == Topology.TRIANGLE_STRIP || beaconBeamProgram;
     }
 
+    /** Immutable phase and glyph facts shared by captures of the same layer. */
+    record LayerState(SurfaceMode surfaceMode, boolean text) {}
+
+    private static final Map<RenderLayer, LayerState> layerStates =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    static LayerState state(RenderLayer layer) {
+        return layerStates.computeIfAbsent(layer, key -> new LayerState(surfaceModeUncached(key),
+                extractTexture(key).map(DynamicTextureCache::isGlyphPage).orElse(false)));
+    }
+
+    static void clearCachedState() { layerStates.clear(); }
+
     /**
      * Converts Minecraft's render-phase state into the material behavior that
      * Remix needs. This deliberately inspects phases rather than render-layer
@@ -190,6 +198,10 @@ final class RenderLayerUtils {
      * behaviour and it is classified as translucent.
      */
     static SurfaceMode surfaceMode(RenderLayer layer) {
+        return state(layer).surfaceMode();
+    }
+
+    private static SurfaceMode surfaceModeUncached(RenderLayer layer) {
         if (!(layer instanceof RenderLayer.MultiPhase multiPhase)) {
             return SurfaceMode.CUTOUT;
         }

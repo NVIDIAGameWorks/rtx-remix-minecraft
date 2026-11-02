@@ -77,9 +77,9 @@ class RemixFirstPersonPassTest {
         Matrix4f modelView = new Matrix4f().rotation(camera.getRotation()).invert();
         Matrix4f handPose = new Matrix4f().translation(handX, -0.5f, -1.5f).rotateXYZ(0.2f, 0.3f, 0.1f).scale(0.8f);
         Matrix4f expectedPose = new Matrix4f().scaling(
-                fovScale * RemixFirstPersonPass.VIEW_MODEL_SCALE,
-                fovScale * RemixFirstPersonPass.VIEW_MODEL_SCALE,
-                RemixFirstPersonPass.VIEW_MODEL_SCALE).mul(handPose);
+                fovScale * ViewModelSpace.SCALE,
+                fovScale * ViewModelSpace.SCALE,
+                ViewModelSpace.SCALE).mul(handPose);
         Hand hand = handX > 0 ? Hand.MAIN_HAND : Hand.OFF_HAND;
         EquipmentSlot slot = handX > 0 ? EquipmentSlot.MAINHAND : EquipmentSlot.OFFHAND;
         try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
@@ -136,7 +136,7 @@ class RemixFirstPersonPassTest {
                     1, 1, 1, 1, 0, OverlayTexture.DEFAULT_UV);
             var result = pass.finishCapture(this, camera, fovScale);
             assertNotNull(result);
-            var layer = result.layers().stream().filter(l -> RenderLayerUtils.isGlint(l.renderLayer())).findFirst().orElseThrow();
+            var layer = result.layers().stream().filter(l -> l.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT).findFirst().orElseThrow();
             RemixCapturingConsumer captured = layer.consumer();
             Transform transform = new Transform();
             RemixEntitySubmitter.composeRigidTransform(captureRoot(camera, modelView, fovScale),
@@ -146,8 +146,7 @@ class RemixFirstPersonPassTest {
             RemixFirstPersonPass.transformPoint(transform, 1, 0, 0, alongX);
             RemixFirstPersonPass.transformPoint(transform, 0, 1, 0, alongY);
             Vector3f worldNormal = alongX.sub(base).cross(alongY.sub(base)).normalize();
-            float depth = RemixEntitySubmitter.meshLayerDepth(layer.textureId(),
-                    RenderLayerUtils.surfaceMode(layer.renderLayer()), layer.layerIndex(), InstanceCategoryBit.VIEW_MODEL);
+            float depth = RemixEntitySubmitter.meshLayerDepth(layer.text(), layer.layerIndex(), InstanceCategoryBit.VIEW_MODEL);
             Vector3f glint = new Vector3f();
             RemixFirstPersonPass.transformPoint(transform, 0, 0, depth, glint);
 
@@ -213,7 +212,7 @@ class RemixFirstPersonPassTest {
                 float handX = slot == EquipmentSlot.MAINHAND ? 0.5f : -0.5f;
                 Vector3f expected = new Matrix4f().translation(handX, -0.5f, -1.5f)
                         .rotateXYZ(0.2f, 0.3f, 0.1f).scale(0.8f)
-                        .transformPosition(new Vector3f(0.5f, 0.5f, 0)).mul(RemixFirstPersonPass.VIEW_MODEL_SCALE);
+                        .transformPosition(new Vector3f(0.5f, 0.5f, 0)).mul(ViewModelSpace.SCALE);
                 Vector3f anchor = new Vector3f();
                 assertTrue(pass.getPendingHeldLightPosition(slot, anchor));
                 assertVector(toWorld(camera, expected), anchor);

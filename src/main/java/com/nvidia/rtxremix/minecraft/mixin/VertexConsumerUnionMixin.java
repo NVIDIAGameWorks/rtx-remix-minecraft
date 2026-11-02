@@ -5,16 +5,48 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.entity.RemixConsumerDispatch;
+import com.nvidia.rtxremix.minecraft.entity.RemixCapturingConsumer;
+import com.nvidia.rtxremix.minecraft.entity.RemixUnionConsumer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumers;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Preserves pose-aware dispatch while capturing, and vanilla defaults otherwise. */
 @Mixin({VertexConsumers.Dual.class, VertexConsumers.Union.class})
-public abstract class VertexConsumerUnionMixin implements VertexConsumer {
+public abstract class VertexConsumerUnionMixin implements VertexConsumer, RemixUnionConsumer {
+    @Unique private VertexConsumer rtxremix$first;
+    @Unique private VertexConsumer rtxremix$second;
+    @Unique private VertexConsumer[] rtxremix$delegates;
+    @Unique private RemixCapturingConsumer rtxremix$capture;
+
+    @Inject(method = "<init>", at = @At("RETURN"), remap = false)
+    private void rtxremix$bindDelegates(CallbackInfo ci) {
+        if ((Object) this instanceof VertexConsumers.Dual dual) {
+            rtxremix$first = dual.first;
+            rtxremix$second = dual.second;
+            rtxremix$capture = RemixConsumerDispatch.findCapture(dual.first);
+            if (rtxremix$capture == null) rtxremix$capture = RemixConsumerDispatch.findCapture(dual.second);
+        } else {
+            rtxremix$delegates = ((VertexConsumers.Union) (Object) this).delegates();
+            for (VertexConsumer delegate : rtxremix$delegates) {
+                rtxremix$capture = RemixConsumerDispatch.findCapture(delegate);
+                if (rtxremix$capture != null) break;
+            }
+        }
+    }
+
+    @Override public VertexConsumer remixFirst() { return rtxremix$first; }
+    @Override public VertexConsumer remixSecond() { return rtxremix$second; }
+    @Override public VertexConsumer[] remixDelegates() { return rtxremix$delegates; }
+    @Override public RemixCapturingConsumer remixCapture() { return rtxremix$capture; }
+
     @Override
     public void quad(MatrixStack.Entry entry, BakedQuad quad,
                      float red, float green, float blue, float alpha, int light, int overlay) {

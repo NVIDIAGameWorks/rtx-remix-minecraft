@@ -38,13 +38,9 @@ class GlintMaterialTest {
 
     @Test
     void viewModelGlintDepthCannotReuseTheThirdPersonMesh() {
-        float worldDepth = RemixEntitySubmitter.meshLayerDepth(GLINT, RenderLayerUtils.SurfaceMode.GLINT, 1, 0);
-        float viewDepth = RemixEntitySubmitter.meshLayerDepth(GLINT, RenderLayerUtils.SurfaceMode.GLINT,
-                1, InstanceCategoryBit.VIEW_MODEL);
-        assertEquals(worldDepth, viewDepth * RemixFirstPersonPass.VIEW_MODEL_SCALE, 1e-9f);
-        assertEquals(worldDepth, RemixEntitySubmitter.meshLayerDepth(GLINT,
-                RenderLayerUtils.SurfaceMode.CUTOUT, 1, InstanceCategoryBit.VIEW_MODEL),
-                "the substrate keeps its existing depth");
+        float worldDepth = RemixEntitySubmitter.meshLayerDepth(false, 1, 0);
+        float viewDepth = RemixEntitySubmitter.meshLayerDepth(false, 1, InstanceCategoryBit.VIEW_MODEL);
+        assertEquals(worldDepth, viewDepth * ViewModelSpace.SCALE, 1e-9f);
         var worldKey = new RemixEntitySubmitter.HashedMeshKey(GLINT, RenderLayerUtils.SurfaceMode.GLINT,
                 RenderLayerUtils.Topology.QUADS, worldDepth, 4, 123);
         var lookup = new RemixEntitySubmitter.RigidMeshLookupKey();
@@ -56,6 +52,27 @@ class GlintMaterialTest {
         assertEquals(viewKey.hashCode(), lookup.hashCode());
         assertTrue(lookup.equals(viewKey));
         assertFalse(lookup.equals(worldKey));
+    }
+
+    @Test
+    void ordinaryAndTextViewModelLayersKeepTheirSeparation() {
+        for (boolean text : new boolean[] {false, true}) {
+            float ordinary = RemixEntitySubmitter.meshLayerDepth(text, 2, 0);
+            float held = RemixEntitySubmitter.meshLayerDepth(text, 2, InstanceCategoryBit.VIEW_MODEL);
+            assertEquals(ordinary, held * ViewModelSpace.SCALE, 1e-8f);
+            assertEquals(0, RemixEntitySubmitter.meshLayerDepth(text, 0, InstanceCategoryBit.VIEW_MODEL));
+        }
+    }
+
+    @Test
+    void anAdditiveAtlasMaterialIsOwnedWhileTerrainCoverageIsBorrowed() {
+        assertFalse(RemixEntitySubmitter.isBorrowedMaterial(new RemixEntitySubmitter.EntityMaterialKey(
+                BlockTextureManager.BLOCK_ATLAS_ID, RenderLayerUtils.SurfaceMode.GLINT)),
+                "an owned glint variant must be destroyed on invalidation and reload");
+        assertTrue(RemixEntitySubmitter.isBorrowedMaterial(new RemixEntitySubmitter.EntityMaterialKey(
+                BlockTextureManager.BLOCK_ATLAS_ID, RenderLayerUtils.SurfaceMode.CUTOUT)));
+        assertFalse(RemixEntitySubmitter.isBorrowedMaterial(new RemixEntitySubmitter.EntityMaterialKey(
+                GLINT, RenderLayerUtils.SurfaceMode.GLINT)));
     }
 
     @Test

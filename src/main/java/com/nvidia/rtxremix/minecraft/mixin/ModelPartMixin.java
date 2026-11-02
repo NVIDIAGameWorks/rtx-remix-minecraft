@@ -33,8 +33,8 @@ import java.util.List;
  * render on such a stack.
  *
  * <p>{@code renderCuboids} on a single-cuboid part borrows the capturing consumer's
- * singleton iterator instead of allocating vanilla's. The consumer is found directly
- * or through the sprite wrappers and unions that {@code CuboidMixin} captures.
+ * singleton iterator instead of allocating vanilla's. The consumer is read directly
+ * or from the cached leaf of the sprite wrappers and unions that {@code CuboidMixin} captures.
  */
 @Mixin(ModelPart.class)
 public abstract class ModelPartMixin {

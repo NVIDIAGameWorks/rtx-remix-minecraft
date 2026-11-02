@@ -20,7 +20,7 @@ import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconPose;
 import com.nvidia.rtxremix.minecraft.block.SpotLightBlock;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconAnimationClock;
-import com.nvidia.rtxremix.minecraft.entity.RemixFirstPersonPass;
+import com.nvidia.rtxremix.minecraft.entity.ViewModelSpace;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.block.Block;
@@ -453,7 +453,7 @@ public class LightManager {
             return;
         }
 
-        float emitterRadius = spec.radius * RemixFirstPersonPass.VIEW_MODEL_SCALE;
+        float emitterRadius = spec.radius * ViewModelSpace.SCALE;
         Vec3d position = heldLightPlacement.resolve(
                 world,
                 camera,
@@ -466,7 +466,7 @@ public class LightManager {
                 spec,
                 position,
                 emitterRadius,
-                powerPreservingRadianceScale(RemixFirstPersonPass.VIEW_MODEL_SCALE)));
+                powerPreservingRadianceScale(ViewModelSpace.SCALE)));
     }
 
     private void ensureEntityLight(Entity entity, EntityLightSpec spec,
@@ -786,7 +786,7 @@ public class LightManager {
         boolean hasCapturedPosition = localFirstPerson
                 && renderer.getFirstPersonHeldLightPosition(slot, capturedHandPosition);
         float viewModelScale = hasCapturedPosition
-                ? RemixFirstPersonPass.VIEW_MODEL_SCALE
+                ? ViewModelSpace.SCALE
                 : 1.0f;
         Vec3d lensOffsetDirection = localFirstPerson
                 ? HeldLightPlacement.horizontalForward(holder.getYaw())

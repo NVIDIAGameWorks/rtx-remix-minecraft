@@ -46,14 +46,6 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     private static final String CAPTURE_TYPE_KEY = "rtx-remix:first_person_model";
     private static final float[] EMPTY_BONES = new float[0];
 
-    /**
-     * Camera-relative scale used to pull first-person geometry in front of
-     * nearby world surfaces. This is baked into the capture root instead of
-     * {@code rtx.viewModel.scale}, keeping Remix's current/previous perspective
-     * correction at identity for stable motion vectors.
-     */
-    public static final float VIEW_MODEL_SCALE = 0.1f;
-
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final CapturingImmediate immediate = new CapturingImmediate(provider);
     private final Transform captureToWorld = new Transform();
@@ -245,9 +237,9 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     static void setViewCorrection(Matrix4f destination, Matrix4f modelView, float fovScale) {
         destination.identity()
                 .scale(
-                        fovScale * VIEW_MODEL_SCALE,
-                        fovScale * VIEW_MODEL_SCALE,
-                        VIEW_MODEL_SCALE)
+                        fovScale * ViewModelSpace.SCALE,
+                        fovScale * ViewModelSpace.SCALE,
+                        ViewModelSpace.SCALE)
                 .mul(modelView);
     }
 

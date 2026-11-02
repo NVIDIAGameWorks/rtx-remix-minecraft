@@ -33,7 +33,7 @@ Remix runtime automatically. [Getting Started](docs/GETTING_STARTED.md) covers l
 ```powershell
 .\gradlew.bat build
 .\tools\rtx.bat launch
-.\gradlew.bat test
+.\gradlew.bat check
 .\gradlew.bat package -Parch=win64
 ```
 
@@ -46,6 +46,10 @@ owns Minecraft: Java Edition. See
 
 `classes` depends on `setupRuntime`, which compiles the JNI bridge, fetches a
 missing runtime, and stages it, so even `test` needs the C++ toolchain.
+`check` runs both plain JVM tests (`test`) and headless Fabric integration tests
+(`fabricTest`). Use `test --tests ...` for plain tests and `fabricTest --tests ...`
+for Minecraft/mixin integration tests. `build` includes `check`.
+
 `build` leaves a lightweight JAR in `build/libs/`; `package` embeds
 the runtime and payload in `build/distributions/`. It verifies inclusion of
 every `packaging/licenses/` file and excludes Python interpreter and binding

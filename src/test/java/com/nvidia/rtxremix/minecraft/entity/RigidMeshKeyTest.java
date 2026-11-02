@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.InstanceCategoryBit;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.util.Identifier;
@@ -181,13 +182,29 @@ class RigidMeshKeyTest {
                 new RemixEntitySubmitter.RigidMeshLookupKey();
 
         probe.setLayer(TEX_A, RenderLayerUtils.SurfaceMode.TRANSLUCENT, 1);
-        probe.setCanvas(sides, canvas, 1, 2);
+        probe.setCanvas(sides, canvas, 1, 2, 1f);
         RemixEntitySubmitter.RigidMeshKey record = probe.immutableCopy();
 
         assertTrue(record instanceof RemixEntitySubmitter.CanvasMeshKey);
         assertEquals(record.hashCode(), probe.hashCode());
         assertTrue(probe.equals(record));
         assertEquals(record, probe.immutableCopy());
+    }
+
+    @Test
+    void aCanvasAtZeroBaseDepthStillSeparatesViewModelPatternSpacing() {
+        ModelPart.Quad[] sides = new ModelPart.Quad[6];
+        RemixCapturingConsumer canvas = canvas(sides, new Sprite[] {null}, new int[] {RED});
+        var probe = new RemixEntitySubmitter.RigidMeshLookupKey();
+        probe.setLayer(TEX_A, RenderLayerUtils.SurfaceMode.TRANSLUCENT, 0);
+        probe.setCanvas(sides, canvas, 1, 1, 1f);
+        var world = probe.immutableCopy();
+        probe.setCanvas(sides, canvas, 1, 1, ViewModelSpace.layerSpacingScale(InstanceCategoryBit.VIEW_MODEL));
+        var held = probe.immutableCopy();
+        assertNotEquals(world, held);
+        assertFalse(probe.equals(world));
+        assertTrue(probe.equals(held));
+        assertEquals(held.hashCode(), probe.hashCode());
     }
 
     @Test
@@ -198,25 +215,25 @@ class RigidMeshKeyTest {
         RemixEntitySubmitter.RigidMeshLookupKey probe =
                 new RemixEntitySubmitter.RigidMeshLookupKey();
         probe.setLayer(TEX_A, RenderLayerUtils.SurfaceMode.TRANSLUCENT, 1);
-        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe, border}, new int[] {RED, BLUE}), 1, 2);
+        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe, border}, new int[] {RED, BLUE}), 1, 2, 1f);
         RemixEntitySubmitter.RigidMeshKey redStripeBlueBorder = probe.immutableCopy();
 
         // Same patterns, other dyes.
-        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe, border}, new int[] {BLUE, RED}), 1, 2);
+        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe, border}, new int[] {BLUE, RED}), 1, 2, 1f);
         assertFalse(probe.equals(redStripeBlueBorder), "a recoloured layer must miss");
         // Same dyes, patterns swapped: the border now lies under the stripe.
-        probe.setCanvas(sides, canvas(sides, new Sprite[] {border, stripe}, new int[] {RED, BLUE}), 1, 2);
+        probe.setCanvas(sides, canvas(sides, new Sprite[] {border, stripe}, new int[] {RED, BLUE}), 1, 2, 1f);
         assertFalse(probe.equals(redStripeBlueBorder), "reordered layers must miss");
         // One layer fewer.
-        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe}, new int[] {RED}), 1, 1);
+        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe}, new int[] {RED}), 1, 1, 1f);
         assertFalse(probe.equals(redStripeBlueBorder), "a shorter stack must miss");
         // A re-stitched atlas: the same rectangles as new Sprite objects.
         probe.setCanvas(sides, canvas(sides,
-                new Sprite[] {SpriteFixtures.sprite(0, 0, 4, 16), border}, new int[] {RED, BLUE}), 1, 2);
+                new Sprite[] {SpriteFixtures.sprite(0, 0, 4, 16), border}, new int[] {RED, BLUE}), 1, 2, 1f);
         assertFalse(probe.equals(redStripeBlueBorder), "another sprite object must miss");
         // Another cuboid with the same design.
         probe.setCanvas(new ModelPart.Quad[6],
-                canvas(sides, new Sprite[] {stripe, border}, new int[] {RED, BLUE}), 1, 2);
+                canvas(sides, new Sprite[] {stripe, border}, new int[] {RED, BLUE}), 1, 2, 1f);
         assertFalse(probe.equals(redStripeBlueBorder), "another cuboid must miss");
     }
 
@@ -233,7 +250,7 @@ class RigidMeshKeyTest {
         probe.setHashed(RenderLayerUtils.Topology.QUADS, 24, 0x1234L);
         RemixEntitySubmitter.RigidMeshKey hashed = probe.immutableCopy();
 
-        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe}, new int[] {RED}), 1, 1);
+        probe.setCanvas(sides, canvas(sides, new Sprite[] {stripe}, new int[] {RED}), 1, 1, 1f);
         assertFalse(probe.equals(cuboid));
         assertFalse(probe.equals(hashed));
         RemixEntitySubmitter.RigidMeshKey canvas = probe.immutableCopy();

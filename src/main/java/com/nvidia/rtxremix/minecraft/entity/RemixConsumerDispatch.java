@@ -7,11 +7,13 @@ package com.nvidia.rtxremix.minecraft.entity;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.SpriteTexturedVertexConsumer;
 import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumers;
 import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Keeps poses attached to geometry as it crosses vanilla's glint unions.
@@ -21,83 +23,78 @@ import org.joml.Matrix4f;
 public final class RemixConsumerDispatch {
     private RemixConsumerDispatch() {}
 
-    private static boolean isUnion(VertexConsumer consumer) {
-        return consumer instanceof VertexConsumers.Dual || consumer instanceof VertexConsumers.Union;
-    }
-
-    private static boolean captureUnion(VertexConsumer consumer) {
-        return isUnion(consumer) && EntityRenderContext.get().isRemixPass();
-    }
-
-    private static int size(VertexConsumer consumer) {
-        return consumer instanceof VertexConsumers.Dual ? 2 : ((VertexConsumers.Union) consumer).delegates().length;
-    }
-
-    private static VertexConsumer delegate(VertexConsumer consumer, int index) {
-        if (consumer instanceof VertexConsumers.Dual dual) {
-            return index == 0 ? dual.first : dual.second;
-        }
-        return ((VertexConsumers.Union) consumer).delegates()[index];
-    }
-
-    public static boolean quad(VertexConsumer consumer, MatrixStack.Entry entry, BakedQuad quad,
+    public static boolean quad(RemixUnionConsumer consumer, MatrixStack.Entry entry, BakedQuad quad,
                                float red, float green, float blue, float alpha, int light, int overlay) {
-        if (!captureUnion(consumer)) return false;
-        for (int i = 0, count = size(consumer); i < count; i++) {
-            delegate(consumer, i).quad(entry, quad, red, green, blue, alpha, light, overlay);
+        RemixCapturingConsumer capture = consumer.remixCapture();
+        if (capture == null || !capture.isRemixCaptureActive()) return false;
+        VertexConsumer[] delegates = consumer.remixDelegates();
+        if (delegates == null) {
+            consumer.remixFirst().quad(entry, quad, red, green, blue, alpha, light, overlay);
+            consumer.remixSecond().quad(entry, quad, red, green, blue, alpha, light, overlay);
+        } else {
+            for (VertexConsumer delegate : delegates) delegate.quad(entry, quad, red, green, blue, alpha, light, overlay);
         }
         return true;
     }
 
-    public static boolean quad(VertexConsumer consumer, MatrixStack.Entry entry, BakedQuad quad,
+    public static boolean quad(RemixUnionConsumer consumer, MatrixStack.Entry entry, BakedQuad quad,
                                float[] brightness, float red, float green, float blue, float alpha,
                                int[] lights, int overlay, boolean colorize) {
-        if (!captureUnion(consumer)) return false;
-        for (int i = 0, count = size(consumer); i < count; i++) {
-            delegate(consumer, i).quad(entry, quad, brightness, red, green, blue, alpha, lights, overlay, colorize);
+        RemixCapturingConsumer capture = consumer.remixCapture();
+        if (capture == null || !capture.isRemixCaptureActive()) return false;
+        VertexConsumer[] delegates = consumer.remixDelegates();
+        if (delegates == null) {
+            consumer.remixFirst().quad(entry, quad, brightness, red, green, blue, alpha, lights, overlay, colorize);
+            consumer.remixSecond().quad(entry, quad, brightness, red, green, blue, alpha, lights, overlay, colorize);
+        } else {
+            for (VertexConsumer delegate : delegates) delegate.quad(entry, quad, brightness, red, green, blue, alpha, lights, overlay, colorize);
         }
         return true;
     }
 
-    public static boolean vertex(VertexConsumer consumer, MatrixStack.Entry entry, float x, float y, float z) {
-        if (!captureUnion(consumer)) return false;
-        for (int i = 0, count = size(consumer); i < count; i++) {
-            delegate(consumer, i).vertex(entry, x, y, z);
+    public static boolean vertex(RemixUnionConsumer consumer, MatrixStack.Entry entry, float x, float y, float z) {
+        RemixCapturingConsumer capture = consumer.remixCapture();
+        if (capture == null || !capture.isRemixCaptureActive()) return false;
+        VertexConsumer[] delegates = consumer.remixDelegates();
+        if (delegates == null) {
+            consumer.remixFirst().vertex(entry, x, y, z);
+            consumer.remixSecond().vertex(entry, x, y, z);
+        } else {
+            for (VertexConsumer delegate : delegates) delegate.vertex(entry, x, y, z);
         }
         return true;
     }
 
-    public static boolean vertex(VertexConsumer consumer, Matrix4f matrix, float x, float y, float z) {
-        if (!captureUnion(consumer)) return false;
-        for (int i = 0, count = size(consumer); i < count; i++) {
-            delegate(consumer, i).vertex(matrix, x, y, z);
+    public static boolean vertex(RemixUnionConsumer consumer, Matrix4f matrix, float x, float y, float z) {
+        RemixCapturingConsumer capture = consumer.remixCapture();
+        if (capture == null || !capture.isRemixCaptureActive()) return false;
+        VertexConsumer[] delegates = consumer.remixDelegates();
+        if (delegates == null) {
+            consumer.remixFirst().vertex(matrix, x, y, z);
+            consumer.remixSecond().vertex(matrix, x, y, z);
+        } else {
+            for (VertexConsumer delegate : delegates) delegate.vertex(matrix, x, y, z);
         }
         return true;
     }
 
-    public static boolean normal(VertexConsumer consumer, MatrixStack.Entry entry, float x, float y, float z) {
-        if (!captureUnion(consumer)) return false;
-        for (int i = 0, count = size(consumer); i < count; i++) {
-            delegate(consumer, i).normal(entry, x, y, z);
+    public static boolean normal(RemixUnionConsumer consumer, MatrixStack.Entry entry, float x, float y, float z) {
+        RemixCapturingConsumer capture = consumer.remixCapture();
+        if (capture == null || !capture.isRemixCaptureActive()) return false;
+        VertexConsumer[] delegates = consumer.remixDelegates();
+        if (delegates == null) {
+            consumer.remixFirst().normal(entry, x, y, z);
+            consumer.remixSecond().normal(entry, x, y, z);
+        } else {
+            for (VertexConsumer delegate : delegates) delegate.normal(entry, x, y, z);
         }
         return true;
     }
 
-    /** Finds a capture leaf through sprite wrappers and unions, without reading thread-local state. */
+    /** Reads the leaf bound by a known wrapper at construction, without walking its chain. */
     public static RemixCapturingConsumer findCapture(VertexConsumer consumer) {
         if (consumer instanceof RemixCapturingConsumer capture) return capture;
-        if (consumer instanceof SpriteTexturedVertexConsumer wrapped) return findCapture(wrapped.delegate);
-        if (consumer instanceof VertexConsumers.Dual dual) {
-            RemixCapturingConsumer first = findCapture(dual.first);
-            return first != null ? first : findCapture(dual.second);
-        }
-        if (consumer instanceof VertexConsumers.Union union) {
-            for (VertexConsumer branch : union.delegates()) {
-                RemixCapturingConsumer capture = findCapture(branch);
-                if (capture != null) return capture;
-            }
-        }
-        return null;
+        return consumer instanceof RemixCaptureSource source ? source.remixCapture() : null;
     }
 
     /** Retains capture leaves independently while other branches keep their normal vertex rendering. */
@@ -116,9 +113,13 @@ public final class RemixConsumerDispatch {
                     entry.getPositionMatrix(), sprite);
         } else if (consumer instanceof SpriteTexturedVertexConsumer wrapped && sprite == null) {
             renderCuboid(wrapped.delegate, cuboid, entry, light, overlay, color, wrapped.sprite);
-        } else if (isUnion(consumer)) {
-            for (int i = 0, count = size(consumer); i < count; i++) {
-                renderCuboid(delegate(consumer, i), cuboid, entry, light, overlay, color, sprite);
+        } else if (consumer instanceof RemixUnionConsumer union) {
+            VertexConsumer[] delegates = union.remixDelegates();
+            if (delegates == null) {
+                renderCuboid(union.remixFirst(), cuboid, entry, light, overlay, color, sprite);
+                renderCuboid(union.remixSecond(), cuboid, entry, light, overlay, color, sprite);
+            } else {
+                for (VertexConsumer delegate : delegates) renderCuboid(delegate, cuboid, entry, light, overlay, color, sprite);
             }
         } else if (!RemixVertexConsumerProvider.isDiscarding(consumer)) {
             if (sprite == null) cuboid.renderCuboid(entry, consumer, light, overlay, color);
@@ -126,14 +127,38 @@ public final class RemixConsumerDispatch {
         }
     }
 
+    private static final List<SpriteRemap> spriteRemaps = new ArrayList<>();
+    private static int spriteRemapDepth;
+
+    /** Reuses only the sprite remap; vanilla and other mods still own cuboid drawing. */
     private static void emitSpriteCuboid(VertexConsumer consumer, ModelPart.Cuboid cuboid, MatrixStack.Entry entry,
                                          int light, int overlay, int color, Sprite sprite) {
-        for (ModelPart.Quad side : cuboid.sides) {
-            for (ModelPart.Vertex vertex : side.vertices) {
-                consumer.vertex(entry, vertex.pos.x / 16f, vertex.pos.y / 16f, vertex.pos.z / 16f)
-                        .color(color).texture(sprite.getFrameU(vertex.u), sprite.getFrameV(vertex.v))
-                        .overlay(overlay).light(light).normal(entry, side.direction.x, side.direction.y, side.direction.z);
-            }
+        int depth = spriteRemapDepth++;
+        if (depth == spriteRemaps.size()) spriteRemaps.add(new SpriteRemap());
+        SpriteRemap remap = spriteRemaps.get(depth);
+        remap.target = consumer;
+        remap.sprite = sprite;
+        try {
+            cuboid.renderCuboid(entry, remap, light, overlay, color);
+        } finally {
+            remap.target = null;
+            remap.sprite = null;
+            spriteRemapDepth--;
         }
+    }
+
+    private static final class SpriteRemap implements VertexConsumer {
+        private VertexConsumer target;
+        private Sprite sprite;
+
+        @Override public VertexConsumer vertex(float x, float y, float z) { target.vertex(x, y, z); return this; }
+        @Override public VertexConsumer color(int r, int g, int b, int a) { target.color(r, g, b, a); return this; }
+        @Override public VertexConsumer texture(float u, float v) {
+            target.texture(sprite.getFrameU(u), sprite.getFrameV(v));
+            return this;
+        }
+        @Override public VertexConsumer overlay(int u, int v) { target.overlay(u, v); return this; }
+        @Override public VertexConsumer light(int u, int v) { target.light(u, v); return this; }
+        @Override public VertexConsumer normal(float x, float y, float z) { target.normal(x, y, z); return this; }
     }
 }

@@ -115,6 +115,61 @@ class RemixConsumerDispatchTest {
         assertSame(cuboid.sides, capture.getPartSides(0));
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void wrapperLeafIsResolvedAtConstructionAndNotDuringVertexOrCuboidDispatch(boolean capturing) {
+        EntityRenderContext.get().begin(capturing);
+        RemixCapturingConsumer capture = capturing ? new RemixCapturingConsumer(null, true) : null;
+        try (SpriteContents contents = new SpriteContents(Identifier.of("minecraft", "test"),
+                new SpriteDimensions(8, 8), new NativeImage(8, 8, true), ResourceMetadata.NONE)) {
+            Sprite sprite = new Sprite(BlockTextureManager.BLOCK_ATLAS_ID, contents, 32, 32, 8, 16) {};
+            CountingSprite inner = new CountingSprite(capture == null ? new ProjectedGlintCaptureTest.VertexProbe() : capture,
+                    sprite, capture);
+            VertexConsumer outer = new SpriteTexturedVertexConsumer(VertexConsumers.union(inner,
+                    new ProjectedGlintCaptureTest.VertexProbe()), sprite);
+            int lookups = inner.lookups;
+            assertTrue(lookups > 0);
+            MatrixStack matrices = new MatrixStack();
+            for (int i = 0; i < 8; i++) {
+                outer.vertex(matrices.peek(), i & 1, (i >> 1) & 1, 0)
+                        .color(-1).texture(0, 0).overlay(OverlayTexture.DEFAULT_UV).light(0).normal(matrices.peek(), 0, 0, 1);
+            }
+            ModelPart.Cuboid cuboid = cuboid();
+            cuboid.renderCuboid(matrices.peek(), outer, 0, OverlayTexture.DEFAULT_UV, -1);
+            new ModelPart(ImmutableList.of(cuboid), Map.of()).render(matrices, outer, 0, OverlayTexture.DEFAULT_UV, -1);
+            assertEquals(lookups, inner.lookups, "draws must read the outer wrapper's cached leaf");
+        }
+    }
+
+    @Test
+    void spriteFallbackCallsTheOriginalCuboidRenderer() {
+        EntityRenderContext.get().begin(true);
+        RemixCapturingConsumer capture = new RemixCapturingConsumer(null, true);
+        class CountingCuboid extends ModelPart.Cuboid {
+            int calls;
+            CountingCuboid() {
+                super(0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, false, 16, 16, EnumSet.allOf(Direction.class));
+            }
+            @Override public void renderCuboid(MatrixStack.Entry entry, VertexConsumer vertices, int light, int overlay, int color) {
+                calls++;
+                super.renderCuboid(entry, vertices, light, overlay, color);
+            }
+        }
+        try (SpriteContents contents = new SpriteContents(Identifier.of("minecraft", "test"),
+                new SpriteDimensions(8, 8), new NativeImage(8, 8, true), ResourceMetadata.NONE)) {
+            Sprite sprite = new Sprite(BlockTextureManager.BLOCK_ATLAS_ID, contents, 32, 32, 8, 16) {};
+            var probe = new ProjectedGlintCaptureTest.VertexProbe();
+            MatrixStack matrices = new MatrixStack();
+            VertexConsumer consumer = new SpriteTexturedVertexConsumer(VertexConsumers.union(capture,
+                    new OverlayVertexConsumer(probe, matrices.peek(), 1)), sprite);
+            CountingCuboid cuboid = new CountingCuboid();
+            cuboid.renderCuboid(matrices.peek(), consumer, 0, OverlayTexture.DEFAULT_UV, -1);
+            assertEquals(2, cuboid.calls, "the uncapturable sprite branch must still call the original renderer");
+            assertEquals(24, probe.count);
+            assertSame(cuboid.sides, capture.getPartSides(0));
+        }
+    }
+
     @Test
     void everyGlintPhaseFollowsItsBaseInShellOrder() {
         EntityRenderContext.get().begin(true);
@@ -132,9 +187,9 @@ class RemixConsumerDispatchTest {
         cuboid.renderCuboid(matrices.peek(), provider.getBuffer(RenderLayer.getEntityCutout(BlockTextureManager.BLOCK_ATLAS_ID)),
                 0, OverlayTexture.DEFAULT_UV, -1);
         var layers = provider.endEntity();
-        int base = layers.stream().filter(layer -> !RenderLayerUtils.isGlint(layer.renderLayer())).findFirst().orElseThrow().layerIndex();
+        int base = layers.stream().filter(layer -> layer.surfaceMode() != RenderLayerUtils.SurfaceMode.GLINT).findFirst().orElseThrow().layerIndex();
         assertEquals(0, base);
-        for (var layer : layers) if (RenderLayerUtils.isGlint(layer.renderLayer())) assertTrue(layer.layerIndex() > base);
+        for (var layer : layers) if (layer.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT) assertTrue(layer.layerIndex() > base);
     }
 
     private static ModelPart.Cuboid cuboid() {
@@ -149,5 +204,15 @@ class RemixConsumerDispatchTest {
             iteratorBorrows++;
             return super.acquireSingletonCuboidIterator(cuboid);
         }
+    }
+
+    private static final class CountingSprite extends SpriteTexturedVertexConsumer implements RemixCaptureSource {
+        private final RemixCapturingConsumer capture;
+        private int lookups;
+        CountingSprite(VertexConsumer delegate, Sprite sprite, RemixCapturingConsumer capture) {
+            super(delegate, sprite);
+            this.capture = capture;
+        }
+        @Override public RemixCapturingConsumer remixCapture() { lookups++; return capture; }
     }
 }

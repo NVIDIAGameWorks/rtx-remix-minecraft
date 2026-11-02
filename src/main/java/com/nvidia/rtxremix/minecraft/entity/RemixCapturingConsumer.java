@@ -52,12 +52,11 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private RenderLayerUtils.Topology topology = RenderLayerUtils.Topology.QUADS;
     /**
      * Whether the layer streams its vertex content afresh every frame. Resolved with
-     * the layer and carried to the CapturedLayer; the submitter bypasses the mesh pool
-     * on it.
+     * the layer; non-cuboid parts bypass the mesh pool when it is set.
      */
     private boolean transientGeometry;
-    /** Fully posed streams have no local mesh to retain in the static cache. */
-    private boolean unposedGeometry;
+    /** Consumers and their wrappers remain on the capture's render thread. */
+    private final EntityRenderContext context = EntityRenderContext.get();
 
     // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC) ----
     private int vertexCount = 0;
@@ -216,9 +215,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * this consumer saw, and returns the bone index the next vertex belongs to.
      */
     private int detectBoneChange(Matrix4f currentPose) {
-        EntityRenderContext ctx = EntityRenderContext.get();
         if (!lastPoseValid || !lastPose.equals(currentPose)) {
-            lastPoseBone = ctx.pushBone(currentPose);
+            lastPoseBone = context.pushBone(currentPose);
             lastPose.set(currentPose);
             lastPoseValid = true;
         }
@@ -232,7 +230,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * @return the bone index assigned to this cuboid
      */
     public int beginCuboid(Matrix4f pose) {
-        int boneIndex = EntityRenderContext.get().pushBone(pose);
+        int boneIndex = context.pushBone(pose);
         lastPose.set(pose);
         lastPoseValid = true;
         lastPoseBone = boneIndex;
@@ -357,7 +355,6 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     private void beginVertex(int boneIndex) {
         flushOpenVertex();
-        unposedGeometry |= boneIndex < 0;
         vertexOpen = true;
         explicitNormal = false;
         currentVertexBoneIndex = boneIndex;
@@ -722,7 +719,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         }
         boolean cardFace = isFullCardFace(vd, quad.getFace());
         int[] rects = cardFace
-                && EntityRenderContext.get().getBlockItemLayer() != BlockTextureManager.L_GLASS
+                && context.getBlockItemLayer() != BlockTextureManager.L_GLASS
                 ? cardFaceRects(quad.getSprite())
                 : null;
         if (rects != null) {
@@ -1015,7 +1012,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
             partBone[parts] = bone;
             partSides[parts] = null;
             partSprite[parts] = null;
-            partBlockItemLayer[parts] = EntityRenderContext.get().getBlockItemLayer();
+            partBlockItemLayer[parts] = context.getBlockItemLayer();
             partCardFace[parts] = NO_VERTICES;
             lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
             partOpen = true;
@@ -1283,7 +1280,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
     }
     /** True while this consumer is bound to the active Remix entity capture. */
     public boolean isRemixCaptureActive() {
-        return EntityRenderContext.get().isRemixPass();
+        return context.isRemixPass();
     }
 
     /**
@@ -1322,7 +1319,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         }
     }
 
-    /** Order in which the entity first requested this layer. Scales the shell offset. */
+    /** Stable layer rank, with glint ranked after its substrate. */
     public int getLayerIndex() { return layerIndex; }
 
     public void setLayerIndex(int layerIndex) { this.layerIndex = layerIndex; }
@@ -1335,7 +1332,10 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     public Identifier getTextureId() { return textureId; }
     public RenderLayerUtils.Topology getTopology() { return topology; }
-    public boolean isTransientGeometry() { return transientGeometry || unposedGeometry; }
+    /** Only this part's posed/streamed vertices bypass the rigid mesh pool. */
+    public boolean isPartTransientGeometry(int part) {
+        return partSides[part] == null && (transientGeometry || partBone[part] < 0);
+    }
     public int getVertexCount() { return vertexCount; }
 
     public float[] getPx() { return px; }
@@ -1369,6 +1369,5 @@ public class RemixCapturingConsumer implements VertexConsumer {
         resetOpenVertexState();
         lastPoseValid = false;
         lastPoseBone = -1;
-        unposedGeometry = false;
     }
 }
