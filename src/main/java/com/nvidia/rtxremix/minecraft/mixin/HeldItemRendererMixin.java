@@ -8,7 +8,7 @@ import com.nvidia.rtxremix.minecraft.entity.EntityRenderContext;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.item.HeldItemRenderer;
-import net.minecraft.client.render.model.json.ModelTransformationMode;
+import net.minecraft.item.ModelTransformationMode;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.ItemStack;
@@ -22,16 +22,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Tells the capture who is holding the item being rendered, and for the
  * first-person view which vanilla hand it is in.
  *
- * <p>Every hand-held render, first person and every entity's hands alike, passes
- * through {@code renderItem(LivingEntity, ...)}, so the holder recorded here is
- * what lets the item renderer's hook decide whether a held torch is burning.
+ * <p>Direct and first-person held-item renders establish a fallback holder here.
+ * Deferred third-person items carry their holder through {@code ItemModelManagerMixin}
+ * and {@code ItemRenderStateMixin}; they need not pass through this renderer.
  */
 @Mixin(HeldItemRenderer.class)
 public class HeldItemRendererMixin {
 
     private static final String rtxremix$RENDER_HELD_ITEM =
             "renderItem(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/item/ItemStack;"
-            + "Lnet/minecraft/client/render/model/json/ModelTransformationMode;Z"
+            + "Lnet/minecraft/item/ModelTransformationMode;Z"
             + "Lnet/minecraft/client/util/math/MatrixStack;"
             + "Lnet/minecraft/client/render/VertexConsumerProvider;I)V";
 

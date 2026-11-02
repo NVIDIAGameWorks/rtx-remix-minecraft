@@ -74,7 +74,7 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
     project, game = installation
     existing = {
         "mods/rtx-remix-renderer-old.jar": b"old mod",
-        "mods/fabric-api-0.116.10+1.21.1.jar": b"fabric api",
+        "mods/fabric-api-0.119.4+1.21.4.jar": b"fabric api",
         "mods/another-mod.jar": b"another mod",
         "remix-sdk/stale.dll": b"stale SDK",
         "rtx-remix/mods/minecraft-logic/weather/rain.conf": b"edited shipped rain",
@@ -91,7 +91,7 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
 
     expected = {
         "mods/rtx-remix-renderer.jar": b"newest mod",
-        "mods/fabric-api-0.116.10+1.21.1.jar": b"fabric api",
+        "mods/fabric-api-0.119.4+1.21.4.jar": b"fabric api",
         "mods/another-mod.jar": b"another mod",
         "remix-sdk/d3d9.dll": f"{arch} runtime".encode(),
         "remix-sdk/dxvk.conf": b"runtime config",
@@ -164,7 +164,7 @@ def test_install_warns_about_missing_fabric_api_without_installing_it(installati
 
     output = capsys.readouterr().out
     assert f"WARNING: no fabric-api jar in {game / 'mods'}." in output
-    assert "fabric-api >=0.116.10+1.21.1 (https://modrinth.com/mod/fabric-api)" in output
+    assert "fabric-api >=0.119.4+1.21.4 (https://modrinth.com/mod/fabric-api)" in output
     assert list((game / "mods").glob("fabric-api-*.jar")) == []
 
 

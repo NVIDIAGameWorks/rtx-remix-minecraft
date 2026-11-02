@@ -40,8 +40,8 @@ public final class FarChunkProbe {
      * @param cameraSectionCenterX camera section origin plus eight, per axis; picks the corner
      *                             of the neighbour the ray starts from
      * @param step                 ray advance per iteration in blocks
-     * @param worldTopYExclusive   one past the highest block, as {@code HeightLimitView.getTopY()}
-     *                             returns it (320 for the overworld); a point above it or below
+     * @param worldTopYInclusive   the highest block, as {@code HeightLimitView.getTopYInclusive()}
+     *                             returns it (319 for the overworld); a point above it or below
      *                             {@code worldBottomY} leaves the world, which passes
      * @param worldBottomY         inclusive bottom of the world
      * @return true when every probed section is in the graph or the ray left the world
@@ -52,7 +52,7 @@ public final class FarChunkProbe {
             int cameraSectionCenterX, int cameraSectionCenterY, int cameraSectionCenterZ,
             double cameraX, double cameraY, double cameraZ,
             double step,
-            int worldTopYExclusive, int worldBottomY,
+            int worldTopYInclusive, int worldBottomY,
             GraphLookup graph) {
         double pointX = originX + (axis == Direction.Axis.X
                 ? (cameraSectionCenterX > originX ? 16 : 0)
@@ -88,7 +88,7 @@ public final class FarChunkProbe {
             pointX += stepX;
             pointY += stepY;
             pointZ += stepZ;
-            if (pointY > (double) worldTopYExclusive || pointY < (double) worldBottomY) {
+            if (pointY > (double) worldTopYInclusive || pointY < (double) worldBottomY) {
                 return true;
             }
             if (!graph.contains(

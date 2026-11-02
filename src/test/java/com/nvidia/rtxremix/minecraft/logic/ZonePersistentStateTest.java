@@ -10,6 +10,7 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
+import net.minecraft.world.PersistentStateManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -159,7 +160,12 @@ class ZonePersistentStateTest {
         Path file = tempDir.resolve("rtx_remix_zones.dat");
 
         ensureGameVersionForPersistentStateSave();
-        state.save(file.toFile(), null);
+        // 1.21.4 moved disk writes to the manager; save() waits for its I/O future.
+        // This write-only fixture needs neither data fixing nor registry lookups.
+        try (PersistentStateManager manager = new PersistentStateManager(tempDir, null, null)) {
+            manager.set("rtx_remix_zones", state);
+            manager.save();
+        }
 
         assertFalse(state.isDirty());
         NbtCompound root = NbtIo.readCompressed(file, NbtSizeTracker.ofUnlimitedBytes());

@@ -147,9 +147,9 @@ texture partitions that keep vanilla's cloud period and phase.
 merges them into chunk-column assets split into byte-capped pages per category,
 and the render thread publishes them under a frame budget and retires replaced
 pages through a bounded queue. Concurrent vanilla section builds are capped.
-Visibility rebuilds use a low-priority executor and produce a coarse frustum
-index that survives chunk slots being re-originned by replaying a render-thread
-move log. While capture is on, integrated-server chunk delivery and chunk
+Visibility rebuilds use a low-priority executor and populate vanilla's octree.
+Vanilla owns ordered frustum traversal and the nearby-section list; moving the
+camera's section ring schedules a terrain update that rebuilds the octree. While capture is on, integrated-server chunk delivery and chunk
 unloads are paced by measured render-thread cost under separate budgets, with
 chunk caps on delivery and a ring-edge bypass for unloads
 (`LocalChunkBatchPacing`, `PacedUnloadQueue`, `ChunkDataSenderMixin`); a
@@ -277,9 +277,12 @@ diluting the sampler's candidate pool.
   ignores a buffer that is already idle, and `RenderRegionStoragePool` relies
   on its callers' counts (`SectionMeshData`, `DirectBufferPool`,
   `RenderRegionStoragePool`).
-- The visibility walk port produces vanilla's visible set exactly;
-  `-Drtxremix.vanillaVisibilityWalk` and `-Drtxremix.logVisibleSet` are how to
-  prove it on a live world (`ChunkRenderingDataPreparerMixin`, `FarChunkProbeTest`).
+- The visibility walk must populate vanilla's octree exactly, including empty-section
+  handling and the inclusive world-height boundary. Do not replace its ordered visible
+  and nearby-section outputs with a graph-order list. Compare
+  `-Drtxremix.vanillaVisibilityWalk` with `-Drtxremix.logVisibleSet` on a live world;
+  the latter logs admitted section keys (`ChunkRenderingDataPreparerMixin`,
+  `FarChunkProbeTest`). Standalone ring tests do not establish runtime parity.
 - A queued chunk unload is cancelled by the column's re-send, and a queued
   column that reaches the client ring's edge is sent at once regardless of
   budget (`PacedUnloadQueue`).

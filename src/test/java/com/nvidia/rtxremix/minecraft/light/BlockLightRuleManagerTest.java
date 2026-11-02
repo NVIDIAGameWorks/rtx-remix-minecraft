@@ -13,7 +13,7 @@ import net.minecraft.resource.ResourcePack;
 import net.minecraft.resource.ResourcePackInfo;
 import net.minecraft.resource.ResourcePackSource;
 import net.minecraft.resource.ResourceType;
-import net.minecraft.resource.metadata.ResourceMetadataReader;
+import net.minecraft.resource.metadata.ResourceMetadataSerializer;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
@@ -395,7 +395,7 @@ class BlockLightRuleManagerTest {
         }
 
         @Override
-        public <T> T parseMetadata(ResourceMetadataReader<T> metaReader) throws IOException {
+        public <T> T parseMetadata(ResourceMetadataSerializer<T> serializer) throws IOException {
             return null;
         }
 

@@ -1,5 +1,10 @@
 # RTX Remix for Minecraft
 
+> **Unvalidated 1.21.4 port trial — not a release.** Dependency pins and selected
+> source adapters target 1.21.4. Compilation, Mixin application, and RTX rendering
+> are not yet verified; renderer migrations remain incomplete. The upstream
+> installation and support information below describes the 1.21.1 baseline.
+
 Play Minecraft Java Edition 1.21.1 with real-time path tracing on a GeForce RTX
 GPU, powered by NVIDIA RTX Remix.
 

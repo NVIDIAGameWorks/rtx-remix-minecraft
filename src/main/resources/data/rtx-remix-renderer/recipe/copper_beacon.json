@@ -8,18 +8,10 @@
     "CRC"
   ],
   "key": {
-    "C": {
-      "item": "minecraft:copper_ingot"
-    },
-    "G": {
-      "item": "minecraft:glass_pane"
-    },
-    "L": {
-      "item": "minecraft:lantern"
-    },
-    "R": {
-      "item": "minecraft:redstone"
-    }
+    "C": "minecraft:copper_ingot",
+    "G": "minecraft:glass_pane",
+    "L": "minecraft:lantern",
+    "R": "minecraft:redstone"
   },
   "result": {
     "id": "rtx-remix-renderer:copper_beacon",

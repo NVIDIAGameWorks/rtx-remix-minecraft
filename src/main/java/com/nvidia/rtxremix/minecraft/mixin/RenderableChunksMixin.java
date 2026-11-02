@@ -8,25 +8,24 @@ import com.nvidia.rtxremix.minecraft.terrain.visibility.VisibilityGraphBuffers;
 import com.nvidia.rtxremix.minecraft.terrain.visibility.RenderableChunksBuffers;
 import com.nvidia.rtxremix.minecraft.terrain.visibility.ChunkInfoPool;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfo;
 import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfoList;
 import net.minecraft.client.render.ChunkRenderingDataPreparer.RenderableChunks;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-import java.util.LinkedHashSet;
 
 /**
  * Builds vanilla's visibility state on the buffers {@link VisibilityGraphBuffers} keeps
- * across walks instead of three fresh collections sized to the whole storage. Vanilla's
- * fields and readers are unchanged; they see a {@code LinkedHashSet}, a {@code ChunkInfoList}
- * and a map, as before.
+ * across walks instead of fresh per-slot lists and maps. Vanilla constructs its own octree
+ * for the current camera section; its ordering and nearby-section classification stay intact.
  */
 @Mixin(RenderableChunks.class)
 public abstract class RenderableChunksMixin implements RenderableChunksBuffers {
 
     private ChunkInfoPool rtxremix$infoPool;
+    private int rtxremix$visibleSectionCount;
+    private long rtxremix$visibleSectionHash;
 
     @Redirect(
             method = "<init>",
@@ -39,14 +38,7 @@ public abstract class RenderableChunksMixin implements RenderableChunksBuffers {
 
     @Redirect(
             method = "<init>",
-            at = @At(value = "NEW", target = "(I)Ljava/util/LinkedHashSet;"))
-    private LinkedHashSet<ChunkInfo> rtxremix$reusedChunkSet(int chunkCount) {
-        return VisibilityGraphBuffers.current().chunks;
-    }
-
-    @Redirect(
-            method = "<init>",
-            at = @At(value = "NEW", target = "()Lit/unimi/dsi/fastutil/longs/Long2ObjectOpenHashMap;"))
+            at = @At(value = "NEW", target = "()Lit/unimi/dsi/fastutil/longs/Long2ObjectOpenHashMap;", remap = false))
     private Long2ObjectOpenHashMap<?> rtxremix$reusedUnbuiltNeighbours() {
         return VisibilityGraphBuffers.current().unbuiltNeighbours;
     }
@@ -54,5 +46,20 @@ public abstract class RenderableChunksMixin implements RenderableChunksBuffers {
     @Override
     public ChunkInfoPool rtxremix$infoPool() {
         return rtxremix$infoPool;
+    }
+    @Override
+    public void rtxremix$recordVisibleSection(long sectionPos) {
+        rtxremix$visibleSectionCount++;
+        rtxremix$visibleSectionHash += (sectionPos * 0x9E3779B97F4A7C15L) ^ 0x632BE59BD9B4E019L;
+    }
+
+    @Override
+    public int rtxremix$visibleSectionCount() {
+        return rtxremix$visibleSectionCount;
+    }
+
+    @Override
+    public long rtxremix$visibleSectionHash() {
+        return rtxremix$visibleSectionHash;
     }
 }

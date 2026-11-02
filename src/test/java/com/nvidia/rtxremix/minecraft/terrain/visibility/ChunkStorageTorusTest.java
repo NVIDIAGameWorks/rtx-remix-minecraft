@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.util.math.MathHelper;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -20,34 +19,25 @@ class ChunkStorageTorusTest {
 
     @Test
     void stripUpdatesMatchVanillaAcrossMovementCases() {
-        assertEquivalent("first constructor-layout update", null, 173.25, -211.75);
-        assertEquivalent("no horizontal movement", new Camera(-24.5, 37.5), -24.5, 37.5);
-        assertEquivalent("positive one-chunk move", new Camera(0.0, 0.0), 16.0, 0.0);
-        assertEquivalent("positive move just over a boundary", new Camera(0.0001, 0.0001), 16.0001, 0.0001);
-        assertEquivalent("negative one-chunk move", new Camera(0.0, 0.0), -16.0, 0.0);
-        assertEquivalent("negative move just over a boundary", new Camera(-0.0001, -0.0001), -16.0001, -0.0001);
-        assertEquivalent("diagonal move", new Camera(0.0, 0.0), 16.0, -16.0);
-        assertEquivalent("multi-chunk move", new Camera(-19.25, 33.75), 44.75, -14.25);
-        assertEquivalent("diameter teleport", new Camera(0.0, 0.0), SIZE_X * 16.0, 0.0);
-        assertEquivalent("beyond-diameter teleport", new Camera(0.0, 0.0), 112.0, -96.0);
-        assertEquivalent("negative coordinates", new Camera(-97.01, -64.0), -128.0, -31.999);
+        assertEquivalent("first constructor-layout update", null, 10, -14);
+        assertEquivalent("no horizontal movement", new Camera(-2, 2), -2, 2);
+        assertEquivalent("positive one-section move", new Camera(0, 0), 1, 0);
+        assertEquivalent("negative one-section move", new Camera(0, 0), -1, 0);
+        assertEquivalent("diagonal move", new Camera(0, 0), 1, -1);
+        assertEquivalent("multi-section move", new Camera(-2, 2), 3, -1);
+        assertEquivalent("diameter teleport", new Camera(0, 0), SIZE_X, 0);
+        assertEquivalent("beyond-diameter teleport", new Camera(0, 0), 7, -6);
+        assertEquivalent("negative coordinates", new Camera(-7, -4), -8, -2);
     }
 
     @Test
-    void targetOriginMatchesVanillaAtCeilBoundariesAndExtremes() {
-        double[] coordinates = {
-                -32.0001, -32.0, -31.9999,
-                -0.0001, -0.0, 0.0001,
-                15.9999, 16.0, 16.0001,
-                Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY,
-                -Double.MAX_VALUE, Double.MAX_VALUE
-        };
-        for (double coordinate : coordinates) {
+    void targetOriginMatchesVanillaForSectionCoordinates() {
+        int[] coordinates = {-1_875_000, -65, -32, -1, 0, 1, 32, 65, 1_875_000};
+        for (int coordinate : coordinates) {
             for (int slot = 0; slot < SIZE_X; slot++) {
-                assertEquals(
-                        vanillaTargetOrigin(coordinate, slot, SIZE_X),
+                assertEquals(vanillaTargetOrigin(coordinate, slot, SIZE_X),
                         ChunkStorageTorus.targetOrigin(coordinate, slot, SIZE_X),
-                        "coordinate=" + coordinate + ", slot=" + slot);
+                        "section=" + coordinate + ", slot=" + slot);
             }
         }
     }
@@ -58,7 +48,7 @@ class ChunkStorageTorusTest {
         int verticalSections = 24;
         FakeStorage storage = new FakeStorage(size, verticalSections, size, -64);
         ChunkStorageTorus.Workspace workspace = new ChunkStorageTorus.Workspace();
-        vanillaReposition(storage, size, verticalSections, size, -64, 0.0, 0.0);
+        vanillaReposition(storage, size, verticalSections, size, -64, 0, 0);
         storage.clearMoves();
 
         int moved = ChunkStorageTorus.reposition(
@@ -68,8 +58,8 @@ class ChunkStorageTorusTest {
                 verticalSections,
                 size,
                 -64,
-                16.0,
-                0.0);
+                1,
+                0);
         assertEquals(1_560, moved);
 
         storage.clearMoves();
@@ -80,8 +70,8 @@ class ChunkStorageTorusTest {
                 verticalSections,
                 size,
                 -64,
-                32.0,
-                16.0);
+                2,
+                1);
         assertEquals(3_096, moved);
 
         storage.clearMoves();
@@ -92,8 +82,8 @@ class ChunkStorageTorusTest {
                 verticalSections,
                 size,
                 -64,
-                32.0,
-                16.0);
+                2,
+                1);
         assertEquals(0, moved);
         assertEquals(130, storage.originReads);
     }
@@ -101,8 +91,8 @@ class ChunkStorageTorusTest {
     private static void assertEquivalent(
             String description,
             Camera initialCamera,
-            double cameraX,
-            double cameraZ) {
+            int cameraX,
+            int cameraZ) {
         FakeStorage initial = new FakeStorage(SIZE_X, SIZE_Y, SIZE_Z, BOTTOM_Y);
         if (initialCamera != null) {
             vanillaReposition(
@@ -134,8 +124,8 @@ class ChunkStorageTorusTest {
             int sizeY,
             int sizeZ,
             int bottomY,
-            double cameraX,
-            double cameraZ) {
+            int cameraX,
+            int cameraZ) {
         for (int x = 0; x < sizeX; x++) {
             int targetX = vanillaTargetOrigin(cameraX, x, sizeX);
             for (int z = 0; z < sizeZ; z++) {
@@ -152,14 +142,14 @@ class ChunkStorageTorusTest {
         }
     }
 
-    private static int vanillaTargetOrigin(double cameraCoordinate, int slot, int size) {
-        int cameraBlock = MathHelper.ceil(cameraCoordinate);
-        int span = size * 16;
-        int start = cameraBlock - 8 - span / 2;
-        return start + Math.floorMod(slot * 16 - start, span);
+    private static int vanillaTargetOrigin(int cameraSection, int slot, int size) {
+        int viewDistance = (size - 1) / 2;
+        int firstSection = cameraSection - viewDistance;
+        int section = firstSection + Math.floorMod(slot - firstSection, size);
+        return section << 4;
     }
 
-    private record Camera(double x, double z) {
+    private record Camera(int x, int z) {
     }
 
     private record Origin(int x, int y, int z) {

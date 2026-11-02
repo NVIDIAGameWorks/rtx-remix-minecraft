@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import net.minecraft.client.gl.VertexBuffer;
+import net.minecraft.client.gl.GlUsage;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import org.spongepowered.asm.mixin.Mixin;
@@ -56,7 +57,7 @@ public abstract class BuiltChunkBuffersMixin {
         // Constructed on the render thread, like the sections themselves.
         if (rtxremix$scratchBuffers.isEmpty()) {
             for (RenderLayer layer : RenderLayer.getBlockLayers()) {
-                rtxremix$scratchBuffers.put(layer, new VertexBuffer(VertexBuffer.Usage.STATIC));
+                rtxremix$scratchBuffers.put(layer, new VertexBuffer(GlUsage.STATIC_WRITE));
             }
         }
         return Collector.of(

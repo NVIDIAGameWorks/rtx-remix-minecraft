@@ -14,7 +14,7 @@ import java.util.List;
 
 /**
  * The buffers behind vanilla's visibility state, kept across walks instead of allocated per
- * walk: the reached-section set, the per-slot info list, the unbuilt-neighbour map and the
+ * walk: the per-slot info list, the unbuilt-neighbour map and the
  * {@link ChunkInfoPool}. Two sets of them alternate, because at most two states exist at
  * once: the published one the render thread reads and extends incrementally, and the one a
  * full walk is filling on the visibility thread. Vanilla submits a full walk only from the
@@ -28,19 +28,16 @@ import java.util.List;
 public final class VisibilityGraphBuffers {
     /** One state's worth of buffers. */
     public static final class Buffers {
-        public final ReachedChunkSet chunks;
         public final ChunkInfoList infos;
         public final Long2ObjectOpenHashMap<List<ChunkBuilder.BuiltChunk>> unbuiltNeighbours = new Long2ObjectOpenHashMap<>();
         public final ChunkInfoPool infoPool;
 
         Buffers(int chunkCount) {
-            chunks = new ReachedChunkSet(chunkCount);
             infos = new ChunkInfoList(Math.max(1, chunkCount));
             infoPool = new ChunkInfoPool(chunkCount);
         }
 
         void reset() {
-            chunks.clear();
             Arrays.fill(infos.current, null);
             unbuiltNeighbours.clear();
             infoPool.beginWalk();

@@ -129,7 +129,7 @@ public abstract class MinecraftClientMixin {
         method = "render",
         at = @At(
             value = "INVOKE",
-            target = "Lcom/mojang/blaze3d/systems/RenderSystem;clear(IZ)V"
+            target = "Lcom/mojang/blaze3d/systems/RenderSystem;clear(I)V"
         ),
         require = 0
     )
@@ -240,7 +240,7 @@ public abstract class MinecraftClientMixin {
         method = "render",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/util/Window;swapBuffers()V"
+            target = "Lnet/minecraft/client/util/Window;swapBuffers(Lnet/minecraft/client/util/tracy/TracyFrameCapturer;)V"
         )
     )
     private void rtxremix$beforeSwapBuffers(boolean tick, CallbackInfo ci) {
@@ -251,7 +251,7 @@ public abstract class MinecraftClientMixin {
         method = "render",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/util/Window;swapBuffers()V",
+            target = "Lnet/minecraft/client/util/Window;swapBuffers(Lnet/minecraft/client/util/tracy/TracyFrameCapturer;)V",
             shift = At.Shift.AFTER
         )
     )

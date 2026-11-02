@@ -7,7 +7,7 @@ package com.nvidia.rtxremix.minecraft.entity;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.model.ModelLoader;
+import net.minecraft.client.render.model.ModelBaker;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -85,7 +85,7 @@ public final class RemixBlockDamagePass {
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
         try {
             VertexConsumer crack = provider.getBuffer(
-                    ModelLoader.BLOCK_DESTRUCTION_RENDER_LAYERS.get(stage));
+                    ModelBaker.BLOCK_DESTRUCTION_RENDER_LAYERS.get(stage));
             call.render(matrices, projector.target(crack));
             layers = provider.endEntity();
         } catch (Exception e) {

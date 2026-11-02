@@ -33,17 +33,21 @@ import it.unimi.dsi.fastutil.objects.ObjectListIterator;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.particle.ParticleManager;
-import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.BuiltChunkStorage;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.SkyRendering;
+import net.minecraft.client.render.WeatherRendering;
+import net.minecraft.client.render.block.entity.BlockEntityRenderDispatcher;
+import net.minecraft.client.util.ObjectAllocator;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
+import com.nvidia.rtxremix.minecraft.weather.RemixWeatherVertexConsumerProvider;
+import it.unimi.dsi.fastutil.objects.ObjectList;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexFormatElement;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.render.chunk.ChunkRendererRegionBuilder;
@@ -52,7 +56,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.BlockBreakingInfo;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.profiler.Profiler;
@@ -66,12 +69,8 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -122,10 +121,13 @@ public abstract class WorldRendererMixin
     public ClientWorld world;
 
     @Shadow
-    private int regularEntityCount;
+    private int renderedEntitiesCount;
+
+    private int rtxremix$blockEntityCount;
 
     @Shadow
-    private int blockEntityCount;
+    @Final
+    private SkyRendering skyRendering;
 
     @Shadow
     private int ticks;
@@ -157,44 +159,15 @@ public abstract class WorldRendererMixin
             new ChunkBuilder.BuiltChunk[rtxremix$BLOCK_ENTITY_CHUNK_LIST_INITIAL_CAPACITY];
     private int rtxremix$blockEntityChunkBufferUsed;
     private final BuiltChunkArrayIterator rtxremix$blockEntityChunkIterator = new BuiltChunkArrayIterator();
-    private RemixWeatherRenderer rtxremix$weatherRenderer;
-    private Identifier rtxremix$weatherTexture;
-    private float[] rtxremix$starVertices = new float[0];
 
     @Override
     public int rtxremix$getCloudTicks() {
         return ticks;
     }
 
-    @Inject(method = "buildStarsBuffer", at = @At("RETURN"))
-    private void rtxremix$captureStarVertices(
-            Tessellator tessellator,
-            CallbackInfoReturnable<BuiltBuffer> cir) {
-        BuiltBuffer builtBuffer = cir.getReturnValue();
-        BuiltBuffer.DrawParameters parameters = builtBuffer.getDrawParameters();
-        int positionOffset = parameters.format().getOffset(VertexFormatElement.POSITION);
-        if (positionOffset < 0) {
-            rtxremix$starVertices = new float[0];
-            return;
-        }
-
-        int vertexCount = parameters.vertexCount();
-        int stride = parameters.format().getVertexSizeByte();
-        ByteBuffer vertices = builtBuffer.getBuffer().duplicate().order(ByteOrder.nativeOrder());
-        float[] positions = new float[vertexCount * 3];
-        for (int vertex = 0; vertex < vertexCount; vertex++) {
-            int source = vertex * stride + positionOffset;
-            int destination = vertex * 3;
-            positions[destination] = vertices.getFloat(source);
-            positions[destination + 1] = vertices.getFloat(source + Float.BYTES);
-            positions[destination + 2] = vertices.getFloat(source + 2 * Float.BYTES);
-        }
-        rtxremix$starVertices = positions;
-    }
-
     @Override
     public float[] rtxremix$copyStarVertices() {
-        return rtxremix$starVertices.clone();
+        return ((WorldRendererStarAccess) skyRendering).rtxremix$copyStarVertices();
     }
 
     /**
@@ -220,7 +193,7 @@ public abstract class WorldRendererMixin
         for (int sectionZ = minSectionZ; sectionZ <= maxSectionZ; sectionZ++) {
             for (int sectionX = minSectionX; sectionX <= maxSectionX; sectionX++) {
                 for (int sectionY = minSectionY; sectionY <= maxSectionY; sectionY++) {
-                    renderer.scheduleBlockRender(sectionX, sectionY, sectionZ);
+                    renderer.scheduleChunkRender(sectionX, sectionY, sectionZ);
                 }
             }
         }
@@ -235,7 +208,7 @@ public abstract class WorldRendererMixin
      * wholesale because the rule must tell the loading column from its neighbours, which a
      * redirect of the inner per-section call cannot.
      */
-    @Inject(method = "scheduleBlockRenders(III)V", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "scheduleChunkRenders3x3x3(III)V", at = @At("HEAD"), cancellable = true)
     private void rtxremix$filterChunkLoadReflags(int cx, int sy, int cz, CallbackInfo ci) {
         if (!RtxRemixMod.isRtxEnabled() || !NeighbourReflagFilter.ENABLED || chunks == null) {
             return;
@@ -292,7 +265,7 @@ public abstract class WorldRendererMixin
             }
             WorldChunk worldChunk = world.getChunkManager().getWorldChunk(cx, cz, false);
             if (worldChunk != null && !worldChunk.isSectionEmpty(sy)
-                    && lightingProvider.isLightingEnabled(ChunkSectionPos.from(cx, sy, cz))) {
+                    && lightingProvider.isLightingEnabled(ChunkSectionPos.asLong(cx, sy, cz))) {
                 loadedSections.add(builtChunk);
             }
         }
@@ -349,7 +322,7 @@ public abstract class WorldRendererMixin
      * reflections.
      */
     @WrapOperation(
-            method = "render",
+            method = "renderEntities",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/render/WorldRenderer;renderEntity("
@@ -409,7 +382,7 @@ public abstract class WorldRendererMixin
      * stays block-local. When Remix declines, vanilla renders as usual.
      */
     @WrapOperation(
-            method = "render",
+            method = "renderBlockDamage",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/render/block/BlockRenderManager;renderDamage("
@@ -451,11 +424,11 @@ public abstract class WorldRendererMixin
 
     @Inject(method = "render", at = @At("HEAD"))
     private void rtxremix$renderHead(
+            ObjectAllocator allocator,
             RenderTickCounter tickCounter,
             boolean renderBlockOutline,
             Camera camera,
             GameRenderer gameRenderer,
-            LightmapTextureManager lightmapTextureManager,
             Matrix4f positionMatrix,
             Matrix4f projectionMatrix,
             CallbackInfo ci) {
@@ -464,6 +437,7 @@ public abstract class WorldRendererMixin
                 "WorldRenderer.render",
                 "Java.WorldRenderer.render.ms");
         rtxremix$renderLayerCalls = 0;
+        rtxremix$blockEntityCount = 0;
         rtxremix$renderLayerSkips = 0;
         rtxremix$blockEntityChunkScanCount = -1;
         rtxremix$blockEntityChunkCount = -1;
@@ -476,11 +450,11 @@ public abstract class WorldRendererMixin
 
     @Inject(method = "render", at = @At("RETURN"))
     private void rtxremix$renderReturn(
+            ObjectAllocator allocator,
             RenderTickCounter tickCounter,
             boolean renderBlockOutline,
             Camera camera,
             GameRenderer gameRenderer,
-            LightmapTextureManager lightmapTextureManager,
             Matrix4f positionMatrix,
             Matrix4f projectionMatrix,
             CallbackInfo ci) {
@@ -489,7 +463,7 @@ public abstract class WorldRendererMixin
     }
 
     @WrapOperation(
-            method = "render",
+            method = {"render", "method_62214"},
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/util/profiler/Profiler;swap(Ljava/lang/String;)V"
@@ -502,7 +476,7 @@ public abstract class WorldRendererMixin
         rtxremix$transitionProfilerPhase(name);
     }
 
-    @Inject(method = "renderLayer", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "renderLayer", at = @At("HEAD"))
     private void rtxremix$skipVanillaTerrainLayer(
             RenderLayer renderLayer,
             double x,
@@ -514,118 +488,70 @@ public abstract class WorldRendererMixin
         rtxremix$renderLayerCalls++;
         if (RtxRemixMod.isRemixWorldRendering() && rtxremix$isVanillaTerrainLayer(renderLayer)) {
             rtxremix$renderLayerSkips++;
-            ci.cancel();
         }
     }
 
-    @Redirect(
-            method = "render",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/particle/ParticleManager;renderParticles(Lnet/minecraft/client/render/LightmapTextureManager;Lnet/minecraft/client/render/Camera;F)V"
-            ))
-    private void rtxremix$skipVanillaParticleDraw(
-            ParticleManager particleManager,
-            LightmapTextureManager lightmapTextureManager,
-            Camera camera,
-            float tickDelta) {
+    /** Keeps the layer's shader, uniforms and GL cleanup while omitting its section draws. */
+    @Redirect(method = "renderLayer", at = @At(value = "INVOKE",
+            target = "Lit/unimi/dsi/fastutil/objects/ObjectArrayList;listIterator(I)"
+                    + "Lit/unimi/dsi/fastutil/objects/ObjectListIterator;", remap = false))
+    private ObjectListIterator<ChunkBuilder.BuiltChunk> rtxremix$terrainIterator(
+            ObjectArrayList<ChunkBuilder.BuiltChunk> sections, int index,
+            RenderLayer layer, double x, double y, double z, Matrix4f view, Matrix4f projection) {
+        return RtxRemixMod.isRemixWorldRendering() && rtxremix$isVanillaTerrainLayer(layer)
+                ? ObjectList.<ChunkBuilder.BuiltChunk>of().listIterator() : sections.listIterator(index);
+    }
+
+    /** The framegraph still clears its particle target, copies depth and installs fog. */
+    @WrapOperation(method = "method_62213", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/particle/ParticleManager;renderParticles("
+                    + "Lnet/minecraft/client/render/Camera;F"
+                    + "Lnet/minecraft/client/render/VertexConsumerProvider$Immediate;)V"))
+    private void rtxremix$skipVanillaParticleDraw(ParticleManager particles, Camera camera,
+                                                 float tickDelta, VertexConsumerProvider.Immediate consumers,
+                                                 Operation<Void> original) {
         if (!RtxRemixMod.isRemixWorldRendering()) {
-            particleManager.renderParticles(lightmapTextureManager, camera, tickDelta);
+            original.call(particles, camera, tickDelta, consumers);
+        } else {
+            // ParticleManager drains this shared provider even with no particle batches.
+            consumers.draw();
         }
     }
 
-    @Inject(method = "renderClouds", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$skipVanillaCloudDraw(
-            MatrixStack matrices,
-            Matrix4f positionMatrix,
-            Matrix4f projectionMatrix,
-            float tickDelta,
-            double cameraX,
-            double cameraY,
-            double cameraZ,
-            CallbackInfo ci) {
-        if (RtxRemixMod.isRemixWorldRendering()
-                && RtxRemixMod.getInstance()
-                        .getRenderer()
-                        .getCloudRenderer()
-                        .shouldSuppressVanillaClouds()) {
-            ci.cancel();
-        }
-    }
-
-    @Inject(method = "renderWeather", at = @At("HEAD"))
-    private void rtxremix$beginWeatherCapture(
-            LightmapTextureManager lightmapTextureManager,
-            float tickDelta,
-            double cameraX,
-            double cameraY,
-            double cameraZ,
-            CallbackInfo ci) {
-        rtxremix$weatherRenderer = rtxremix$getWeatherRenderer();
-        rtxremix$weatherTexture = null;
-        if (rtxremix$weatherRenderer != null) {
-            rtxremix$weatherRenderer.beginCaptureFrame(lightmapTextureManager);
-        }
-    }
-
-    @WrapOperation(
-            method = "renderWeather",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderTexture(ILnet/minecraft/util/Identifier;)V"
-            ))
-    private void rtxremix$captureWeatherTexture(
-            int textureUnit,
-            Identifier texture,
-            Operation<Void> original) {
-        if (rtxremix$weatherRenderer != null && textureUnit == 0) {
-            rtxremix$weatherTexture = texture;
+    /** Captures only precipitation; the graph's fog and world-border pass remain vanilla. */
+    @WrapOperation(method = "method_62216", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/render/WeatherRendering;renderPrecipitation("
+                    + "Lnet/minecraft/world/World;Lnet/minecraft/client/render/VertexConsumerProvider;"
+                    + "IFLnet/minecraft/util/math/Vec3d;)V"))
+    private void rtxremix$captureWeather(WeatherRendering weather, World world,
+                                         VertexConsumerProvider consumers, int ticks, float tickDelta,
+                                         Vec3d camera, Operation<Void> original) {
+        RemixWeatherRenderer renderer = rtxremix$getWeatherRenderer();
+        if (renderer == null) {
+            original.call(weather, world, consumers, ticks, tickDelta, camera);
             return;
         }
-        original.call(textureUnit, texture);
-    }
-
-    @WrapOperation(
-            method = "renderWeather",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/BufferRenderer;drawWithGlobalProgram(Lnet/minecraft/client/render/BuiltBuffer;)V"
-            ))
-    private void rtxremix$captureWeatherDraw(
-            BuiltBuffer buffer,
-            Operation<Void> original) {
-        if (rtxremix$weatherRenderer == null) {
-            original.call(buffer);
-            return;
+        renderer.beginCaptureFrame(MinecraftClient.getInstance().gameRenderer.getLightmapTextureManager());
+        try (RemixWeatherVertexConsumerProvider capture = renderer.getCaptureProvider()) {
+            original.call(weather, world, capture, ticks, tickDelta, camera);
+            capture.captureInto(renderer);
         }
-
-        rtxremix$weatherRenderer.capture(
-                buffer,
-                rtxremix$weatherTexture);
     }
 
-    @Inject(method = "renderWeather", at = @At("RETURN"))
-    private void rtxremix$endWeatherCapture(
-            LightmapTextureManager lightmapTextureManager,
-            float tickDelta,
-            double cameraX,
-            double cameraY,
-            double cameraZ,
-            CallbackInfo ci) {
-        rtxremix$weatherRenderer = null;
-        rtxremix$weatherTexture = null;
+    @WrapOperation(method = "renderBlockEntities", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/render/block/entity/BlockEntityRenderDispatcher;render("
+                    + "Lnet/minecraft/block/entity/BlockEntity;FLnet/minecraft/client/util/math/MatrixStack;"
+                    + "Lnet/minecraft/client/render/VertexConsumerProvider;)V"), require = 2)
+    private void rtxremix$countBlockEntity(BlockEntityRenderDispatcher dispatcher, BlockEntity entity,
+                                           float tickDelta, MatrixStack matrices,
+                                           VertexConsumerProvider consumers, Operation<Void> original) {
+        rtxremix$blockEntityCount++;
+        original.call(dispatcher, entity, tickDelta, matrices, consumers);
     }
 
-    @Redirect(
-            method = "render",
-            slice = @Slice(
-                    from = @At(value = "CONSTANT", args = "stringValue=blockentities"),
-                    to = @At(value = "CONSTANT", args = "stringValue=destroyProgress")),
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lit/unimi/dsi/fastutil/objects/ObjectArrayList;iterator()Lit/unimi/dsi/fastutil/objects/ObjectListIterator;"
-            ),
-            require = 0)
+    @Redirect(method = "renderBlockEntities", at = @At(value = "INVOKE",
+            target = "Lit/unimi/dsi/fastutil/objects/ObjectArrayList;iterator()"
+                    + "Lit/unimi/dsi/fastutil/objects/ObjectListIterator;", remap = false))
     private ObjectListIterator<ChunkBuilder.BuiltChunk> rtxremix$iterateBlockEntityChunks(
             ObjectArrayList<ChunkBuilder.BuiltChunk> chunks) {
         if (!RtxRemixMod.isRemixWorldRendering()) {
@@ -819,9 +745,9 @@ public abstract class WorldRendererMixin
             scope.visibleChunkCount(visibleChunks);
             scope.captureCount(visibleChunks);
         }
-        scope.entityCount(regularEntityCount);
-        scope.blockEntityCount(blockEntityCount);
-        scope.blockCount(blockEntityCount);
+        scope.entityCount(renderedEntitiesCount);
+        scope.blockEntityCount(rtxremix$blockEntityCount);
+        scope.blockCount(rtxremix$blockEntityCount);
         scope.noCullBlockEntityCount(rtxremix$noCullBlockEntityCount());
         scope.blockBreakingCount(blockBreakingProgressions == null ? -1 : blockBreakingProgressions.size());
         scope.renderLayerCalls(rtxremix$renderLayerCalls - rtxremix$phaseRenderLayerCallsStart);

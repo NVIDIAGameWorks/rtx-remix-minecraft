@@ -4,7 +4,7 @@ accessWidener v2 named
 # SPDX-License-Identifier: Apache-2.0
 
 # Camera access
-accessible method net/minecraft/client/render/GameRenderer getFov (Lnet/minecraft/client/render/Camera;FZ)D
+accessible method net/minecraft/client/render/GameRenderer getFov (Lnet/minecraft/client/render/Camera;FZ)F
 
 # Deferred application for sliders that rebuild expensive resources
 accessible class net/minecraft/client/option/SimpleOption$SliderCallbacks
@@ -74,11 +74,6 @@ accessible field net/minecraft/world/chunk/ChunkToNibbleArrayMap arrays Lit/unim
 accessible field net/minecraft/world/chunk/light/SkyLightStorage$Data columnToTopSection Lit/unimi/dsi/fastutil/longs/Long2IntOpenHashMap;
 accessible field net/minecraft/world/chunk/light/SkyLightStorage$Data minSectionY I
 accessible class net/minecraft/world/chunk/light/BlockLightStorage$Data
-
-# The integrated server's per-tick chunk list entries, cached per holder (ChunkHolderMixin)
-accessible class net/minecraft/server/world/ServerChunkManager$ChunkWithHolder
-accessible method net/minecraft/server/world/ServerChunkManager$ChunkWithHolder <init> (Lnet/minecraft/world/chunk/WorldChunk;Lnet/minecraft/server/world/ChunkHolder;)V
-accessible field net/minecraft/server/world/ServerChunkManager$ChunkWithHolder chunk Lnet/minecraft/world/chunk/WorldChunk;
 
 # Render-region snapshot storage recycling (RenderedChunkMixin, PalettedContainerDataMixin)
 accessible class net/minecraft/client/render/chunk/RenderedChunk

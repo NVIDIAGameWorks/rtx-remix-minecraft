@@ -22,7 +22,7 @@ public abstract class RenderSystemMixin {
 
     @Redirect(
         method = "flipFrame",
-        at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwSwapBuffers(J)V")
+        at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwSwapBuffers(J)V", remap = false)
     )
     private static void rtxremix$redirectSwapBuffers(long window) {
         RemixRenderer renderer = RtxRemixMod.renderer;

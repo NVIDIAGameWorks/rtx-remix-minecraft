@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EntityRenderContextTest {
@@ -88,5 +90,61 @@ class EntityRenderContextTest {
         assertTrue(context.isActive());
         context.end();
         assertFalse(context.isActive());
+    }
+
+    @Test
+    void nestedItemScopesRestoreFactsAndTheOuterEmissionGuard() {
+        ItemCaptureData outer = new ItemCaptureData();
+        ItemCaptureData inner = new ItemCaptureData();
+        context.begin(true);
+        assertNull(context.enterItemCapture(outer));
+        assertTrue(context.claimItemEffects());
+        assertFalse(context.claimItemEffects(), "multiple model layers must not duplicate flames");
+
+        boolean emittedBefore = context.hasEmittedItemEffects();
+        ItemCaptureData previous = context.enterItemCapture(inner);
+        try {
+            assertSame(outer, previous);
+            assertSame(inner, context.getItemCaptureData());
+            assertTrue(context.claimItemEffects(), "a nested item owns its own effects");
+        } finally {
+            context.restoreItemCapture(previous, emittedBefore);
+        }
+
+        assertSame(outer, context.getItemCaptureData());
+        assertFalse(context.claimItemEffects(), "returning to the outer item must not emit twice");
+    }
+
+    @Test
+    void throwingItemRenderRestoresThePreviousScope() {
+        ItemCaptureData outer = new ItemCaptureData();
+        context.begin(true);
+        context.enterItemCapture(outer);
+        assertThrows(IllegalStateException.class, () -> {
+            boolean emittedBefore = context.hasEmittedItemEffects();
+            ItemCaptureData previous = context.enterItemCapture(new ItemCaptureData());
+            try {
+                context.claimItemEffects();
+                throw new IllegalStateException("renderer failed");
+            } finally {
+                context.restoreItemCapture(previous, emittedBefore);
+            }
+        });
+        assertSame(outer, context.getItemCaptureData());
+        assertTrue(context.claimItemEffects(), "inner failure must not consume the outer effect");
+    }
+
+    @Test
+    void resetDropsTheItemScopeAndEmissionGuard() {
+        context.begin(true);
+        context.enterItemCapture(new ItemCaptureData());
+        assertTrue(context.claimItemEffects());
+        context.reset();
+        assertNull(context.getItemCaptureData());
+        assertFalse(context.hasEmittedItemEffects());
+        assertFalse(context.claimItemEffects());
+        context.begin(true);
+        context.enterItemCapture(new ItemCaptureData());
+        assertTrue(context.claimItemEffects());
     }
 }

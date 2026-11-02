@@ -28,24 +28,24 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class EntityRenderDispatcherMixin {
 
     @Inject(
-        method = "render(Lnet/minecraft/entity/Entity;DDDFFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+        method = "render(Lnet/minecraft/entity/Entity;DDDFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
         at = @At("HEAD")
     )
     private <E extends Entity> void rtxremix$onRenderStart(
             E entity, double x, double y, double z,
-            float yaw, float tickDelta,
+            float tickDelta,
             MatrixStack matrices, VertexConsumerProvider vertexConsumers,
             int light, CallbackInfo ci) {
         EntityRenderContext.get().begin(vertexConsumers instanceof RemixVertexConsumerProvider);
     }
 
     @Inject(
-        method = "render(Lnet/minecraft/entity/Entity;DDDFFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
+        method = "render(Lnet/minecraft/entity/Entity;DDDFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
         at = @At("RETURN")
     )
     private <E extends Entity> void rtxremix$onRenderEnd(
             E entity, double x, double y, double z,
-            float yaw, float tickDelta,
+            float tickDelta,
             MatrixStack matrices, VertexConsumerProvider vertexConsumers,
             int light, CallbackInfo ci) {
         EntityRenderContext.get().end();

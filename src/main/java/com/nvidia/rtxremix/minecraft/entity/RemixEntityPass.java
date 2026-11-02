@@ -737,7 +737,7 @@ public class RemixEntityPass {
 
         sharedMatrices.push();
         try {
-            dispatcher.render(entity, 0.0, 0.0, 0.0, yaw, tickDelta, sharedMatrices, provider, light);
+            dispatcher.render(entity, 0.0, 0.0, 0.0, tickDelta, sharedMatrices, provider, light);
         } finally {
             // Both reset even if a renderer threw mid-traversal, which skips the
             // dispatcher's RETURN hook: the identity root returns every pooled

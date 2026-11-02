@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.cloud;
 
+import com.nvidia.rtxremix.minecraft.util.NativeImageColors;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
@@ -392,7 +393,7 @@ public final class CloudRenderer {
                 for (int y = 0; y < vanillaTextureHeight; y++) {
                     for (int x = 0; x < vanillaTextureWidth; x++) {
                         vanillaOccupancy[y * vanillaTextureWidth + x] =
-                                ((image.getColor(x, y) >>> 24) & 0xff) >= 128;
+                                ((NativeImageColors.getAbgr(image, x, y) >>> 24) & 0xff) >= 128;
                     }
                 }
             }
@@ -516,8 +517,11 @@ public final class CloudRenderer {
         materialColor = cloudColor;
     }
 
-    private void updateCloudColor(Vec3d color) {
-        int packedColor = packCloudColor(color.x, color.y, color.z);
+    private void updateCloudColor(int color) {
+        int packedColor = packCloudColor(
+                ((color >>> 16) & 0xFF) / 255.0,
+                ((color >>> 8) & 0xFF) / 255.0,
+                (color & 0xFF) / 255.0);
         cloudColor = packedColor;
         if (material == null || material.isDeleted() || materialColor == packedColor) {
             return;

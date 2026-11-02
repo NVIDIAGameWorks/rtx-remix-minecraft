@@ -8,10 +8,10 @@ import com.nvidia.rtxremix.minecraft.terrain.BuiltChunkNeighbourhoodAccess;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkBuilderBlockEntityAccess;
 import com.nvidia.rtxremix.minecraft.terrain.NeighbourReflagFilter;
 import com.nvidia.rtxremix.minecraft.terrain.SectionLeftRenderSetQueue;
-import com.nvidia.rtxremix.minecraft.terrain.visibility.ChunkSlotMoveLog;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.render.chunk.ChunkRendererRegionBuilder;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkSectionPos;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -24,13 +24,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Hooks into vanilla's BuiltChunk lifecycle.
  *
  * <ul>
- *   <li><b>setOrigin:</b> Resets per-slot block-entity and snapshot state when
- *       vanilla reuses a BuiltChunk for a new section, and logs the move so the
- *       frustum index can re-bucket exactly the slots that moved.
+ *   <li><b>setSectionPos:</b> Resets per-slot block-entity and snapshot state when
+ *       vanilla reuses a BuiltChunk for a new section.
  *   <li><b>createRebuildTask:</b> Records which neighbour columns the region
  *       snapshot contained, so a later chunk-load re-flag from a column the
  *       capture already read can be dropped.
- *   <li><b>method_60908:</b> Tracks whether the section contains block
+ *   <li><b>setData:</b> Tracks whether the section contains block
  *       entities and flags empty render data as a removal candidate. The
  *       render thread validates the live world section before removing
  *       Remix terrain because vanilla can publish temporary empty data.
@@ -41,17 +40,13 @@ public abstract class BuiltChunkMixin implements ChunkBuilderBlockEntityAccess, 
 
     @Shadow
     @Final
-    public int index;
-
-    @Shadow
-    @Final
     BlockPos.Mutable origin;
 
     @Shadow
     protected abstract double getSquaredCameraDistance();
 
     @Shadow
-    protected abstract boolean isChunkNonEmpty(BlockPos pos);
+    protected abstract boolean isChunkNonEmpty(long sectionPos);
 
     @Shadow
     public abstract ChunkBuilder.ChunkData getData();
@@ -83,15 +78,10 @@ public abstract class BuiltChunkMixin implements ChunkBuilderBlockEntityAccess, 
         rtxremix$snapshotMask &= ~bit;
     }
 
-    @Inject(method = "setOrigin(III)V", at = @At("HEAD"))
-    private void rtxremix$onSetOrigin(int x, int y, int z, CallbackInfo ci) {
+    @Inject(method = "setSectionPos(J)V", at = @At("HEAD"))
+    private void rtxremix$onSetSectionPos(long sectionPos, CallbackInfo ci) {
         rtxremix$hasBlockEntities = false;
         rtxremix$snapshotMask = 0;
-    }
-
-    @Inject(method = "setOrigin(III)V", at = @At("RETURN"))
-    private void rtxremix$afterSetOrigin(int x, int y, int z, CallbackInfo ci) {
-        ChunkSlotMoveLog.RENDER_THREAD.record(index);
     }
 
     /**
@@ -115,7 +105,7 @@ public abstract class BuiltChunkMixin implements ChunkBuilderBlockEntityAccess, 
                     origin.getX() + NeighbourReflagFilter.DX[k] * 16,
                     origin.getY(),
                     origin.getZ() + NeighbourReflagFilter.DZ[k] * 16);
-            if (isChunkNonEmpty(rtxremix$neighbourProbe)) {
+            if (isChunkNonEmpty(ChunkSectionPos.toLong(rtxremix$neighbourProbe))) {
                 mask |= NeighbourReflagFilter.bit(k);
             }
         }
@@ -125,11 +115,11 @@ public abstract class BuiltChunkMixin implements ChunkBuilderBlockEntityAccess, 
         }
     }
 
-    @Inject(method = "method_60908(Lnet/minecraft/client/render/chunk/ChunkBuilder$ChunkData;)V", at = @At("HEAD"))
+    @Inject(method = "setData(Lnet/minecraft/client/render/chunk/ChunkBuilder$ChunkData;)V", at = @At("HEAD"))
     private void rtxremix$onChunkDataSet(ChunkBuilder.ChunkData chunkData, CallbackInfo ci) {
         rtxremix$hasBlockEntities = !chunkData.getBlockEntities().isEmpty();
 
-        if (!chunkData.isEmpty()) {
+        if (chunkData.hasNonEmptyLayers()) {
             return;
         }
         int x = origin.getX();

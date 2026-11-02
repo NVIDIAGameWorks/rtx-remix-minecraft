@@ -50,6 +50,8 @@ public final class EntityRenderContext {
     /** Entity whose hand-held item is being rendered, or null outside a held-item render. */
     private LivingEntity heldItemHolder;
     private int blockItemLayer = NO_BLOCK_ITEM;
+    private ItemCaptureData itemCaptureData;
+    private boolean emittedItemEffects;
 
     /** The viewer's eye in the capture's space, valid while {@link #eyeKnown}. */
     private final Vector3f eye = new Vector3f();
@@ -87,6 +89,8 @@ public final class EntityRenderContext {
         this.activeHand = null;
         this.heldItemHolder = null;
         this.blockItemLayer = NO_BLOCK_ITEM;
+        this.itemCaptureData = null;
+        this.emittedItemEffects = false;
         this.eyeKnown = false;
         this.boneCounter = 0;
         // Bone transforms are not cleared: the pre-allocated Matrix4f objects are
@@ -121,6 +125,8 @@ public final class EntityRenderContext {
         this.activeHand = null;
         this.heldItemHolder = null;
         this.blockItemLayer = NO_BLOCK_ITEM;
+        this.itemCaptureData = null;
+        this.emittedItemEffects = false;
         this.eyeKnown = false;
     }
 
@@ -134,13 +140,13 @@ public final class EntityRenderContext {
      * {@code BlockTextureManager} layer type, or {@link #NO_BLOCK_ITEM}. Ice and
      * stained glass are {@code L_TRANS}, clear glass {@code L_GLASS}.
      *
-     * <p>Set by {@code ItemRendererMixin} for the duration of one
-     * {@code ItemRenderer.renderItem} call and sampled by
+     * <p>Retained with vanilla's item render state and scoped to its render by
+     * {@code ItemRenderStateMixin}, then sampled by
      * {@link RemixCapturingConsumer} as each part opens, so the answer travels
      * with the geometry that item produced.
      */
     public int getBlockItemLayer() {
-        return blockItemLayer;
+        return itemCaptureData == null ? blockItemLayer : itemCaptureData.blockLayer();
     }
 
     public void setBlockItemLayer(int blockItemLayer) {
@@ -209,11 +215,9 @@ public final class EntityRenderContext {
 
     /**
      * Marks {@code holder} as the entity whose hand-held item is being rendered.
-     * Set by {@code HeldItemRendererMixin} for the duration of one held-item
-     * render, so the item renderer's hook can ask whether that holder's torch is
-     * burning; the first-person view model and every entity's hands pass through it.
-     * Held-item renders do not nest, and the hook reads the holder inside the
-     * render that set it, so clearing at its return is the same as restoring.
+     * Set by {@code HeldItemRendererMixin} for direct held-item rendering.
+     * Deferred item renders carry their own holder in {@link ItemCaptureData},
+     * which takes precedence for the duration of that item's render scope.
      */
     public void setHeldItemHolder(LivingEntity holder) {
         heldItemHolder = holder;
@@ -228,7 +232,39 @@ public final class EntityRenderContext {
      * render, which an item_display posed with a hand transform never enters.
      */
     public LivingEntity getHeldItemHolder() {
-        return heldItemHolder;
+        return itemCaptureData == null ? heldItemHolder : itemCaptureData.holder();
+    }
+
+    /** Returns the item state whose geometry is currently being captured. */
+    public ItemCaptureData getItemCaptureData() {
+        return itemCaptureData;
+    }
+
+    public boolean hasEmittedItemEffects() {
+        return emittedItemEffects;
+    }
+
+    /** Opens an item scope without allocating; the caller restores the returned scope in finally. */
+    public ItemCaptureData enterItemCapture(ItemCaptureData data) {
+        ItemCaptureData previous = itemCaptureData;
+        itemCaptureData = data;
+        emittedItemEffects = false;
+        return previous;
+    }
+
+    /** Restores both facts and the emission guard after a nested or exceptional item render. */
+    public void restoreItemCapture(ItemCaptureData previous, boolean emittedBefore) {
+        itemCaptureData = previous;
+        emittedItemEffects = emittedBefore;
+    }
+
+    /** A multi-layer item emits its flame and smoke only at its first ordinary model layer. */
+    public boolean claimItemEffects() {
+        if (!remixPass || itemCaptureData == null || emittedItemEffects) {
+            return false;
+        }
+        emittedItemEffects = true;
+        return true;
     }
 
     /** Returns first-person hand ownership for a captured transform, if any. */

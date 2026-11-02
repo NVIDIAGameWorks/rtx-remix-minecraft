@@ -21,9 +21,9 @@ class FarChunkProbeTest {
 
     /** {@code ceil(sqrt(3) * 16)}, vanilla's step. */
     private static final double STEP = Math.ceil(Math.sqrt(3.0) * 16.0);
-    /** The overworld's range as the mixin passes it: getBottomY() and getTopY(), the latter one past the top block. */
+    /** The overworld's range as the mixin passes it: getBottomY() and getTopYInclusive(), both inclusive. */
     private static final int WORLD_BOTTOM = -64;
-    private static final int WORLD_TOP = 320;
+    private static final int WORLD_TOP = 319;
 
     /**
      * Vanilla's probe, transcribed with its Vec3d chain intact. The port must probe the same

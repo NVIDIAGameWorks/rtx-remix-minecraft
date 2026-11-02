@@ -1,19 +1,6 @@
 {
-  "blend": {
-    "func": "add",
-    "srcrgb": "srcalpha",
-    "dstrgb": "1-srcalpha",
-    "srcalpha": "one",
-    "dstalpha": "zero"
-  },
-  "vertex": "rtx-remix-renderer:rain_refraction",
-  "fragment": "rtx-remix-renderer:rain_refraction",
-  "attributes": [
-    "Position",
-    "UV0",
-    "Color",
-    "UV2"
-  ],
+  "vertex": "rtx-remix-renderer:core/rain_refraction",
+  "fragment": "rtx-remix-renderer:core/rain_refraction",
   "samplers": [
     {
       "name": "Sampler0"

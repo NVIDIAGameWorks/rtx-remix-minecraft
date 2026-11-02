@@ -283,3 +283,20 @@ directory for an installed client. Portable Prism keeps the former at
 
 Textures, material maps, and block light rules come from resource packs, not
 from properties. Their formats are in [Resource Packs](RESOURCE_PACKS.md).
+
+### Visibility traversal on Minecraft 1.21.4
+
+Visibility preparation retains the single low-priority worker, pooled graph info,
+allocation-free far-section probe, and bounded incremental propagation. Vanilla's
+native octree owns coarse frustum culling, ordered visible sections, and the nearby
+section list. Camera-ring movement stores the new section position and schedules
+vanilla's terrain rebuild; the old separate coarse index and move-log reconciliation
+are not used.
+
+This changes the performance profile. Benchmark the native octree path on Windows
+with the same world, camera path, and view distance before comparing it with the
+1.21.1 baseline. Passing static selectors or standalone ring tests does not establish
+visual, visible-set, or performance parity. The `rtxremix.logVisibleSet` diagnostic
+now reports the section keys admitted to the octree; compare it with
+`rtxremix.vanillaVisibilityWalk` enabled and disabled, then check actual visible and
+nearby lists and the rendered scene.
