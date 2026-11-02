@@ -272,7 +272,8 @@ the following:
    folder, attached rather than pasted.
 9. For a crash, a zip of whatever the game folder has of `crash-reports\`,
    `crash\crash_report_*.txt`, and `hs_err_pid*.log`. Leave out the `.dmp`
-   files in `crash\`, which can contain your Minecraft sign-in token.
+   files in `crash\`. Those from version 0.1.0 can contain your Minecraft
+   sign-in token, and so can full-detail dumps, which are opt-in for testing.
 10. A screenshot of the problem. `F2` saves one to the `screenshots\` folder.
 11. For a visual bug, a matching pair: take the shot, type `/rtx off`, take a
     second shot from the same spot, then `/rtx on`.

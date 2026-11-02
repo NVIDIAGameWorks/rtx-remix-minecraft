@@ -189,6 +189,9 @@ static void writeAllThreadStacks(FILE* f, DWORD faultingTid, EXCEPTION_POINTERS*
     SymCleanup(process);
 }
 
+// Set from Java through RemixBridge.setCrashDumpDetail; see writeCrashFiles.
+static volatile bool g_crashDumpDetail = false;
+
 // Writes both a .dmp and a .txt crash report for the given exception.
 static void writeCrashFiles(EXCEPTION_POINTERS* ep) {
     static volatile LONG dumping = 0;
@@ -217,15 +220,18 @@ static void writeCrashFiles(EXCEPTION_POINTERS* ep) {
         mei.ExceptionPointers = ep;
         mei.ClientPointers    = FALSE;
 
-        // No MiniDumpWithIndirectlyReferencedMemory: it copies the memory
-        // that stack values point at, and the game's main thread points at
-        // the launch arguments for the whole session, the launcher's access
-        // token among them. Players attach these files to public issues.
+        // MiniDumpWithIndirectlyReferencedMemory only on request: it copies
+        // the memory that stack values point at, and the game's main thread
+        // points at the launch arguments for the whole session, the
+        // launcher's access token among them. Players attach these files to
+        // public issues.
         DWORD flags = MiniDumpWithDataSegs
                     | MiniDumpWithHandleData
                     | MiniDumpWithThreadInfo
                     | MiniDumpWithUnloadedModules
                     | MiniDumpWithFullMemoryInfo;
+        if (g_crashDumpDetail)
+            flags |= MiniDumpWithIndirectlyReferencedMemory;
 
         MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
                           dmpFile, (MINIDUMP_TYPE)flags, &mei, nullptr, nullptr);
@@ -652,6 +658,14 @@ Java_com_nvidia_rtxremix_RemixBridge_overwriteProcessCommandLine(JNIEnv* env, jc
     // survives past the new end of the line.
     SecureZeroMemory(ansi + ansiLength, originalAnsiLength - ansiLength + 1);
     return REMIXAPI_ERROR_CODE_SUCCESS;
+}
+
+// ─── crash dumps ─────────────────────────────────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_setCrashDumpDetail(JNIEnv*, jclass, jboolean full)
+{
+    g_crashDumpDetail = full;
 }
 
 // ─── lifecycle ───────────────────────────────────────────────────────────

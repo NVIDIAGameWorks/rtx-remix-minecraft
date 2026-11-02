@@ -139,6 +139,7 @@ their distance.
 | `rtxremix.profile.tracyJavaMaxDepth` | Nesting depth limit for those Tracy zones. -1 means unlimited | `ProfileScope` |
 | `rtxremix.profile.clientTasks` | Enable per-client-task JFR events; only read when Java phase events are on | `ProfileScope` |
 | `rtxremix.profile.clientTaskSlowThresholdNs` | A client task slower than this gets its own JFR event | `ProfileScope` |
+| `rtxremix.crashDumpDetail` | Set to true to make the minidump the mod writes to `crash\` after a native crash also copy the memory that thread stacks point at, as version 0.1.0 did, which fills in the objects a crashing thread was using. That memory includes the launch arguments, with the launcher's access token, so keep these dumps private and out of public issues | `RemixRenderer` |
 | `rtxremix.debug.entityTypeSummary` | Enable a periodic per-entity-type capture summary in the log. It costs a map probe per entity per frame and a sort and format pass on the render thread, so it is a diagnostic, not a setting | `RemixEntityPass` |
 
 Tracy zones only appear when the staged runtime was built with Tracy support.

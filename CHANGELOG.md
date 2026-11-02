@@ -23,7 +23,9 @@ also part of every mod file name.
 - The minidump the mod writes to `crash\` after a native crash no longer copies
   the memory that thread stacks point at, which could include the Minecraft
   access token the launcher passes to the game. The bug report form and guides
-  now ask for the text crash files and leave out `.dmp` files.
+  now ask for the text crash files and leave out `.dmp` files. Developers and
+  testers whose dumps stay private can turn the full detail back on with
+  `-Drtxremix.crashDumpDetail=true`.
 
 ## 0.1.0 - 2026-10-23
 

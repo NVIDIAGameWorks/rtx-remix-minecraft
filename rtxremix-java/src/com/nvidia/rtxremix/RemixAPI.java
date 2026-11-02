@@ -140,6 +140,21 @@ public class RemixAPI {
         return dllFile;
     }
 
+    // ─── crash dumps ─────────────────────────────────────────────────────
+
+    /**
+     * Sets whether the minidump the bridge writes after a native crash also
+     * copies the memory that stack values point at. That fills in the objects
+     * a crashing thread was using, but the launch arguments are among it,
+     * including any access token a launcher passed, so turn it on only where
+     * the dumps stay private. Off by default.
+     *
+     * @param full true to copy the memory that stack values point at
+     */
+    public void setCrashDumpDetail(boolean full) {
+        RemixBridge.setCrashDumpDetail(full);
+    }
+
     // ─── lifecycle ───────────────────────────────────────────────────────
 
     public void startup(StartupInfo info) {
