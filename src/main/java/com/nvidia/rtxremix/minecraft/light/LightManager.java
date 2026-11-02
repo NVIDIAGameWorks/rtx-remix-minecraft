@@ -127,6 +127,7 @@ public class LightManager {
     private final Quaternionf scratchBillboard = new Quaternionf();
     private final Vector3f scratchLens = new Vector3f();
     private final Vector3f scratchBeam = new Vector3f();
+    private final Vector3f capturedHandPosition = new Vector3f();
     private final Vector3f scratchDiskX = new Vector3f();
     private final Vector3f scratchDiskY = new Vector3f();
     private final CopperBeaconPose.Pose scratchPlacedBeaconPose =
@@ -782,21 +783,22 @@ public class LightManager {
         Vec3d look = holder.getRotationVec(tickDelta).normalize();
 
         boolean localFirstPerson = isLocalFirstPersonPlayer(holder);
-        Vec3d capturedPosition = localFirstPerson
-                ? renderer.getFirstPersonHeldLightPosition(slot)
-                : null;
-        float viewModelScale = capturedPosition != null
+        boolean hasCapturedPosition = localFirstPerson
+                && renderer.getFirstPersonHeldLightPosition(slot, capturedHandPosition);
+        float viewModelScale = hasCapturedPosition
                 ? RemixFirstPersonPass.VIEW_MODEL_SCALE
                 : 1.0f;
-        Vec3d handPosition = capturedPosition != null
-                ? capturedPosition
-                : lightPosition(holder, slot);
         Vec3d lensOffsetDirection = localFirstPerson
                 ? HeldLightPlacement.horizontalForward(holder.getYaw())
                 : look;
         float emitterRadius = BeaconBeam.RADIUS * viewModelScale;
-        Vec3d pos = handPosition.add(
-                lensOffsetDirection.multiply(BeaconBeam.HELD_LENS_OFFSET));
+        Vec3d pos = hasCapturedPosition
+                ? new Vec3d(
+                        capturedHandPosition.x + lensOffsetDirection.x * BeaconBeam.HELD_LENS_OFFSET,
+                        capturedHandPosition.y + lensOffsetDirection.y * BeaconBeam.HELD_LENS_OFFSET,
+                        capturedHandPosition.z + lensOffsetDirection.z * BeaconBeam.HELD_LENS_OFFSET)
+                : lightPosition(holder, slot).add(
+                        lensOffsetDirection.multiply(BeaconBeam.HELD_LENS_OFFSET));
         float coneAngle = BeaconBeam.CONE_ANGLE_DEGREES;
         if (localFirstPerson && collisionWorld != null && collisionCamera != null) {
             Vec3d collisionOrigin = collisionCamera.getPos();

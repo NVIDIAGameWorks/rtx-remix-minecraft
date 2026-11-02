@@ -191,8 +191,8 @@ public final class EntityRenderContext {
     }
 
     /**
-     * Returns the most recently pushed bone index, which
-     * {@code RemixCapturingConsumer.detectBoneChange} reads to tag vertices.
+     * Returns the most recently pushed bone index. Individual consumers retain
+     * their own pose's index, since layer dispatch can interleave them.
      */
     public int currentBoneIndex() {
         return boneCounter > 0 ? boneCounter - 1 : -1;
@@ -255,6 +255,11 @@ public final class EntityRenderContext {
      */
     public List<Matrix4f> getBoneTransforms() {
         return boneTransforms.subList(0, boneCounter);
+    }
+
+    /** A live pooled pose, valid until the next capture reuses its slot. */
+    Matrix4f boneTransform(int index) {
+        return boneTransforms.get(index);
     }
 
     /**

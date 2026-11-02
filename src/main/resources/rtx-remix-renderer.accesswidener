@@ -23,6 +23,13 @@ accessible field net/minecraft/client/model/ModelPart$Vertex v F
 accessible field net/minecraft/client/render/SpriteTexturedVertexConsumer delegate Lnet/minecraft/client/render/VertexConsumer;
 accessible field net/minecraft/client/render/SpriteTexturedVertexConsumer sprite Lnet/minecraft/client/texture/Sprite;
 
+# Preserve model-space dispatch through vanilla's glint unions
+accessible class net/minecraft/client/render/VertexConsumers$Dual
+accessible field net/minecraft/client/render/VertexConsumers$Dual first Lnet/minecraft/client/render/VertexConsumer;
+accessible field net/minecraft/client/render/VertexConsumers$Dual second Lnet/minecraft/client/render/VertexConsumer;
+accessible class net/minecraft/client/render/VertexConsumers$Union
+accessible field net/minecraft/client/render/VertexConsumers$Union delegates [Lnet/minecraft/client/render/VertexConsumer;
+
 # RenderLayer texture extraction (for entity material identity)
 accessible method net/minecraft/client/render/RenderLayer$MultiPhase getPhases ()Lnet/minecraft/client/render/RenderLayer$MultiPhaseParameters;
 accessible field net/minecraft/client/render/RenderLayer$MultiPhaseParameters texture Lnet/minecraft/client/render/RenderPhase$TextureBase;

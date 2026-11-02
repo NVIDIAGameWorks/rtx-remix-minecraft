@@ -75,6 +75,7 @@
         "TorchBlockAccessor",
         "UnfocusedFramerateMixin",
         "VertexBufferMixin",
+        "VertexConsumerUnionMixin",
         "WeightedBakedModelMixin",
         "WindowMixin",
         "WorldChunkMixin",

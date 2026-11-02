@@ -61,6 +61,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFWNativeWin32;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
@@ -1675,11 +1676,10 @@ public class RemixRenderer {
         return entityPass;
     }
 
-    /** Returns the current captured first-person held-beacon emitter anchor, if available. */
-    public Vec3d getFirstPersonHeldLightPosition(EquipmentSlot slot) {
+    /** Copies the current captured first-person held-beacon anchor when available. */
+    public boolean getFirstPersonHeldLightPosition(EquipmentSlot slot, Vector3f destination) {
         return firstPersonPass != null
-                ? firstPersonPass.getPendingHeldLightPosition(slot)
-                : null;
+                && firstPersonPass.getPendingHeldLightPosition(slot, destination);
     }
 
     public void captureFirstPersonModel(

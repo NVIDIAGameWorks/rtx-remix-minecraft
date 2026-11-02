@@ -90,6 +90,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     private final Matrix4f lastPose = new Matrix4f();
     private boolean lastPoseValid = false;
+    private int lastPoseBone = -1;
 
     // ---- Rigid part records (recording consumers only) ----
     // A part is a run of consecutive vertices sharing one pivot: whole quads in a
@@ -215,11 +216,11 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private int detectBoneChange(Matrix4f currentPose) {
         EntityRenderContext ctx = EntityRenderContext.get();
         if (!lastPoseValid || !lastPose.equals(currentPose)) {
-            ctx.pushBone(currentPose);
+            lastPoseBone = ctx.pushBone(currentPose);
             lastPose.set(currentPose);
             lastPoseValid = true;
         }
-        return ctx.currentBoneIndex();
+        return lastPoseBone;
     }
 
     /**
@@ -237,6 +238,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         int boneIndex = EntityRenderContext.get().pushBone(pose);
         lastPose.set(pose);
         lastPoseValid = true;
+        lastPoseBone = boneIndex;
         return boneIndex;
     }
 
@@ -1357,5 +1359,6 @@ public class RemixCapturingConsumer implements VertexConsumer {
         vertexCount = 0;
         resetOpenVertexState();
         lastPoseValid = false;
+        lastPoseBone = -1;
     }
 }
