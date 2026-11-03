@@ -196,23 +196,51 @@ loom {
 // which is what gets installed at runtime on the user's machine). One literal
 // serves both the compile dependency and stageFabricApi.
 def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.165.0+26.3"
+def fabricLoaderVersion = "0.20.1"
+
+configurations {
+    fabricTestRuntime {
+        extendsFrom testRuntimeClasspath
+    }
+}
 
 dependencies {
     // Minecraft and Fabric
     // 26.x ships unobfuscated: no mappings, and mods are compiled against the
     // same names the game runs with, so there is no remap step.
     minecraft "com.mojang:minecraft:26.3"
-    implementation "net.fabricmc:fabric-loader:0.20.1"
+    implementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
 
     implementation fabricApiCoordinate
 
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    fabricTestRuntime "net.fabricmc:fabric-loader-junit:${fabricLoaderVersion}"
+}
+
+// Tests that need Minecraft registries and Fabric's runtime access transformations
+// run under Fabric Loader, apart from the plain JVM tests, which inspect untransformed
+// classes. On 26.3 none are tagged yet: terrain capture reads vanilla model parts and
+// no longer goes through Fabric's renderer API, which the 1.21.1 Indigo tests exercise.
+def fabricTest = tasks.register('fabricTest', Test) {
+    group = 'verification'
+    description = 'Runs renderer integration tests under Fabric Loader.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath - configurations.testRuntimeClasspath +
+            configurations.fabricTestRuntime
+    useJUnitPlatform {
+        includeTags 'fabric'
+    }
+    systemProperty 'fabric.side', 'client'
+    failOnNoDiscoveredTests = false
 }
 
 test {
-    useJUnitPlatform()
+    dependsOn fabricTest
+    useJUnitPlatform {
+        excludeTags 'fabric'
+    }
     // Pin the per-frame install cap so tests don't depend on the CPU count
     systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
 }
