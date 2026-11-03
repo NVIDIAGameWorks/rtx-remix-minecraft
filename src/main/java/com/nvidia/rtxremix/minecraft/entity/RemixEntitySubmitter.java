@@ -152,6 +152,8 @@ public class RemixEntitySubmitter {
      */
     private static final byte[] UNTEXTURED_WHITE_PIXEL = {
             (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+    /** Albedo for the end portal surfaces, which are emission only; see createEndPortalTextureSet. */
+    private static final byte[] END_PORTAL_BLACK_PIXEL = {0, 0, 0, (byte) 0xFF};
     private static final int DEFAULT_MAX_MESH_CACHE_ENTRIES = 8192;
     private static final int MAX_MESH_CACHE_ENTRIES = Math.max(128,
             Integer.getInteger("rtxremix.entity.meshCache.maxEntries", DEFAULT_MAX_MESH_CACHE_ENTRIES));
@@ -611,6 +613,9 @@ public class RemixEntitySubmitter {
         RemixTexture emissive;
         RemixTexture sssThickness;
         RemixTexture sssAlbedo;
+        float emissiveIntensity = EMISSIVE_INTENSITY;
+        /** Roughness when no LabPBR texture supplies one. */
+        float roughnessConstant = 0.7f;
         boolean hasPBR;
         final List<RemixTexture> ownedTextures = new ArrayList<>();
 
@@ -2168,9 +2173,10 @@ public class RemixEntitySubmitter {
     /**
      * Texture set for the end portal and gateway surfaces, from the tile
      * {@link EndPortalSurface} bakes. Vanilla draws those surfaces unlit, so the tile
-     * is their emission as well as their albedo, under the layer's ordinary mode: the
-     * tile is opaque throughout, which the cutout alpha test passes untouched. Returns
-     * null while the bake runs, so the caller retries next frame.
+     * is emission only and the albedo a single black texel, which reflects no diffuse
+     * light. A black surface still has a dielectric's specular reflection; full
+     * roughness spreads it, where the default mirrored the noon sky as a grey sheen.
+     * Returns null while the bake runs, so the caller retries next frame.
      */
     private EntityTextureSet createEndPortalTextureSet(Identifier textureId) {
         var client = MinecraftClient.getInstance();
@@ -2185,18 +2191,24 @@ public class RemixEntitySubmitter {
         if (pixels == null) return null;
 
         EntityTextureSet textures = new EntityTextureSet();
+        String textureName = textureId.toString();
         try {
-            populateTextureSet(textures, textureId.toString(), pixels,
-                    EndPortalSurface.TILE_SIZE, EndPortalSurface.TILE_SIZE, null, null, null);
+            textures.albedo = uploadAndOwn(textures, "entity_a_" + textureName,
+                    END_PORTAL_BLACK_PIXEL.clone(), 1, 1,
+                    TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
+            textures.emissive = uploadAndOwn(textures, "entity_e_" + textureName, pixels,
+                    EndPortalSurface.TILE_SIZE, EndPortalSurface.TILE_SIZE,
+                    TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
         } catch (RuntimeException e) {
             textures.destroy();
             throw e;
         }
-        if (textures.albedo == null) {
+        if (textures.albedo == null || textures.emissive == null) {
             textures.destroy();
             return null;
         }
-        textures.emissive = textures.albedo;
+        textures.emissiveIntensity = EndPortalSurface.EMISSIVE_INTENSITY;
+        textures.roughnessConstant = 1.0f;
         return textures;
     }
 
@@ -2629,7 +2641,7 @@ public class RemixEntitySubmitter {
     private RemixMaterial createMaterial(EntityMaterialKey key, EntityTextureSet textures) {
         MaterialInfoOpaqueEXT.Builder opaque = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f)
-                .roughnessConstant(textures.roughness != null ? 1f : 0.7f)
+                .roughnessConstant(textures.roughness != null ? 1f : textures.roughnessConstant)
                 .metallicConstant(textures.metallic != null ? 1f : 0f);
 
         switch (key.surfaceMode()) {
@@ -2671,8 +2683,7 @@ public class RemixEntitySubmitter {
                 ? textures.albedo : textures.emissive;
         if (emissive != null) {
             materialBuilder.emissiveTexture(emissive.getHandle())
-                    .emissiveIntensity(EndPortalSurface.isSurfaceTexture(key.textureId())
-                            ? EndPortalSurface.EMISSIVE_INTENSITY : EMISSIVE_INTENSITY);
+                    .emissiveIntensity(textures.emissiveIntensity);
         }
 
         MaterialInfo info = materialBuilder.opaqueExt(opaque.build()).build();

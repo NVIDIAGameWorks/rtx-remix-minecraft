@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +16,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * how far rounding it may pull each layer from vanilla's scale and rotation.
  */
 class EndPortalSurfaceTest {
+
+    @Test
+    void layerLatticesMatchHandComputedSteps() {
+        // Worked by hand from rendertype_end_portal.fsh over two screens: layer 1 is
+        // 8.5 at 20 degrees, layer 2 is 8 at 44, layer 13 is 2.5 at 212, and layer 15 is
+        // 1.5 at a whole number of turns, which rounds up to 2.
+        assertArrayEquals(new int[] {8, 3}, EndPortalSurface.layerLattice(1));
+        assertArrayEquals(new int[] {6, 6}, EndPortalSurface.layerLattice(2));
+        assertArrayEquals(new int[] {-2, -1}, EndPortalSurface.layerLattice(13));
+        assertArrayEquals(new int[] {2, 0}, EndPortalSurface.layerLattice(15));
+    }
 
     @Test
     void everyLayerLatticeStaysCloseToVanillasScaleAndRotation() {
@@ -41,11 +53,13 @@ class EndPortalSurfaceTest {
 
         // Over a black sky, each pixel is the grey times the sum of COLORS[0..14], as
         // rendertype_end_portal.fsh adds the fifteen portal layers: red sums to
-        // 1.275264 and green to 2.347789, so 64/255 of them is 81.6 and 150.3 of 255.
+        // 1.275264, green to 2.347789 and blue to 2.499272, so 64/255 of them is 81.6,
+        // 150.3 and 160.0 of 255.
         assertEquals(4 * 4 * 4, rgba.length);
         for (int i = 0; i < rgba.length; i += 4) {
             assertEquals(82, rgba[i] & 0xFF);
             assertEquals(150, rgba[i + 1] & 0xFF);
+            assertEquals(160, rgba[i + 2] & 0xFF);
             assertEquals(255, rgba[i + 3] & 0xFF);
         }
     }

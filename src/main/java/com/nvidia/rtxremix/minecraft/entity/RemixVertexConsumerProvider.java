@@ -68,13 +68,16 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
             activeLayers[i] = null;
         }
         activeCount = 0;
+        originX = 0;
+        originY = 0;
+        originZ = 0;
     }
 
     /**
-     * Sets the block whose local space the next captures are in. Only surfaces whose
-     * texture coordinates are projected from position read it, so neighbouring end
-     * portal blocks continue one texture; a capture that never sets it projects as if
-     * at the origin.
+     * Sets the block whose local space the current capture is in, after
+     * {@link #beginEntity}. Only surfaces whose texture coordinates are projected from
+     * position read it, so neighbouring end portal blocks continue one texture; a
+     * capture that never sets it projects as if at the origin.
      */
     public void setBlockOrigin(BlockPos pos) {
         originX = pos.getX();

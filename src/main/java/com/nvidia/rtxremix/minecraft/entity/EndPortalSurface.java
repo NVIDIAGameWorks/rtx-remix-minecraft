@@ -34,10 +34,10 @@ import java.util.concurrent.ExecutionException;
  * <p>For the tile to repeat without a seam, every layer must itself repeat a whole
  * number of times across it. Vanilla's layers are rotated by arbitrary angles, so
  * each layer's scale and rotation is rounded to the nearest integer lattice step
- * over the tile; a layer of a random speckle texture that comes out a few percent
- * larger or a few degrees off is indistinguishable from the original. Vanilla also
- * scrolls the layers slowly with the time of day; the bake keeps the pattern at
- * time zero.
+ * over the tile. That moves a layer by up to a third of its scale (layer 15) and up
+ * to 14 degrees (layer 14), which on a random speckle texture is indistinguishable
+ * from the original. Vanilla also scrolls the layers slowly with the time of day;
+ * the bake keeps the pattern at time zero.
  *
  * <p>The pixels come from the textures the resource packs supply, so a pack that
  * replaces either texture changes the surface, and baking reads them off the render
@@ -66,11 +66,13 @@ final class EndPortalSurface {
     /** Texels along each side of the tile, 128 per block. */
     static final int TILE_SIZE = 1024;
     /**
-     * Emissive intensity of the surface material. Vanilla's portal reads as a dark
-     * field with bright specks wherever it is seen; at the entity default the whole
-     * surface glows pale blue under the dark-scene exposure of a stronghold or the End.
+     * Emissive intensity of the surface material, whose albedo is black. Vanilla's
+     * portal reads as a dark field with bright specks wherever it is seen. At 3 the
+     * field at night is as dark against lit stone as vanilla's; at 10 it glows cyan,
+     * and at the entity default the whole surface turns pale blue. Under noon exposure
+     * the specks fade at any value that keeps the night field dark.
      */
-    static final float EMISSIVE_INTENSITY = 10.0f;
+    static final float EMISSIVE_INTENSITY = 3.0f;
 
     private static final Identifier SKY_TEXTURE =
             Identifier.ofVanilla("textures/environment/end_sky.png");
@@ -109,9 +111,9 @@ final class EndPortalSurface {
     record Image(int[] rgb, int width, int height) {}
 
     /**
-     * Bakes in flight or done, by surface id. Render thread only; the futures complete
-     * on worker threads. A reload drops them all, so a bake that finishes for the
-     * previous packs is never read.
+     * Bakes in flight or done but not yet handed over, by surface id. Render thread
+     * only; the futures complete on worker threads. A reload drops them all, so a bake
+     * that finishes for the previous packs is never read.
      */
     private final Map<Identifier, CompletableFuture<byte[]>> bakes = new HashMap<>();
 
@@ -121,7 +123,8 @@ final class EndPortalSurface {
 
     /**
      * The baked RGBA tile for a surface id, {@link #TILE_SIZE} square, or null while it
-     * is still baking. The first call starts the bake.
+     * is still baking. The first call starts the bake. The tile is handed over once and
+     * forgotten, since the caller uploads it; asking again bakes it again.
      *
      * @throws IllegalStateException when the bake failed; the caller should not ask again
      */
@@ -133,6 +136,7 @@ final class EndPortalSurface {
                     layers, TILE_SIZE));
         });
         if (!bake.isDone()) return null;
+        bakes.remove(surfaceId);
         try {
             return bake.get();
         } catch (ExecutionException | CompletionException e) {
@@ -179,7 +183,9 @@ final class EndPortalSurface {
      */
     static int[] layerLattice(int layer) {
         double scale = (4.5 - layer / 4.0) * SCREENS_PER_TILE;
-        double angle = Math.toRadians((layer * layer * 4321.0 + layer * 9.0) * 2.0);
+        // Reduced to one turn in integer math first: the raw angle reaches about two
+        // million degrees, and layer 15's whole number of turns must come out exact.
+        double angle = Math.toRadians((layer * layer * 4321 + layer * 9) * 2 % 360);
         return new int[] {
                 (int) Math.round(scale * Math.cos(angle)),
                 (int) Math.round(scale * Math.sin(angle))

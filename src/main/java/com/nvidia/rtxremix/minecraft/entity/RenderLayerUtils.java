@@ -189,6 +189,12 @@ final class RenderLayerUtils {
         }
 
         RenderLayer.MultiPhaseParameters phases = multiPhase.getPhases();
+        // The baked end portal tile is opaque everywhere, so an alpha test would
+        // only cost a texture read per hit.
+        if (phases.program == RenderPhase.END_PORTAL_PROGRAM
+                || phases.program == RenderPhase.END_GATEWAY_PROGRAM) {
+            return SurfaceMode.OPAQUE;
+        }
         return classifySurfaceMode(
                 phases.program == RenderPhase.EYES_PROGRAM
                         || phases.program == RenderPhase.ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM,
