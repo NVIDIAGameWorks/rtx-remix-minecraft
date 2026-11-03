@@ -98,6 +98,14 @@ final class RenderLayerUtils {
     private static Optional<ResourceLocation> extractTexture(RenderType layer) {
         if (layer instanceof RenderType.CompositeRenderType multiPhase) {
             RenderType.CompositeState phases = multiPhase.state();
+            // The end portal and gateway programs combine two textures in screen space
+            // and their vertices carry position only; they draw with a baked texture.
+            if (phases.shaderState == RenderStateShard.RENDERTYPE_END_PORTAL_SHADER) {
+                return EndPortalSurface.PORTAL_TEXTURE;
+            }
+            if (phases.shaderState == RenderStateShard.RENDERTYPE_END_GATEWAY_SHADER) {
+                return EndPortalSurface.GATEWAY_TEXTURE;
+            }
             RenderStateShard.EmptyTextureStateShard textureBase = phases.textureState;
 
             if (textureBase instanceof RenderStateShard.TextureStateShard texture) {
@@ -180,6 +188,12 @@ final class RenderLayerUtils {
         }
 
         RenderType.CompositeState phases = multiPhase.state();
+        // The baked end portal tile is opaque everywhere, so an alpha test would
+        // only cost a texture read per hit.
+        if (phases.shaderState == RenderStateShard.RENDERTYPE_END_PORTAL_SHADER
+                || phases.shaderState == RenderStateShard.RENDERTYPE_END_GATEWAY_SHADER) {
+            return SurfaceMode.OPAQUE;
+        }
         return classifySurfaceMode(
                 phases.shaderState == RenderStateShard.RENDERTYPE_EYES_SHADER
                         || phases.shaderState == RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER,
