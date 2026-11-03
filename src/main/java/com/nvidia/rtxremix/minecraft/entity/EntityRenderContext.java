@@ -190,14 +190,6 @@ public final class EntityRenderContext {
         return index;
     }
 
-    /**
-     * Returns the most recently pushed bone index, which
-     * {@code RemixCapturingConsumer.detectBoneChange} reads to tag vertices.
-     */
-    public int currentBoneIndex() {
-        return boneCounter > 0 ? boneCounter - 1 : -1;
-    }
-
     /** Marks subsequent first-person transforms as belonging to {@code hand}. */
     public void setActiveHand(Hand hand) {
         activeHand = hand;

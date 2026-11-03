@@ -13,6 +13,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
@@ -83,11 +84,14 @@ public final class RemixBlockDamagePass {
         matrices.push();
         ctx.begin(true);
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
+        int boneCount;
         try {
             VertexConsumer crack = provider.getBuffer(
                     ModelLoader.BLOCK_DESTRUCTION_RENDER_LAYERS.get(stage));
             call.render(matrices, projector.target(crack));
             layers = provider.endEntity();
+            boneCount = ctx.getBoneCount();
+            if (boneCount != 0) reusableBoneData = ctx.snapshotBoneTransforms(reusableBoneData);
         } catch (Exception e) {
             failures.noteFailure("capturing", "block damage", pos, e);
             return;
@@ -101,14 +105,13 @@ public final class RemixBlockDamagePass {
             return;
         }
 
-        reusableBoneData = ctx.snapshotBoneTransforms(reusableBoneData);
         RemixEntityPass.EntityCaptureResult result = new RemixEntityPass.EntityCaptureResult(
                 owners.ownerFor(pos.asLong()),
                 Vec3d.of(pos),
                 0.0f,
                 layers,
                 reusableBoneData,
-                ctx.getBoneCount(),
+                boneCount,
                 TYPE_KEY,
                 false);
         try {
@@ -178,6 +181,8 @@ public final class RemixBlockDamagePass {
         private final Quaternionf[] faceRotations = new Quaternionf[Direction.values().length];
         private final Vector3f projected = new Vector3f();
         private VertexConsumer target;
+        // The damage renderer has already produced block-local positions, not an animated pose.
+        private final Matrix4f blockLocalPose = new Matrix4f();
         private float x, y, z;
 
         CrackProjector() {
@@ -197,7 +202,7 @@ public final class RemixBlockDamagePass {
             this.x = x;
             this.y = y;
             this.z = z;
-            target.vertex(x, y, z);
+            target.vertex(blockLocalPose, x, y, z);
             return this;
         }
 

@@ -148,13 +148,42 @@ public class RemixEntityPass {
      * frames between its own refreshes, so the storage can be reused instead of
      * allocated for every distant entity every refresh.
      */
-    private static final class PoseSnapshot {
+    static final class PoseSnapshot {
         SnapshotLayer[] layers = new SnapshotLayer[0];
         int layerCount;
         float[] boneData = new float[0];
         int boneCount;
         String typeKey;
         long frame;
+
+        void record(EntityCaptureResult result) {
+            List<RemixVertexConsumerProvider.CapturedLayer> layers = result.layers();
+            this.resizeLayers(layers.size());
+            for (int i = 0; i < layers.size(); i++) {
+                RemixVertexConsumerProvider.CapturedLayer layer = layers.get(i);
+                RemixCapturingConsumer consumer = layer.consumer();
+                SnapshotLayer snapLayer = this.layers[i];
+                snapLayer.renderLayer = layer.renderLayer();
+                snapLayer.layerIndex = layer.layerIndex();
+                int partCount = consumer.getPartCount();
+                snapLayer.resize(partCount);
+                for (int p = 0; p < partCount; p++) {
+                    SnapshotPart part = snapLayer.parts[p];
+                    part.sides = consumer.getPartSides(p);
+                    part.sprite = consumer.getPartSprite(p);
+                    part.tint = consumer.getPartTint(p);
+                    part.bone = consumer.getPartBone(p);
+                }
+            }
+            // The pass reuses one bone array across entities, so this has to be a copy.
+            int boneFloats = result.boneCount() * 12;
+            if (this.boneData.length < boneFloats) {
+                this.boneData = new float[boneFloats];
+            }
+            System.arraycopy(result.boneData(), 0, this.boneData, 0, boneFloats);
+            this.boneCount = result.boneCount();
+            this.typeKey = result.entityTypeKey();
+        }
 
         void resizeLayers(int count) {
             if (layers.length < count) {
@@ -620,32 +649,33 @@ public class RemixEntityPass {
             snapshot = new PoseSnapshot();
             poseSnapshots.put(entity.getId(), snapshot);
         }
-        snapshot.resizeLayers(layers.size());
-        for (int i = 0; i < layers.size(); i++) {
-            RemixVertexConsumerProvider.CapturedLayer layer = layers.get(i);
-            RemixCapturingConsumer consumer = layer.consumer();
-            SnapshotLayer snapLayer = snapshot.layers[i];
-            snapLayer.renderLayer = layer.renderLayer();
-            snapLayer.layerIndex = layer.layerIndex();
-            int partCount = consumer.getPartCount();
-            snapLayer.resize(partCount);
-            for (int p = 0; p < partCount; p++) {
-                SnapshotPart part = snapLayer.parts[p];
-                part.sides = consumer.getPartSides(p);
-                part.sprite = consumer.getPartSprite(p);
-                part.tint = consumer.getPartTint(p);
-                part.bone = consumer.getPartBone(p);
+        snapshot.record(result);
+        snapshot.frame = sweepFrame;
+    }
+
+    /** Rebuilds recorded geometry with its retained layer identities. */
+    static List<RemixVertexConsumerProvider.CapturedLayer> replayLayers(
+            PoseSnapshot snapshot, RemixVertexConsumerProvider provider) {
+        provider.beginEntity();
+        for (int i = 0; i < snapshot.layerCount; i++) {
+            SnapshotLayer layer = snapshot.layers[i];
+            VertexConsumer buffer = provider.getBuffer(layer.renderLayer);
+            if (!(buffer instanceof RemixCapturingConsumer consumer)) {
+                provider.endEntity();
+                return List.of();
+            }
+            // Keep the ordinal the layer was first given: it keys the retained
+            // instances and scales the shell offset baked into the mesh, so replaying
+            // under a different one would recreate the instances and separate the
+            // layer from the body it belongs to.
+            consumer.setLayerIndex(layer.layerIndex);
+            for (int p = 0; p < layer.partCount; p++) {
+                SnapshotPart part = layer.parts[p];
+                consumer.replayCuboidPart(part.sides, part.tint, part.bone, part.sprite);
             }
         }
-        // The pass reuses one bone array across entities, so this has to be a copy.
-        int boneFloats = result.boneCount() * 12;
-        if (snapshot.boneData.length < boneFloats) {
-            snapshot.boneData = new float[boneFloats];
-        }
-        System.arraycopy(result.boneData(), 0, snapshot.boneData, 0, boneFloats);
-        snapshot.boneCount = result.boneCount();
-        snapshot.typeKey = result.entityTypeKey();
-        snapshot.frame = sweepFrame;
+
+        return provider.endEntity();
     }
 
     /**
@@ -658,25 +688,7 @@ public class RemixEntityPass {
      */
     private boolean replayPose(Entity entity, PoseSnapshot snapshot, float tickDelta,
                                RemixEntitySubmitter submitter) {
-        replayProvider.beginEntity();
-        for (int i = 0; i < snapshot.layerCount; i++) {
-            SnapshotLayer layer = snapshot.layers[i];
-            VertexConsumer buffer = replayProvider.getBuffer(layer.renderLayer);
-            if (!(buffer instanceof RemixCapturingConsumer consumer)) {
-                replayProvider.endEntity();
-                return false;
-            }
-            // Keep the ordinal the layer was first given: it scales the shell offset
-            // baked into the mesh, so replaying under a different one would key a
-            // different mesh and separate the layer from the body it belongs to.
-            consumer.setLayerIndex(layer.layerIndex);
-            for (int p = 0; p < layer.partCount; p++) {
-                SnapshotPart part = layer.parts[p];
-                consumer.replayCuboidPart(part.sides, part.tint, part.bone, part.sprite);
-            }
-        }
-
-        List<RemixVertexConsumerProvider.CapturedLayer> layers = replayProvider.endEntity();
+        List<RemixVertexConsumerProvider.CapturedLayer> layers = replayLayers(snapshot, replayProvider);
         if (layers.isEmpty()) {
             return false;
         }

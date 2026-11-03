@@ -9,8 +9,8 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.nvidia.rtxremix.minecraft.entity.RecyclingMatrixStack;
 import com.nvidia.rtxremix.minecraft.entity.RemixCapturingConsumer;
+import com.nvidia.rtxremix.minecraft.entity.RemixConsumerDispatch;
 import net.minecraft.client.model.ModelPart;
-import net.minecraft.client.render.SpriteTexturedVertexConsumer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.util.math.MatrixStack;
 import org.spongepowered.asm.mixin.Mixin;
@@ -33,11 +33,8 @@ import java.util.List;
  * render on such a stack.
  *
  * <p>{@code renderCuboids} on a single-cuboid part borrows the capturing consumer's
- * singleton iterator instead of allocating vanilla's. The consumer is found directly
- * or behind the {@link SpriteTexturedVertexConsumer} that sprite-atlas models draw
- * through, the same one-step look-through {@code CuboidMixin} applies. Sprite-wrapped
- * parts therefore reuse the iterator too; a wrapper around anything else is left to
- * vanilla.
+ * singleton iterator instead of allocating vanilla's. The consumer is read directly
+ * or from the cached leaf of the sprite wrappers and unions that {@code CuboidMixin} captures.
  */
 @Mixin(ModelPart.class)
 public abstract class ModelPartMixin {
@@ -81,15 +78,10 @@ public abstract class ModelPartMixin {
             int light,
             int overlay,
             int color) {
-        VertexConsumer target = vertexConsumer instanceof SpriteTexturedVertexConsumer wrapped
-                ? wrapped.delegate
-                : vertexConsumer;
-        // Local reads first: the cuboid count and list type reject group and
-        // multi-cuboid parts before the capture check pays for its thread-local lookup.
-        if (target instanceof RemixCapturingConsumer consumer
-                && cuboids.size() == 1
-                && cuboids instanceof ImmutableList<?>
-                && consumer.isRemixCaptureActive()) {
+        // Reject group and multi-cuboid parts before querying the cached capture leaf.
+        if (cuboids.size() != 1 || !(cuboids instanceof ImmutableList<?>)) return original.call(cuboids);
+        RemixCapturingConsumer consumer = RemixConsumerDispatch.findCapture(vertexConsumer);
+        if (consumer != null && consumer.isRemixCaptureActive()) {
             Iterator<ModelPart.Cuboid> iterator =
                     consumer.acquireSingletonCuboidIterator(cuboids.getFirst());
             if (iterator != null) {
