@@ -6,7 +6,9 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
+import net.minecraft.client.render.model.BakedQuad;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -32,6 +34,23 @@ class FrapiBlockTintTest {
     void aMaterialThatDisablesTheColorIndexLeavesTheQuadUntinted() {
         assertEquals(-1, captureOne(emitter -> emitter.material(material(true)).colorIndex(2)).colorIndex());
         assertEquals(2, captureOne(emitter -> emitter.material(material(false)).colorIndex(2)).colorIndex());
+    }
+
+    @Test
+    void aVanillaQuadKeepsItsColorIndex() {
+        // The deprecated bakedModelConsumer's route: a vanilla quad with no material.
+        BakedQuad quad = new BakedQuad(new int[4 * 8], 3, Direction.UP, null, true);
+        assertEquals(3, captureOne(emitter -> emitter.fromVanilla(quad, null, null)).colorIndex());
+    }
+
+    @Test
+    void aCopiedQuadKeepsItsColorIndexAndMaterial() {
+        RemixRenderContext sourceContext = new RemixRenderContext();
+        sourceContext.prepare(null, null, BlockPos.ORIGIN, face -> false);
+        QuadEmitter source = sourceContext.getEmitter().colorIndex(4);
+        assertEquals(4, captureOne(emitter -> emitter.copyFrom(source)).colorIndex());
+        source.material(material(true));
+        assertEquals(-1, captureOne(emitter -> emitter.copyFrom(source)).colorIndex());
     }
 
     @Test

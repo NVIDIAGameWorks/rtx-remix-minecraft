@@ -48,7 +48,8 @@ public record SectionBlockData(
     long[] opacityBitmap
 ) {
     /**
-     * A single quad with all rendering context resolved at generation time.
+     * A captured quad; its block tint is carried as {@code colorIndex} and
+     * applied when the quad is staged.
      *
      * @param positions   12 floats: 4 vertices x (x, y, z), section-local coords [0..16]
      * @param uvs         8 floats: 4 vertices x (u, v), atlas coordinates

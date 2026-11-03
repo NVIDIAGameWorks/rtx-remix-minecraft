@@ -996,8 +996,10 @@ public final class BlockQuadEmitter {
     /**
      * A FRAPI quad's vertex color under its block tint, as Indigo's
      * {@code ColorHelper.multiplyColor} computes it: each channel multiplied,
-     * rounding down, and the vertex alpha kept. A block without a color
-     * provider has the tint -1, which is white and changes nothing.
+     * rounding down. The tint is treated as opaque, as Indigo's
+     * {@code BlockRenderInfo.blockColor} makes it, so the vertex alpha is kept.
+     * A block without a color provider has the tint -1, which is white and
+     * changes nothing.
      */
     static int tintFrapiColor(int vertexColor, int tint) {
         int red = ((vertexColor >>> 16) & 0xFF) * ((tint >>> 16) & 0xFF) / 0xFF;
