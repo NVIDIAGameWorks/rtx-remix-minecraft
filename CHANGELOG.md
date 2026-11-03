@@ -38,6 +38,11 @@ also part of every mod file name.
   as with User Account Control turned off or in the built-in Administrator
   account. It still refuses administrator rights as an account other than the
   one signed in, whose folders it would otherwise install into.
+- The installer can install into a Prism Launcher it does not detect, such as
+  a portable copy kept anywhere: the launcher question asks for its folder,
+  and later runs remember it. A portable Prism the installer does detect, on
+  the PATH or behind a Start menu shortcut, now gets the instance in its own
+  folder rather than in `%APPDATA%\PrismLauncher`.
 - Distant blocks no longer pick up dark outlines and colour from their atlas
   neighbours: every atlas the mod copies fills the padding vanilla 26.x leaves
   around each sprite.
