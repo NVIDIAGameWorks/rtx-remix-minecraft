@@ -84,7 +84,7 @@ final class FirstPersonShadowModelPlacement {
 
         Vec3d averageAway = Vec3d.ZERO;
         for (LightConstraint light : lights) {
-            Vec3d away = horizontal(headCenter.subtract(light.position));
+            Vec3d away = horizontal(headCenter.subtract(light.x, light.y, light.z));
             if (away.lengthSquared() > DIRECTION_EPSILON_SQ) {
                 away = away.normalize();
                 addUniqueDirection(directions, away);
@@ -116,7 +116,7 @@ final class FirstPersonShadowModelPlacement {
                 requiredLength = Math.max(
                         requiredLength,
                         requiredTranslation(
-                                headCenter.subtract(light.position),
+                                headCenter.subtract(light.x, light.y, light.z),
                                 direction,
                                 requiredCenterDistance));
             }
@@ -171,7 +171,7 @@ final class FirstPersonShadowModelPlacement {
     }
 
     static float clearanceRadianceScale(Vec3d displacedHeadCenter, LightConstraint light) {
-        double surfaceGap = displacedHeadCenter.distanceTo(light.position)
+        double surfaceGap = Math.sqrt(displacedHeadCenter.squaredDistanceTo(light.x, light.y, light.z))
                 - HEAD_KEEP_OUT_RADIUS
                 - light.emitterRadius;
         float normalized = (float) Math.clamp(surfaceGap / light.targetGap, 0.0, 1.0);
@@ -283,7 +283,7 @@ final class FirstPersonShadowModelPlacement {
         double max = 0.0;
         double total = 0.0;
         for (LightConstraint light : lights) {
-            double gap = displacedHeadCenter.distanceTo(light.position)
+            double gap = Math.sqrt(displacedHeadCenter.squaredDistanceTo(light.x, light.y, light.z))
                     - HEAD_KEEP_OUT_RADIUS
                     - light.emitterRadius;
             double deficit = Math.max(0.0, light.targetGap - gap);
@@ -311,7 +311,11 @@ final class FirstPersonShadowModelPlacement {
         directions.add(direction);
     }
 
-    record LightConstraint(Vec3d position, double emitterRadius, double targetGap) {
+    record LightConstraint(double x, double y, double z, double emitterRadius, double targetGap) {
+        LightConstraint(Vec3d position, double emitterRadius, double targetGap) {
+            this(position.x, position.y, position.z, emitterRadius, targetGap);
+        }
+
         LightConstraint(Vec3d position, double emitterRadius) {
             this(position, emitterRadius, TARGET_LIGHT_GAP);
         }

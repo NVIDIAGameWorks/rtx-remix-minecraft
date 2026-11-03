@@ -405,7 +405,7 @@ public class LightManager {
                 new ArrayList<>(pending.size());
         for (PendingAnalyticLight light : pending) {
             constraints.add(new FirstPersonShadowModelPlacement.LightConstraint(
-                    light.position, light.emitterRadius, light.shadowClearance));
+                    light.x, light.y, light.z, light.emitterRadius, light.shadowClearance));
         }
 
         firstPersonShadowModelOffset = shadowModelPlacement.resolve(
@@ -502,57 +502,58 @@ public class LightManager {
         seenEntityKeys.add(light.key);
         lightOwnerIds.add(light.key.entityId());
         try {
-            LightInfo.Builder lightBuilder = LightInfo.builder()
-                    .radiance(
-                            light.radianceR * radianceScale,
-                            light.radianceG * radianceScale,
-                            light.radianceB * radianceScale);
-            if (light.diskBasis != null) {
-                DiskBasis basis = light.diskBasis;
-                var diskBuilder = LightInfoDiskEXT.builder()
-                        .position(
-                                (float) light.position.x,
-                                (float) light.position.y,
-                                (float) light.position.z)
-                        .xAxis(
-                                (float) basis.xAxis.x,
-                                (float) basis.xAxis.y,
-                                (float) basis.xAxis.z)
-                        .xRadius(light.emitterRadius)
-                        .yAxis(
-                                (float) basis.yAxis.x,
-                                (float) basis.yAxis.y,
-                                (float) basis.yAxis.z)
-                        .yRadius(light.emitterRadius)
-                        .direction(
-                                (float) basis.direction.x,
-                                (float) basis.direction.y,
-                                (float) basis.direction.z)
-                        .volumetricRadianceScale(light.volumetricRadianceScale);
-                if (light.shaping != null) {
-                    diskBuilder.shaping(light.shaping);
-                }
-                putLight(light.key, lightBuilder.diskExt(diskBuilder.build()).build());
-                return;
-            }
-
-            var sphereBuilder = LightInfoSphereEXT.builder()
-                    .position(
-                            (float) light.position.x,
-                            (float) light.position.y,
-                            (float) light.position.z)
-                    .radius(light.emitterRadius)
-                    .volumetricRadianceScale(light.volumetricRadianceScale);
-            if (light.shaping != null) {
-                sphereBuilder.shaping(light.shaping);
-            }
-
-            LightInfo info = lightBuilder.sphereExt(sphereBuilder.build()).build();
-
-            putLight(light.key, info);
+            putLight(light.key, buildEntityLightInfo(light, radianceScale));
         } catch (RemixException e) {
             LOGGER.error("Failed to create entity light for {}: {}", light.key, e.getMessage());
         }
+    }
+
+    static LightInfo buildEntityLightInfo(PendingAnalyticLight light, float radianceScale) {
+        LightInfo.Builder lightBuilder = LightInfo.builder()
+                .radiance(
+                        light.radianceR * radianceScale,
+                        light.radianceG * radianceScale,
+                        light.radianceB * radianceScale);
+        if (light.diskBasis != null) {
+            DiskBasis basis = light.diskBasis;
+            var diskBuilder = LightInfoDiskEXT.builder()
+                    .position(
+                            (float) light.x,
+                            (float) light.y,
+                            (float) light.z)
+                    .xAxis(
+                            (float) basis.xAxis.x,
+                            (float) basis.xAxis.y,
+                            (float) basis.xAxis.z)
+                    .xRadius(light.emitterRadius)
+                    .yAxis(
+                            (float) basis.yAxis.x,
+                            (float) basis.yAxis.y,
+                            (float) basis.yAxis.z)
+                    .yRadius(light.emitterRadius)
+                    .direction(
+                            (float) basis.direction.x,
+                            (float) basis.direction.y,
+                            (float) basis.direction.z)
+                    .volumetricRadianceScale(light.volumetricRadianceScale);
+            if (light.shaping != null) {
+                diskBuilder.shaping(light.shaping);
+            }
+            return lightBuilder.diskExt(diskBuilder.build()).build();
+        }
+
+        var sphereBuilder = LightInfoSphereEXT.builder()
+                .position(
+                        (float) light.x,
+                        (float) light.y,
+                        (float) light.z)
+                .radius(light.emitterRadius)
+                .volumetricRadianceScale(light.volumetricRadianceScale);
+        if (light.shaping != null) {
+            sphereBuilder.shaping(light.shaping);
+        }
+
+        return lightBuilder.sphereExt(sphereBuilder.build()).build();
     }
 
     static float powerPreservingRadianceScale(float radiusScale) {
@@ -792,17 +793,20 @@ public class LightManager {
                 ? HeldLightPlacement.horizontalForward(holder.getYaw())
                 : look;
         float emitterRadius = BeaconBeam.RADIUS * viewModelScale;
-        Vec3d pos = hasCapturedPosition
-                ? new Vec3d(
-                        capturedHandPosition.x + lensOffsetDirection.x * BeaconBeam.HELD_LENS_OFFSET,
-                        capturedHandPosition.y + lensOffsetDirection.y * BeaconBeam.HELD_LENS_OFFSET,
-                        capturedHandPosition.z + lensOffsetDirection.z * BeaconBeam.HELD_LENS_OFFSET)
-                : lightPosition(holder, slot).add(
-                        lensOffsetDirection.multiply(BeaconBeam.HELD_LENS_OFFSET));
+        double x, y, z;
+        if (hasCapturedPosition) {
+            x = capturedHandPosition.x + lensOffsetDirection.x * BeaconBeam.HELD_LENS_OFFSET;
+            y = capturedHandPosition.y + lensOffsetDirection.y * BeaconBeam.HELD_LENS_OFFSET;
+            z = capturedHandPosition.z + lensOffsetDirection.z * BeaconBeam.HELD_LENS_OFFSET;
+        } else {
+            Vec3d position = lightPosition(holder, slot).add(
+                    lensOffsetDirection.multiply(BeaconBeam.HELD_LENS_OFFSET));
+            x = position.x; y = position.y; z = position.z;
+        }
         float coneAngle = BeaconBeam.CONE_ANGLE_DEGREES;
         if (localFirstPerson && collisionWorld != null && collisionCamera != null) {
             Vec3d collisionOrigin = collisionCamera.getPos();
-            Vec3d preferredOffset = pos.subtract(collisionOrigin);
+            Vec3d preferredOffset = new Vec3d(x - collisionOrigin.x, y - collisionOrigin.y, z - collisionOrigin.z);
             double preferredDistance = preferredOffset.length();
             if (preferredDistance > 1.0e-6) {
                 Vec3d collisionDirection = preferredOffset.multiply(1.0 / preferredDistance);
@@ -813,8 +817,9 @@ public class LightManager {
                         collisionDirection,
                         preferredDistance,
                         emitterRadius + HeldLightPlacement.WALL_CLEARANCE);
-                pos = collisionOrigin.add(
-                        collisionDirection.multiply(collisionLimitedDistance));
+                x = collisionOrigin.x + collisionDirection.x * collisionLimitedDistance;
+                y = collisionOrigin.y + collisionDirection.y * collisionLimitedDistance;
+                z = collisionOrigin.z + collisionDirection.z * collisionLimitedDistance;
                 coneAngle = BeaconBeam.heldConeAngle(
                         collisionLimitedDistance / preferredDistance);
             }
@@ -842,7 +847,7 @@ public class LightManager {
         Vec3d diskY = look.crossProduct(diskX).normalize();
         return new PendingAnalyticLight(
                 key,
-                pos,
+                x, y, z,
                 emitterRadius,
                 BeaconBeam.HELD_SHADOW_CLEARANCE,
                 r * intensity,
@@ -954,7 +959,7 @@ public class LightManager {
 
     record PendingAnalyticLight(
             EntityLightKey key,
-            Vec3d position,
+            double x, double y, double z,
             float emitterRadius,
             double shadowClearance,
             float radianceR,
@@ -963,6 +968,14 @@ public class LightManager {
             float volumetricRadianceScale,
             LightInfoLightShaping shaping,
             DiskBasis diskBasis) {
+
+        PendingAnalyticLight(
+                EntityLightKey key, Vec3d position, float emitterRadius, double shadowClearance,
+                float radianceR, float radianceG, float radianceB, float volumetricRadianceScale,
+                LightInfoLightShaping shaping, DiskBasis diskBasis) {
+            this(key, position.x, position.y, position.z, emitterRadius, shadowClearance,
+                    radianceR, radianceG, radianceB, volumetricRadianceScale, shaping, diskBasis);
+        }
 
         PendingAnalyticLight(
                 EntityLightKey key,
@@ -990,7 +1003,7 @@ public class LightManager {
         /** The same light, absent from fog and rain scattering; surface lighting is unchanged. */
         PendingAnalyticLight withoutVolumetricContribution() {
             return new PendingAnalyticLight(
-                    key, position, emitterRadius, shadowClearance,
+                    key, x, y, z, emitterRadius, shadowClearance,
                     radianceR, radianceG, radianceB, 0.0f, shaping, diskBasis);
         }
     }

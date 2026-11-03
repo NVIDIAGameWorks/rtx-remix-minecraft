@@ -53,7 +53,8 @@ public class RemixAPI {
     public static final int COPY_OUTPUT_OBJECT_PICKING  = 3;
     public static final int COPY_OUTPUT_GUI             = 4;
 
-    private RemixAPI() {}
+    /** Allows native-call test doubles; {@link #load(String)} initializes the runtime implementation. */
+    protected RemixAPI() {}
 
     public static long makeVersion(int major, int minor, int patch) {
         return ((long) major << 48) | ((long) minor << 16) | (long) patch;

@@ -1210,6 +1210,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * reproduced by {@link #emitCuboidGeometry} when the cuboid is rebuilt.
      */
     public void acceptCuboid(ModelPart.Quad[] sides, int color, Matrix4f pose, Sprite sprite) {
+        flushOpenVertex();
         int boneIndex = beginCuboid(pose);
         closeOpenPart();
         if (parts >= MAX_PARTS) return;
@@ -1238,6 +1239,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * caller's own snapshotted transforms, not to this consumer's bone tracking.
      */
     public void replayCuboidPart(ModelPart.Quad[] sides, int color, int boneIndex, Sprite sprite) {
+        flushOpenVertex();
         closeOpenPart();
         if (parts >= MAX_PARTS) return;
         partStart[parts] = NO_VERTICES;

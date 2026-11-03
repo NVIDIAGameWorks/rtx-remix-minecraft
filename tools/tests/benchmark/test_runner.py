@@ -3900,10 +3900,6 @@ def test_compare_warns_about_a_launcher_mismatch_before_the_table(
     assert "Avg FPS" in lines[1]
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 @pytest.mark.parametrize("ci,task", [(True, "build"), (False, "package")])
 def test_benchmark_build_skips_both_test_suites(monkeypatch, ci, task):
     run = Mock()
@@ -3914,3 +3910,7 @@ def test_benchmark_build_skips_both_test_suites(monkeypatch, ci, task):
     assert args[1] == task
     excluded = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == "-x"]
     assert excluded == ["test", "fabricTest"]
+
+
+if __name__ == "__main__":
+    unittest.main()

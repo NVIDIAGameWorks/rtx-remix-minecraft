@@ -8,6 +8,7 @@ import com.nvidia.rtxremix.Transform;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import net.minecraft.Bootstrap;
 import net.minecraft.SharedConstants;
+import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.OverlayVertexConsumer;
@@ -27,6 +28,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.EnumSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,6 +49,43 @@ class ProjectedGlintCaptureTest {
     @AfterEach
     void reset() {
         EntityRenderContext.get().reset();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"capture", "replay", "expand"})
+    void projectedQuadsFinishBeforeTheFollowingCuboid(String boundary) {
+        EntityRenderContext.get().begin(true);
+        RemixCapturingConsumer captured = new RemixCapturingConsumer(null, true);
+        MatrixStack matrices = new MatrixStack();
+        matrices.translate(2, 3, 4);
+        VertexProbe reference = new VertexProbe();
+        VertexConsumer expected = new OverlayVertexConsumer(reference, matrices.peek(), 1f / 128);
+        VertexConsumer actual = new OverlayVertexConsumer(captured, matrices.peek(), 1f / 128);
+        for (int i = 0; i < 2; i++) {
+            expected.quad(matrices.peek(), quad(), 1, 1, 1, 1, 0, OverlayTexture.DEFAULT_UV);
+            actual.quad(matrices.peek(), quad(), 1, 1, 1, 1, 0, OverlayTexture.DEFAULT_UV);
+        }
+        assertEquals(7, captured.getVertexCount(), "the final projected vertex is still waiting for its UV");
+        ModelPart.Cuboid cuboid = new ModelPart.Cuboid(0, 0, 0, 0, 0, 1, 1, 1,
+                0, 0, 0, false, 16, 16, EnumSet.allOf(Direction.class));
+        switch (boundary) {
+            case "capture" -> cuboid.renderCuboid(matrices.peek(), captured, 0, OverlayTexture.DEFAULT_UV, -1);
+            case "replay" -> captured.replayCuboidPart(cuboid.sides, -1, 0, null);
+            case "expand" -> captured.emitCuboidGeometry(cuboid.sides, -1, 0, null);
+            default -> throw new AssertionError(boundary);
+        }
+        captured.finishOpenVertex();
+        assertEquals(2, captured.getPartCount(), "the projected quad run must not be split around the cuboid");
+        assertEquals(0, captured.getPartStart(0));
+        assertEquals(8, captured.getPartVertexCount(0));
+        assertEquals(24, captured.getPartVertexCount(1));
+        for (int i = 0; i < 8; i++) {
+            assertEquals(reference.x[i], captured.getPx()[i]);
+            assertEquals(reference.y[i], captured.getPy()[i]);
+            assertEquals(reference.z[i], captured.getPz()[i]);
+            assertEquals(reference.u[i], captured.getTu()[i]);
+            assertEquals(reference.v[i], captured.getTv()[i]);
+        }
     }
 
     @ParameterizedTest

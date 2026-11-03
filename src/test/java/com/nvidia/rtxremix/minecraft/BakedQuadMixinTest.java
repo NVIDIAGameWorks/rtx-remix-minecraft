@@ -5,7 +5,6 @@
 package com.nvidia.rtxremix.minecraft;
 
 import com.nvidia.rtxremix.minecraft.mixin.BakedQuadMixin;
-
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
