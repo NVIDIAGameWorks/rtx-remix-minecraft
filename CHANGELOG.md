@@ -34,6 +34,10 @@ also part of every mod file name.
 
 ### Fixed
 
+- An upgrade now delivers changed lighting profile defaults to existing
+  installs. A shipped profile under `rtx-remix/mods/minecraft-logic/` that
+  still holds an earlier release's default is updated on the next launch;
+  profiles you edited are kept as before.
 - The installer runs on PCs that give every program administrator rights, such
   as with User Account Control turned off or in the built-in Administrator
   account. It still refuses administrator rights as an account other than the

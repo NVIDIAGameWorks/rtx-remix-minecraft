@@ -312,6 +312,12 @@ The atlases Minecraft stitches at runtime, for banner patterns, shield
 patterns, and beds, are re-stitched with their sidecars, so a pattern with an
 `_s` behaves the way the same texture would on a block.
 
+The end portal and end gateway surfaces are baked from
+`textures/entity/end_portal/end_portal.png` and `textures/environment/end_sky.png`,
+layered the way vanilla's shader layers them, so repainting either texture
+changes both surfaces. They take no sidecars, reflect no light, and emit at an
+intensity of 4 (`EndPortalSurface`).
+
 Dropped and held block items borrow the block atlas and its materials, so they
 need nothing of their own. Downloaded player skins have no sidecar path of
 their own.

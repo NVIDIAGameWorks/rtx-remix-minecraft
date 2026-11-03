@@ -104,6 +104,15 @@ final class RenderLayerUtils {
 
     /** Since 26.x a layer's textures are named sampler bindings; the surface texture is Sampler0. */
     private static Optional<Identifier> extractTexture(RenderType layer) {
+        // The end portal and gateway pipelines combine two textures in screen space
+        // and their vertices carry position only; they draw with a baked texture.
+        RenderPipeline pipeline = layer.pipeline();
+        if (pipeline == RenderPipelines.END_PORTAL) {
+            return EndPortalSurface.PORTAL_TEXTURE;
+        }
+        if (pipeline == RenderPipelines.END_GATEWAY) {
+            return EndPortalSurface.GATEWAY_TEXTURE;
+        }
         RenderSetup.TextureBinding binding = layer.state.textures.get("Sampler0");
         return binding == null ? Optional.empty() : Optional.of(binding.location());
     }
@@ -179,6 +188,11 @@ final class RenderLayerUtils {
     static SurfaceMode surfaceMode(RenderType layer) {
         // Since 26.x the program and blend state are one RenderPipeline.
         RenderPipeline pipeline = layer.pipeline();
+        // The baked end portal tile is opaque everywhere, so an alpha test would
+        // only cost a texture read per hit.
+        if (pipeline == RenderPipelines.END_PORTAL || pipeline == RenderPipelines.END_GATEWAY) {
+            return SurfaceMode.OPAQUE;
+        }
         BlendFunction blend = blendFunction(pipeline);
         return classifySurfaceMode(
                 pipeline == RenderPipelines.EYES

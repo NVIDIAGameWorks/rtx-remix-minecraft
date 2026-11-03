@@ -97,6 +97,7 @@ public final class RemixBlockEntityPass {
         long captureStart = System.nanoTime();
         EntityRenderContext ctx = EntityRenderContext.get();
         provider.beginEntity();
+        provider.setBlockOrigin(be.getBlockPos());
         matrices.pushPose();
         ctx.begin(true);
         List<RemixVertexConsumerProvider.CapturedLayer> layers;

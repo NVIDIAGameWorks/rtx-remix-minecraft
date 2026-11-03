@@ -67,6 +67,103 @@ class RemixCapturingConsumerTest {
         assertEquals(pose, context.getBoneTransforms().getFirst());
     }
 
+    @Test
+    void projectedTexcoordsFollowEachQuadsPlaneAndContinueAcrossBlocks() {
+        EntityRenderContext.get().begin(true);
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        consumer.projectTexcoords(8, 4, -1, 64, 9);
+        Matrix4f pose = new Matrix4f();
+
+        // The end portal's top face, then an end gateway's north face: position only,
+        // as vanilla sends them.
+        float top = 0.75f;
+        float[][] quads = {
+                {0, top, 1}, {1, top, 1}, {1, top, 0}, {0, top, 0},
+                {1, 1, 0}, {1, 0, 0}, {0, 0, 0}, {0, 1, 0}
+        };
+        for (float[] p : quads) {
+            consumer.addVertex(pose, p[0], p[1], p[2]);
+        }
+        consumer.finishOpenVertex();
+
+        // The top face runs U east from X -1, at 7 of an 8-block tile, and V north from
+        // Z 9, so -10 to -9 and 6 to 7 of 8. The north face runs U west, -X from 1 to 0,
+        // and V up Y 64, at 0 of the 4-block side height.
+        float[] tu = consumer.getTu();
+        float[] tv = consumer.getTv();
+        assertEquals(7.0f / 8, tu[0]);
+        assertEquals(6.0f / 8, tv[0]);
+        assertEquals(1.0f, tu[1]);
+        assertEquals(7.0f / 8, tv[2]);
+        assertEquals(0.0f, tu[4]);
+        assertEquals(1.0f / 4, tv[4]);
+        assertEquals(0.0f, tv[5]);
+        assertEquals(1.0f / 8, tu[6]);
+    }
+
+    @Test
+    void cubeSidesKeepOneHandednessRoundTheirEdges() {
+        EntityRenderContext.get().begin(true);
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        consumer.projectTexcoords(8, 8, 0, 0, 0);
+        Matrix4f pose = new Matrix4f();
+
+        // An end gateway's four sides, each starting with the edge that runs rightwards
+        // across it seen from outside: south, east, north, west, anticlockwise seen from
+        // above.
+        float[][] quads = {
+                {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1},
+                {1, 0, 1}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1},
+                {1, 0, 0}, {0, 0, 0}, {0, 1, 0}, {1, 1, 0},
+                {0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}
+        };
+        for (float[] p : quads) {
+            consumer.addVertex(pose, p[0], p[1], p[2]);
+        }
+        consumer.finishOpenVertex();
+
+        // Walking anticlockwise is walking rightwards across each face seen from
+        // outside, so U grows along every face rather than turning back at an edge,
+        // which is what a pattern mirrored across the edge would do.
+        float[] tu = consumer.getTu();
+        for (int face = 0; face < 4; face++) {
+            int first = face * 4;
+            assertTrue(tu[first + 1] > tu[first], "face " + face);
+        }
+    }
+
+    @Test
+    void projectedCoordinateOfOneBlocksFarEdgeIsTheNextBlocksNearEdge() {
+        for (int origin = -9; origin < 9; origin++) {
+            if (Math.floorMod(origin, 8) != 7) {
+                assertEquals(RemixCapturingConsumer.projectedCoordinate(origin, 1.0f, 8, true),
+                        RemixCapturingConsumer.projectedCoordinate(origin + 1, 0.0f, 8, true), 1e-6f);
+            }
+            // Against the axis too, except where the descending coordinate wraps.
+            if (Math.floorMod(-origin - 2, 8) != 7) {
+                assertEquals(RemixCapturingConsumer.projectedCoordinate(origin, 1.0f, 8, false),
+                        RemixCapturingConsumer.projectedCoordinate(origin + 1, 0.0f, 8, false), 1e-6f);
+            }
+        }
+    }
+
+    @Test
+    void reinitStopsProjectingTexcoords() {
+        EntityRenderContext.get().begin(true);
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        consumer.projectTexcoords(8, 8, 3, 0, 3);
+        consumer.clear();
+        consumer.reinit(null, true, RenderLayerUtils.Topology.QUADS, false);
+        Matrix4f pose = new Matrix4f();
+        for (int i = 0; i < 4; i++) {
+            consumer.addVertex(pose, i & 1, 0, i >> 1).setUv(0.25f, 0.5f);
+        }
+        consumer.finishOpenVertex();
+
+        assertEquals(0.25f, consumer.getTu()[3]);
+        assertEquals(0.5f, consumer.getTv()[3]);
+    }
+
     private static int[] quadVertexData(float[][] positions) {
         int[] vd = new int[32];
         for (int v = 0; v < 4; v++) {

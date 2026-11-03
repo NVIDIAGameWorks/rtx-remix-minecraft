@@ -60,6 +60,16 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * on it.
      */
     private boolean transientGeometry;
+    /**
+     * Repeat period, in blocks, of texture coordinates projected from position, or 0
+     * to keep the coordinates the renderer sent. Vanilla projects the end portal
+     * surface's texture in screen space and sends none; see
+     * {@link #projectTexcoords}.
+     */
+    private int projectedTileBlocks;
+    /** Vertical repeat period, in blocks, of projected coordinates on a vertical face. */
+    private int projectedSideHeightBlocks;
+    private int projectedOriginX, projectedOriginY, projectedOriginZ;
 
     // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC) ----
     private int vertexCount = 0;
@@ -208,6 +218,24 @@ public class RemixCapturingConsumer implements VertexConsumer {
         this.textureId = textureId;
         this.topology = topology;
         this.transientGeometry = transientGeometry;
+        this.projectedTileBlocks = 0;
+    }
+
+    /**
+     * Replaces each quad's texture coordinates with its position projected onto the
+     * quad's own axis plane, offset by the block the geometry belongs to and wrapped
+     * every {@code tileBlocks} blocks, or every {@code sideHeightBlocks} up a vertical
+     * face, so neighbouring blocks continue one texture instead of each repeating it.
+     * Positions are block-local in a block-entity capture, which is what
+     * {@code originX..Z} complete. Stays in force until the next {@link #reinit}.
+     */
+    void projectTexcoords(int tileBlocks, int sideHeightBlocks,
+                          int originX, int originY, int originZ) {
+        this.projectedTileBlocks = tileBlocks;
+        this.projectedSideHeightBlocks = sideHeightBlocks;
+        this.projectedOriginX = originX;
+        this.projectedOriginY = originY;
+        this.projectedOriginZ = originZ;
     }
 
     // ---- Bone detection ----
@@ -409,6 +437,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
             applyGeneratedStripNormalIfReady(i);
         } else {
             applyGeneratedQuadNormalIfReady(i);
+            applyProjectedTexcoordsIfReady(i);
             applyQuadTexcoordBoundsIfReady(i);
             closeQuadIfReady(i);
         }
@@ -578,6 +607,64 @@ public class RemixCapturingConsumer implements VertexConsumer {
                 nz[i] = fnz;
             }
         }
+    }
+
+    /**
+     * Projects the quad ending at {@code lastVertexIndex} when {@link #projectTexcoords}
+     * asked for it. The quad's plane is the axis along which its four vertices spread
+     * least, and it faces the side of the block it sits on: a face past the block's
+     * middle faces the positive direction. U and V run the same way round seen from
+     * outside every face, so the faces of a cube read as one pattern turned to face the
+     * viewer, never as its mirror image folded over an edge.
+     */
+    private void applyProjectedTexcoordsIfReady(int lastVertexIndex) {
+        if (projectedTileBlocks == 0 || (lastVertexIndex & 3) != 3) return;
+
+        int start = lastVertexIndex - 3;
+        float spreadX = spread(px, start);
+        float spreadY = spread(py, start);
+        float spreadZ = spread(pz, start);
+        int tile = projectedTileBlocks;
+        int sideHeight = projectedSideHeightBlocks;
+        for (int i = start; i <= lastVertexIndex; i++) {
+            if (spreadY <= spreadX && spreadY <= spreadZ) {
+                // Top: U east, V north. Bottom: U east, V south.
+                boolean up = py[start] > 0.5f;
+                tu[i] = projectedCoordinate(projectedOriginX, px[i], tile, true);
+                tv[i] = projectedCoordinate(projectedOriginZ, pz[i], tile, !up);
+            } else if (spreadX <= spreadZ) {
+                // East: U north. West: U south. V up.
+                boolean east = px[start] > 0.5f;
+                tu[i] = projectedCoordinate(projectedOriginZ, pz[i], tile, !east);
+                tv[i] = projectedCoordinate(projectedOriginY, py[i], sideHeight, true);
+            } else {
+                // South: U east. North: U west. V up.
+                boolean south = pz[start] > 0.5f;
+                tu[i] = projectedCoordinate(projectedOriginX, px[i], tile, south);
+                tv[i] = projectedCoordinate(projectedOriginY, py[i], sideHeight, true);
+            }
+        }
+    }
+
+    private static float spread(float[] axis, int start) {
+        float min = Math.min(Math.min(axis[start], axis[start + 1]), Math.min(axis[start + 2], axis[start + 3]));
+        float max = Math.max(Math.max(axis[start], axis[start + 1]), Math.max(axis[start + 2], axis[start + 3]));
+        return max - min;
+    }
+
+    /**
+     * One axis of a projected texture coordinate: the block's place within the tile plus
+     * the local position, in tiles, running along the world axis when {@code ascending}
+     * and against it otherwise. Only the origin is wrapped, so a quad's coordinates stay
+     * continuous across its own extent.
+     */
+    static float projectedCoordinate(int origin, float local, int tileBlocks, boolean ascending) {
+        if (!ascending) {
+            // -(origin + local) split into a whole block and a position within it.
+            origin = -origin - 1;
+            local = 1.0f - local;
+        }
+        return (Math.floorMod(origin, tileBlocks) + local) / tileBlocks;
     }
 
     /**
