@@ -13,6 +13,12 @@ also part of every mod file name.
 
 ### Fixed
 
+- Glass, stained glass, tinted glass, ice, slime and honey keep the faces that
+  touch an opaque block. Vanilla culls them, which left the block an open
+  shell: a stained glass block resting on stone did not colour the stone, and
+  looked half clear next to the same block held one block above it. The kept
+  face sits 4 mm inside the block so it never competes with the neighbour's
+  face.
 - The installer runs on PCs that give every program administrator rights, such
   as with User Account Control turned off or in the built-in Administrator
   account. It still refuses administrator rights as an account other than the
