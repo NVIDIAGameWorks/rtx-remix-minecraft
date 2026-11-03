@@ -124,9 +124,10 @@ public class RemixEntitySubmitter {
             TEXT_QUAD_STEP * (RemixCapturingConsumer.MAX_VERTICES / 4);
     private static final float POM_DISPLACE_IN = 0.25f;
     private static final float EMISSIVE_INTENSITY = 100.0f;
-    /** Matches Remix's unlit-albedo baseline rather than the luminous-entity intensity. */
-    private static final float GLINT_INTENSITY = 2.0f;
+    /** Brightness of the dark additive enchantment texture in the scene's HDR lighting scale. */
+    private static final float GLINT_INTENSITY = 500.0f;
     private int glintStrength = 255;
+    private long glintTime;
     private static final float COPPER_BEACON_LENS_EMISSION_SCALE = 100.0f;
     private static final float THIN_SSS_MEASUREMENT_DISTANCE = 0.75f;
     private static final int DEFAULT_CUTOUT_ALPHA_REFERENCE = 1;
@@ -630,7 +631,8 @@ public class RemixEntitySubmitter {
 
     private final ParticleAtlasManager particleAtlasManager;
 
-    private static final class EntityTextureSet {
+    static final class EntityTextureSet {
+        GlintTextureAnimation glintAnimation;
         RemixTexture albedo;
         RemixTexture normal;
         RemixTexture height;
@@ -647,6 +649,10 @@ public class RemixEntitySubmitter {
         }
 
         void destroy() {
+            if (glintAnimation != null) {
+                glintAnimation.close();
+                glintAnimation = null;
+            }
             for (RemixTexture texture : ownedTextures) {
                 if (texture != null && !texture.isDeleted()) texture.destroy();
             }
@@ -725,7 +731,11 @@ public class RemixEntitySubmitter {
         }
         frameOpen = true;
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client != null) setGlintStrength(client.options.getGlintStrength().getValue());
+        if (client != null) {
+            setGlintStrength(client.options.getGlintStrength().getValue());
+            glintTime = (long) (net.minecraft.util.Util.getMeasuringTimeMs()
+                    * client.options.getGlintSpeed().getValue() * 8.0);
+        }
         retainedEntityParts.beginFrame();
         lastDrawCount = 0;
         lastMeshCreateCount = 0;
@@ -889,6 +899,10 @@ public class RemixEntitySubmitter {
         long frame = frameIndex();
         if (dynamicTextureCheckFrames.put(texId, frame) != frame) {
             refreshDynamicTexture(texId);
+            EntityTextureSet textures = textureSets.get(texId);
+            if (layerMode == RenderLayerUtils.SurfaceMode.GLINT && textures != null && textures.glintAnimation != null) {
+                textures.glintAnimation.upload(api, textures.albedo.getHandle(), glintTime);
+            }
         }
 
         // Parts are recorded during capture: a quad layer closes a part as its
@@ -1942,13 +1956,16 @@ public class RemixEntitySubmitter {
     private float[] shellOffsetZ = new float[0];
 
     /** Builds one rigid-part surface from a contiguous range of captured vertices. */
-    private RemixMeshSurface buildSurface(RemixCapturingConsumer consumer,
+    RemixMeshSurface buildSurface(RemixCapturingConsumer consumer,
                                           int sourceStart,
                                           int vertCount,
                                           RenderLayerUtils.Topology topology,
                                           float quadStep,
                                           float shellDepth,
+                                          Identifier textureId,
+                                          RenderLayerUtils.SurfaceMode mode,
                                           RemixMaterial mat) {
+        float glintScale = mode == RenderLayerUtils.SurfaceMode.GLINT ? GlintTextureAnimation.uvScale(textureId) : 0;
         float[] cpx = consumer.getPx(), cpy = consumer.getPy(), cpz = consumer.getPz();
         float[] cnx = consumer.getNx(), cny = consumer.getNy(), cnz = consumer.getNz();
         float[] ctu = consumer.getTu(), ctv = consumer.getTv();
@@ -1985,9 +2002,10 @@ public class RemixEntitySubmitter {
                 offset ? cpy[source] + shellOffsetY[i] : cpy[source],
                 offset ? cpz[source] + shellOffsetZ[i] : cpz[source],
                 cnx[source], cny[source], cnz[source],
-                ctu[source], ctv[source],
+                glintScale == 0 ? ctu[source] : GlintTextureAnimation.transformU(ctu[source], ctv[source], glintScale),
+                glintScale == 0 ? ctv[source] : GlintTextureAnimation.transformV(ctu[source], ctv[source], glintScale),
                 cColors[source],
-                boundsMin[source], boundsMax[source]);
+                glintScale == 0 ? boundsMin[source] : 0, glintScale == 0 ? boundsMax[source] : 0);
         }
         vertices.flip();
 
@@ -2119,7 +2137,7 @@ public class RemixEntitySubmitter {
             return null;
         }
         RemixMeshSurface surface = buildSurface(consumer, sourceStart, vertexCount,
-                topology, rigidMeshLookupKey.quadStep, shellDepth, material);
+                topology, rigidMeshLookupKey.quadStep, shellDepth, textureId, rigidMeshLookupKey.surfaceMode, material);
         try {
             RemixMesh mesh = new RemixMesh(new RemixMeshSurface[]{surface});
             try (ProfileScope createScope = ProfileScope.begin("Entity createRigidMesh")) {
@@ -2315,6 +2333,10 @@ public class RemixEntitySubmitter {
         try {
             populateTextureSet(textures, textureId.toString(), pixels, width, height,
                     nImg, sImg, sssImg);
+            if (textures.albedo != null && GlintTextureAnimation.uvScale(textureId) != 0) {
+                textures.glintAnimation = new GlintTextureAnimation(pixels, width, height);
+                textures.glintAnimation.upload(api, textures.albedo.getHandle(), glintTime);
+            }
         } catch (RuntimeException e) {
             textures.destroy();
             throw e;
@@ -2721,6 +2743,22 @@ public class RemixEntitySubmitter {
     }
 
     private RemixMaterial createMaterial(EntityMaterialKey key, EntityTextureSet textures) {
+        MaterialInfo info = buildMaterialInfo(key, textures);
+        RemixMaterial material = new RemixMaterial(info, textures.ownedTextures, null);
+        RemixMaterialStore.get().create(material);
+        boolean hasSubsurface = shouldAttachSubsurface(textures.sssThickness != null, key.surfaceMode());
+        LOGGER.info("Created entity material {} (mode={}, LabPBR={}, normal={}, height={}, "
+                        + "specular={}, emissive={}, sss={}, sssProfile={})",
+                key.textureId(), key.surfaceMode(), textures.hasPBR,
+                textures.normal != null, textures.height != null,
+                textures.roughness != null || textures.metallic != null,
+                info.emissiveTexture != 0, hasSubsurface,
+                hasSubsurface ? (shouldUseDiffusionProfile(key.surfaceMode()) ? "diffusion" : "thin") : "none");
+        return material;
+    }
+
+    /** Material parameters are assembled without creating native handles. */
+    static MaterialInfo buildMaterialInfo(EntityMaterialKey key, EntityTextureSet textures) {
         MaterialInfoOpaqueEXT.Builder opaque = materialSurfaceState(key.textureId(), key.surfaceMode())
                 .albedoConstant(1f, 1f, 1f)
                 .roughnessConstant(textures.roughness != null ? 1f : 0.7f)
@@ -2749,7 +2787,8 @@ public class RemixEntitySubmitter {
         }
 
         MaterialInfo.Builder materialBuilder = MaterialInfo.builder()
-                .albedoTexture(textures.albedo.getHandle()).filterMode(0);
+                .albedoTexture(textures.albedo.getHandle())
+                .filterMode(key.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT ? 1 : 0);
         if (textures.normal != null) materialBuilder.normalTexture(textures.normal.getHandle());
         RemixTexture emissive = key.surfaceMode().emitsAlbedo()
                 ? textures.albedo : textures.emissive;
@@ -2759,17 +2798,7 @@ public class RemixEntitySubmitter {
                             ? GLINT_INTENSITY : EMISSIVE_INTENSITY);
         }
 
-        MaterialInfo info = materialBuilder.opaqueExt(opaque.build()).build();
-        RemixMaterial material = new RemixMaterial(info, textures.ownedTextures, null);
-        RemixMaterialStore.get().create(material);
-        LOGGER.info("Created entity material {} (mode={}, LabPBR={}, normal={}, height={}, "
-                        + "specular={}, emissive={}, sss={}, sssProfile={})",
-                key.textureId(), key.surfaceMode(), textures.hasPBR,
-                textures.normal != null, textures.height != null,
-                textures.roughness != null || textures.metallic != null,
-                emissive != null, hasSubsurface,
-                hasSubsurface ? (diffusionProfile ? "diffusion" : "thin") : "none");
-        return material;
+        return materialBuilder.opaqueExt(opaque.build()).build();
     }
 
     static boolean shouldAttachSubsurface(boolean hasSssMask,

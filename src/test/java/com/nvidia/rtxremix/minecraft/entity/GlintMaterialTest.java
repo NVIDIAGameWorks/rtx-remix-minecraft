@@ -7,6 +7,9 @@ package com.nvidia.rtxremix.minecraft.entity;
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.InstanceInfoBlendEXT;
+import com.nvidia.rtxremix.TextureFormat;
+import com.nvidia.rtxremix.TexturePurpose;
+import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
@@ -18,6 +21,28 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 class GlintMaterialTest {
     private static final Identifier GLINT = Identifier.of("minecraft", "textures/misc/enchanted_glint_item.png");
+
+    @Test
+    void glintMaterialRetainsVisibleEmissionInTheEntityLightingScale() {
+        var textures = new RemixEntitySubmitter.EntityTextureSet();
+        textures.albedo = new RemixTexture(1, 1, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR, null) {
+            @Override public long getHandle() { return 123; }
+        };
+        var glint = RemixEntitySubmitter.buildMaterialInfo(
+                new RemixEntitySubmitter.EntityMaterialKey(GLINT, RenderLayerUtils.SurfaceMode.GLINT), textures);
+        var ordinary = RemixEntitySubmitter.buildMaterialInfo(
+                new RemixEntitySubmitter.EntityMaterialKey(GLINT, RenderLayerUtils.SurfaceMode.CUTOUT), textures);
+        var luminous = RemixEntitySubmitter.buildMaterialInfo(
+                new RemixEntitySubmitter.EntityMaterialKey(GLINT, RenderLayerUtils.SurfaceMode.EMISSIVE), textures);
+
+        assertEquals(123, glint.albedoTexture);
+        assertEquals(glint.albedoTexture, glint.emissiveTexture, "the purple texture supplies the shimmer color");
+        assertEquals(500f, glint.emissiveIntensity, "glint must not disappear under the scene's daylight exposure");
+        assertEquals(100f, luminous.emissiveIntensity, "ordinary emissive materials keep their existing scale");
+        assertEquals(MaterialInfoOpaqueEXT.BLEND_TYPE_COLOR_EMISSIVE, glint.opaqueExt.blendType_value);
+        assertEquals(0, ordinary.emissiveTexture, "an unenchanted item must not acquire the glow");
+        assertEquals(0f, ordinary.emissiveIntensity);
+    }
 
     @Test
     void glintIgnoresModelTintAndFollowsAccessibilityStrength() {
