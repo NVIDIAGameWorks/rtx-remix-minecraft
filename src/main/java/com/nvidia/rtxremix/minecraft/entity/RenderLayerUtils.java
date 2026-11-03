@@ -34,13 +34,19 @@ final class RenderLayerUtils {
         CUTOUT,
         TRANSLUCENT,
         EMISSIVE,
+        /** Color-additive enchantment overlay: its texture alpha is not coverage. */
+        GLINT,
         /**
          * Clear glass on the block atlas: blended, through the refracting material
          * terrain gives placed clear glass. No render phase encodes it, since vanilla
          * draws clear glass as a cutout; {@code RemixEntitySubmitter.atlasSurfaceMode}
          * assigns it to geometry from a clear-glass block item.
          */
-        GLASS
+        GLASS;
+
+        boolean emitsAlbedo() {
+            return this == EMISSIVE || this == GLINT;
+        }
     }
 
     /** How a layer's captured vertex stream turns into Remix triangles. */
@@ -168,6 +174,25 @@ final class RenderLayerUtils {
         return topology == Topology.TRIANGLE_STRIP || beaconBeamProgram;
     }
 
+    /** Immutable phase facts shared by captures of the same layer. */
+    record LayerState(SurfaceMode surfaceMode, boolean text, int identity) {}
+    private static int nextLayerIdentity;
+
+    private static final Map<RenderLayer, LayerState> layerStates =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
+    static LayerState state(RenderLayer layer) {
+        return layerStates.computeIfAbsent(layer, key -> new LayerState(surfaceModeUncached(key),
+                key instanceof RenderLayer.MultiPhase multiPhase && isTextProgram(multiPhase.getPhases()),
+                nextLayerIdentity++));
+    }
+
+    private static boolean isTextProgram(RenderLayer.MultiPhaseParameters phases) {
+        return phases.program == RenderPhase.TEXT_PROGRAM || phases.program == RenderPhase.TEXT_INTENSITY_PROGRAM;
+    }
+
+    static void clearCachedState() { layerStates.clear(); }
+
     /**
      * Converts Minecraft's render-phase state into the material behavior that
      * Remix needs. This deliberately inspects phases rather than render-layer
@@ -178,12 +203,13 @@ final class RenderLayerUtils {
      * transparent, so alpha blending them over the surface is the closest surface
      * behaviour and it is classified as translucent.
      */
-    static SurfaceMode surfaceMode(RenderLayer layer) {
+    private static SurfaceMode surfaceModeUncached(RenderLayer layer) {
         if (!(layer instanceof RenderLayer.MultiPhase multiPhase)) {
             return SurfaceMode.CUTOUT;
         }
 
         RenderLayer.MultiPhaseParameters phases = multiPhase.getPhases();
+        if (phases.transparency == RenderPhase.GLINT_TRANSPARENCY) return SurfaceMode.GLINT;
         return classifySurfaceMode(
                 phases.program == RenderPhase.EYES_PROGRAM
                         || phases.program == RenderPhase.ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM,
@@ -191,8 +217,7 @@ final class RenderLayerUtils {
                 phases.transparency == RenderPhase.TRANSLUCENT_TRANSPARENCY
                         || phases.transparency == RenderPhase.CRUMBLING_TRANSPARENCY,
                 phases.program == RenderPhase.ENTITY_SOLID_PROGRAM,
-                phases.program == RenderPhase.TEXT_PROGRAM
-                        || phases.program == RenderPhase.TEXT_INTENSITY_PROGRAM);
+                isTextProgram(phases));
     }
 
     /**

@@ -89,7 +89,7 @@ The runtime resumes a ray after a transparent texel from an origin displaced
 by a few floating-point units along the normal. A surface within that offset,
 such as a held flame crossing the card, can be skipped and show a hairline of
 background. The offset grows with world-position magnitude, and the view-model
-rig is scaled by `RemixFirstPersonPass.VIEW_MODEL_SCALE`. Compare near the
+rig is scaled by `ViewModelSpace.SCALE`. Compare near the
 origin and thousands of blocks away before attributing a distance-dependent
 artifact to capture. Sprites exceeding
 `RemixCapturingConsumer.MAX_CARD_FACE_RECTS` retain full faces and their alpha

@@ -33,6 +33,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.EnumSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,6 +52,33 @@ class RemixConsumerDispatchTest {
     @AfterEach
     void reset() {
         EntityRenderContext.get().reset();
+    }
+
+    @Test
+    void glintVertexFormatDiscardsDyeAndHurtOverlayForVerticesAndCuboids() {
+        EntityRenderContext.get().begin(true);
+        RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+        provider.beginEntity();
+        RemixCapturingConsumer glint = (RemixCapturingConsumer) provider.getBuffer(RenderLayer.getGlint());
+        int hurt = OverlayTexture.packUv(0, 3);
+        for (int i = 0; i < 4; i++) {
+            glint.vertex(i & 1, i >> 1, 0).color(0xFF00FF00).texture(0, 0).overlay(hurt).normal(0, 0, 1);
+        }
+        cuboid().renderCuboid(new MatrixStack().peek(), glint, 0, hurt, 0xFF00FF00);
+        provider.endEntity();
+        for (int i = 0; i < 4; i++) assertEquals(-1, glint.getColors()[i]);
+        assertEquals(-1, glint.getPartTint(1));
+    }
+
+    @Test
+    void textClassificationDoesNotDependOnGlyphPageRegistration() {
+        Identifier page = Identifier.of("test", "late_font_page");
+        RenderLayer layer = RenderLayer.getText(page);
+        assertTrue(RenderLayerUtils.state(layer).text());
+        com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache.onRegisterGlyphPage(page,
+                new com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror(false));
+        assertTrue(RenderLayerUtils.state(layer).text());
+        assertTrue(RenderLayerUtils.state(RenderLayer.getTextIntensity(page)).text());
     }
 
     @Test
@@ -166,6 +194,38 @@ class RemixConsumerDispatchTest {
             assertEquals(2, cuboid.calls, "the uncapturable sprite branch must still call the original renderer");
             assertEquals(24, probe.count);
             assertSame(cuboid.sides, capture.getPartSides(0));
+        }
+    }
+
+    @Test
+    void everyGlintPhaseFollowsItsBaseInShellOrder() {
+        EntityRenderContext.get().begin(true);
+        RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+        provider.beginEntity();
+        List<RenderLayer> glints = List.of(RenderLayer.getGlint(), RenderLayer.getEntityGlint(),
+                RenderLayer.getArmorEntityGlint(), RenderLayer.getDirectEntityGlint(), RenderLayer.getGlintTranslucent());
+        ModelPart.Cuboid cuboid = cuboid();
+        MatrixStack matrices = new MatrixStack();
+        for (RenderLayer glint : glints) {
+            assertEquals(RenderLayerUtils.SurfaceMode.GLINT, RenderLayerUtils.state(glint).surfaceMode(),
+                    "an enchantment overlay must not become an opaque cutout shell");
+            cuboid.renderCuboid(matrices.peek(), provider.getBuffer(glint), 0, OverlayTexture.DEFAULT_UV, -1);
+        }
+        cuboid.renderCuboid(matrices.peek(), provider.getBuffer(RenderLayer.getEntityCutout(BlockTextureManager.BLOCK_ATLAS_ID)),
+                0, OverlayTexture.DEFAULT_UV, -1);
+        var layers = provider.endEntity();
+        RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
+        try {
+            var context = EntityRenderContext.get();
+            submitter.prepareSurfaceLayers(new RemixEntityPass.EntityCaptureResult(this, net.minecraft.util.math.Vec3d.ZERO,
+                    0, layers, context.snapshotBoneTransforms(new float[0]), context.getBoneCount(), "test", false));
+            int base = layers.stream().filter(layer -> layer.surfaceMode() != RenderLayerUtils.SurfaceMode.GLINT)
+                    .findFirst().orElseThrow().consumer().getPartShellLayer(0);
+            assertEquals(0, base);
+            for (var layer : layers) if (layer.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT)
+                assertTrue(layer.consumer().getPartShellLayer(0) > base);
+        } finally {
+            submitter.close();
         }
     }
 

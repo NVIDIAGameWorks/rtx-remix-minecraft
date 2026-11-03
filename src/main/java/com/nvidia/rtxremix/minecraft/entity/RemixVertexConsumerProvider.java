@@ -11,9 +11,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -77,11 +75,9 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
             RemixCapturingConsumer consumer = activeConsumers[i];
             consumer.finishOpenVertex();
             // A cuboid part carries no vertices, so a layer can be non-empty with zero
-            // captured vertices. layerIndex is assigned at first request, so dropping
-            // an empty layer here cannot shift the others.
+            // captured vertices. Layer identity is independent of requests for other layers.
             if (consumer.getVertexCount() > 0 || consumer.getPartCount() > 0) {
                 CapturedLayer layer = consumer.capturedLayer();
-                layer.bind(activeLayers[i]);
                 resultBuffer.add(layer);
             }
         }
@@ -125,11 +121,11 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
         } else {
             consumer = new RemixCapturingConsumer(textureId, true, topology, transientGeometry);
         }
-        consumer.setLayerIndex(activeCount);
         if (activeCount == activeLayers.length) {
             activeLayers = Arrays.copyOf(activeLayers, activeCount * 2);
             activeConsumers = Arrays.copyOf(activeConsumers, activeCount * 2);
         }
+        consumer.capturedLayer().bind(layer);
         activeLayers[activeCount] = layer;
         activeConsumers[activeCount] = consumer;
         activeCount++;
@@ -148,6 +144,7 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
     public static final class CapturedLayer {
         private final RemixCapturingConsumer consumer;
         private RenderLayer renderLayer;
+        private RenderLayerUtils.LayerState state;
 
         CapturedLayer(RemixCapturingConsumer consumer) {
             this.consumer = consumer;
@@ -155,13 +152,19 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
 
         void bind(RenderLayer renderLayer) {
             this.renderLayer = renderLayer;
+            this.state = RenderLayerUtils.state(renderLayer);
+            consumer.setLayerIndex(state.identity());
+            consumer.setUsesColor(renderLayer.getVertexFormat().getElements()
+                    .contains(net.minecraft.client.render.VertexFormatElement.COLOR));
         }
 
         public Identifier textureId() { return consumer.getTextureId(); }
         public RenderLayer renderLayer() { return renderLayer; }
+        RenderLayerUtils.SurfaceMode surfaceMode() { return state.surfaceMode(); }
+        boolean text() { return state.text(); }
         public RemixCapturingConsumer consumer() { return consumer; }
         public int vertexCount() { return consumer.getVertexCount(); }
-        /** Order in which the entity first requested this layer; scales the shell offset. */
+        /** Layer identity, independent of which other layers this capture requested. */
         public int layerIndex() { return consumer.getLayerIndex(); }
         /** How to read the vertices as triangles. */
         public RenderLayerUtils.Topology topology() { return consumer.getTopology(); }
