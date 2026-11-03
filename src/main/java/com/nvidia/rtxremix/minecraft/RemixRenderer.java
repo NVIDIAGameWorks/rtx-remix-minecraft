@@ -1239,7 +1239,7 @@ public class RemixRenderer {
             CameraInfo viewModelCameraInfo = CameraInfo.builder()
                 .type(CameraType.VIEW_MODEL)
                 // The hand-FOV adjustment is already applied to first-person
-                // bones. Supplying the exact world camera keeps Remix's
+                // capture root. Supplying the exact world camera keeps Remix's
                 // perspective-correction matrix at identity while retaining
                 // its per-frame view-model transform/history update.
                 .parameterizedExt(worldCameraParams)

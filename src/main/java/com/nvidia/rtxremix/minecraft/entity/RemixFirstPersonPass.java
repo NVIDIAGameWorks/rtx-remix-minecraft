@@ -36,9 +36,9 @@ import java.util.List;
  * animations, maps, and item-specific transforms. The captured model is
  * attached to the camera in world space and submitted through Remix's
  * view-model camera for scene isolation. The hand-to-world FOV adjustment and
- * camera-relative view-model scale are folded into the captured rigid-part
- * transforms so Remix's view-model correction can remain an identity transform
- * and preserve precise motion history.
+ * camera-relative view-model scale are folded into the common capture root.
+ * Rigid parts keep their local meshes and poses; fully posed vertices from other
+ * wrappers receive the same correction through the root.
  */
 public final class RemixFirstPersonPass implements AutoCloseable {
 
@@ -46,19 +46,12 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     private static final String CAPTURE_TYPE_KEY = "rtx-remix:first_person_model";
     private static final float[] EMPTY_BONES = new float[0];
 
-    /**
-     * Camera-relative scale used to pull first-person geometry in front of
-     * nearby world surfaces. This is baked into captured pivots instead of
-     * {@code rtx.viewModel.scale}, keeping Remix's current/previous perspective
-     * correction at identity for stable motion vectors.
-     */
-    public static final float VIEW_MODEL_SCALE = 0.1f;
-
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final CapturingImmediate immediate = new CapturingImmediate(provider);
-    private final Transform cameraToWorld = new Transform();
+    private final Transform captureToWorld = new Transform();
     private final Transform heldLightTransform = new Transform();
-    private final Matrix4f correctedBone = new Matrix4f();
+    private final Matrix4f captureToWorldMatrix = new Matrix4f();
+    private final Matrix4f modelView = new Matrix4f();
     private final Matrix4f viewCorrection = new Matrix4f();
     private final Matrix4f inverseModelView = new Matrix4f();
     private final Vector3f eye = new Vector3f();
@@ -77,63 +70,54 @@ public final class RemixFirstPersonPass implements AutoCloseable {
                         MatrixStack matrices,
                         ClientPlayerEntity player,
                         int light) {
-        pendingResult = null;
-        pendingMainHandLightPosition = null;
-        pendingOffHandLightPosition = null;
-
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.gameRenderer == null || player == null) {
+            clearPending();
             return;
         }
 
-        provider.beginEntity();
         EntityRenderContext context = EntityRenderContext.get();
-        context.begin(true);
-
         try {
-            // Vanilla roots the hand stack at the inverse camera rotation and carries
-            // the camera rotation, tilt and bob in the model-view, so the model-view's
-            // origin is where the eye sits in the capture's space.
-            Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
-            modelView.invert(inverseModelView).transformPosition(eye.set(0.0f, 0.0f, 0.0f));
-            context.setEye(eye.x, eye.y, eye.z);
-
+            beginCapture(RenderSystem.getModelViewMatrix());
             heldItemRenderer.renderItem(tickDelta, matrices, immediate, player, light);
-
-            List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
-            if (layers.isEmpty()) {
-                return;
-            }
-
             Camera camera = client.gameRenderer.getCamera();
-            float fovScale = calculateFovScale(client, camera, tickDelta);
-            setViewCorrection(viewCorrection, modelView, fovScale);
-
-            int boneCount = context.getBoneCount();
-            reusableBoneData = snapshotCorrectedBones(context, boneCount, reusableBoneData);
-            setCameraToWorld(camera, cameraToWorld);
-            pendingMainHandLightPosition = findHeldBlockLightPosition(
-                    layers, context, reusableBoneData, boneCount, Hand.MAIN_HAND);
-            pendingOffHandLightPosition = findHeldBlockLightPosition(
-                    layers, context, reusableBoneData, boneCount, Hand.OFF_HAND);
-
-            pendingResult = new RemixEntityPass.EntityCaptureResult(
-                    player,
-                    Vec3d.ZERO,
-                    0.0f,
-                    layers,
-                    reusableBoneData,
-                    boneCount,
-                    CAPTURE_TYPE_KEY,
-                    false);
+            finishCapture(player, camera, calculateFovScale(client, camera, tickDelta));
         } catch (Exception e) {
-            pendingResult = null;
-            pendingMainHandLightPosition = null;
-            pendingOffHandLightPosition = null;
+            clearPending();
             LOGGER.error("Error capturing first-person model", e);
         } finally {
             context.reset();
         }
+    }
+
+    VertexConsumerProvider beginCapture(Matrix4f modelView) {
+        clearPending();
+        provider.beginEntity();
+        EntityRenderContext context = EntityRenderContext.get();
+        context.begin(true);
+        this.modelView.set(modelView);
+        // The model-view carries camera rotation, tilt and bob; its inverse
+        // locates the eye in the space in which the hand is captured.
+        this.modelView.invert(inverseModelView).transformPosition(eye.set(0, 0, 0));
+        context.setEye(eye.x, eye.y, eye.z);
+        return immediate;
+    }
+
+    RemixEntityPass.EntityCaptureResult finishCapture(Object owner, Camera camera, float fovScale) {
+        List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
+        if (layers.isEmpty()) return null;
+        EntityRenderContext context = EntityRenderContext.get();
+        setViewCorrection(viewCorrection, modelView, fovScale);
+        int boneCount = context.getBoneCount();
+        if (boneCount != 0) reusableBoneData = context.snapshotBoneTransforms(reusableBoneData);
+        setCaptureToWorld(camera, viewCorrection, captureToWorldMatrix, captureToWorld);
+        pendingMainHandLightPosition = findHeldBlockLightPosition(
+                layers, context, reusableBoneData, boneCount, Hand.MAIN_HAND);
+        pendingOffHandLightPosition = findHeldBlockLightPosition(
+                layers, context, reusableBoneData, boneCount, Hand.OFF_HAND);
+        pendingResult = new RemixEntityPass.EntityCaptureResult(owner, Vec3d.ZERO, 0, layers,
+                reusableBoneData, boneCount, CAPTURE_TYPE_KEY, false);
+        return pendingResult;
     }
 
     public boolean hasPendingCapture() {
@@ -161,7 +145,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         if (result == null) {
             return;
         }
-        submitter.submitEntity(result, cameraToWorld, InstanceCategoryBit.VIEW_MODEL,
+        submitter.submitEntity(result, captureToWorld, InstanceCategoryBit.VIEW_MODEL,
                 RemixEntitySubmitter.NO_EXTRA_CATEGORIES);
     }
 
@@ -214,7 +198,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             minZ = Math.min(minZ, pz[i]); maxZ = Math.max(maxZ, pz[i]);
         }
 
-        RemixEntitySubmitter.composeRigidTransform(cameraToWorld, transformData,
+        RemixEntitySubmitter.composeRigidTransform(captureToWorld, transformData,
                 transformCount, bestTransform, heldLightTransform);
         return transformPoint(heldLightTransform,
                 (minX + maxX) * 0.5f,
@@ -228,35 +212,6 @@ public final class RemixFirstPersonPass implements AutoCloseable {
                 m[0] * x + m[1] * y + m[2] * z + m[3],
                 m[4] * x + m[5] * y + m[6] * z + m[7],
                 m[8] * x + m[9] * y + m[10] * z + m[11]);
-    }
-
-    private float[] snapshotCorrectedBones(EntityRenderContext context,
-                                           int boneCount,
-                                           float[] reuse) {
-        if (boneCount == 0) {
-            return EMPTY_BONES;
-        }
-
-        int required = boneCount * 12;
-        float[] data = reuse.length >= required ? reuse : new float[required];
-        List<Matrix4f> bones = context.getBoneTransforms();
-        for (int i = 0; i < boneCount; i++) {
-            viewCorrection.mul(bones.get(i), correctedBone);
-            int off = i * 12;
-            data[off] = correctedBone.m00();
-            data[off + 1] = correctedBone.m10();
-            data[off + 2] = correctedBone.m20();
-            data[off + 3] = correctedBone.m30();
-            data[off + 4] = correctedBone.m01();
-            data[off + 5] = correctedBone.m11();
-            data[off + 6] = correctedBone.m21();
-            data[off + 7] = correctedBone.m31();
-            data[off + 8] = correctedBone.m02();
-            data[off + 9] = correctedBone.m12();
-            data[off + 10] = correctedBone.m22();
-            data[off + 11] = correctedBone.m32();
-        }
-        return data;
     }
 
     private static float calculateFovScale(MinecraftClient client, Camera camera, float tickDelta) {
@@ -274,45 +229,23 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     static void setViewCorrection(Matrix4f destination, Matrix4f modelView, float fovScale) {
         destination.identity()
                 .scale(
-                        fovScale * VIEW_MODEL_SCALE,
-                        fovScale * VIEW_MODEL_SCALE,
-                        VIEW_MODEL_SCALE)
+                        fovScale * ViewModelSpace.SCALE,
+                        fovScale * ViewModelSpace.SCALE,
+                        ViewModelSpace.SCALE)
                 .mul(modelView);
     }
 
     /**
-     * Builds an object-to-world transform whose local axes match Minecraft's
-     * camera space: +X right, +Y up, and -Z forward.
+     * Maps the whole capture into world space, correcting local poses and already
+     * posed vertices exactly once. Minecraft's camera quaternion owns its axis convention.
      */
-    private static void setCameraToWorld(Camera camera, Transform transform) {
+    static void setCaptureToWorld(Camera camera, Matrix4f correction, Matrix4f scratch, Transform transform) {
         Vec3d pos = camera.getPos();
-        float yawRad = (float) Math.toRadians(-camera.getYaw());
-        float pitchRad = (float) Math.toRadians(camera.getPitch());
-
-        float forwardX = (float) (Math.sin(yawRad) * Math.cos(pitchRad));
-        float forwardY = (float) (-Math.sin(pitchRad));
-        float forwardZ = (float) (Math.cos(yawRad) * Math.cos(pitchRad));
-
-        float rightX = (float) (-Math.cos(yawRad));
-        float rightY = 0.0f;
-        float rightZ = (float) Math.sin(yawRad);
-
-        float upX = rightY * forwardZ - rightZ * forwardY;
-        float upY = rightZ * forwardX - rightX * forwardZ;
-        float upZ = rightX * forwardY - rightY * forwardX;
-
-        transform.set(0, 0, rightX);
-        transform.set(0, 1, upX);
-        transform.set(0, 2, -forwardX);
-        transform.set(0, 3, (float) pos.x);
-        transform.set(1, 0, rightY);
-        transform.set(1, 1, upY);
-        transform.set(1, 2, -forwardY);
-        transform.set(1, 3, (float) pos.y);
-        transform.set(2, 0, rightZ);
-        transform.set(2, 1, upZ);
-        transform.set(2, 2, -forwardZ);
-        transform.set(2, 3, (float) pos.z);
+        scratch.translation((float) pos.x, (float) pos.y, (float) pos.z)
+                .rotate(camera.getRotation()).mul(correction);
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 4; col++) transform.matrix[row * 4 + col] = scratch.get(col, row);
+        }
     }
 
     @Override

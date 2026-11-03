@@ -11,9 +11,7 @@ import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -81,7 +79,6 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
             // an empty layer here cannot shift the others.
             if (consumer.getVertexCount() > 0 || consumer.getPartCount() > 0) {
                 CapturedLayer layer = consumer.capturedLayer();
-                layer.bind(activeLayers[i]);
                 resultBuffer.add(layer);
             }
         }
@@ -125,11 +122,12 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
         } else {
             consumer = new RemixCapturingConsumer(textureId, true, topology, transientGeometry);
         }
-        consumer.setLayerIndex(activeCount);
         if (activeCount == activeLayers.length) {
             activeLayers = Arrays.copyOf(activeLayers, activeCount * 2);
             activeConsumers = Arrays.copyOf(activeConsumers, activeCount * 2);
         }
+        consumer.setLayerIndex(activeCount);
+        consumer.capturedLayer().bind(layer);
         activeLayers[activeCount] = layer;
         activeConsumers[activeCount] = consumer;
         activeCount++;
@@ -148,6 +146,7 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
     public static final class CapturedLayer {
         private final RemixCapturingConsumer consumer;
         private RenderLayer renderLayer;
+        private RenderLayerUtils.LayerState state;
 
         CapturedLayer(RemixCapturingConsumer consumer) {
             this.consumer = consumer;
@@ -155,21 +154,32 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
 
         void bind(RenderLayer renderLayer) {
             this.renderLayer = renderLayer;
+            this.state = RenderLayerUtils.state(renderLayer);
+            consumer.setUsesColor(state.usesColor());
         }
 
         public Identifier textureId() { return consumer.getTextureId(); }
         public RenderLayer renderLayer() { return renderLayer; }
+        RenderLayerUtils.SurfaceMode surfaceMode() { return state.surfaceMode(); }
+        boolean text() { return state.text(); }
         public RemixCapturingConsumer consumer() { return consumer; }
         public int vertexCount() { return consumer.getVertexCount(); }
-        /** Order in which the entity first requested this layer; scales the shell offset. */
+        /**
+         * Order in which the entity first requested this layer. It keys the layer's
+         * retained instances and, outside glint, scales its shell offset.
+         */
         public int layerIndex() { return consumer.getLayerIndex(); }
         /** How to read the vertices as triangles. */
         public RenderLayerUtils.Topology topology() { return consumer.getTopology(); }
-        /** Whether the layer's vertex content differs every frame, so a mesh built from it must not be pooled. */
-        public boolean transientGeometry() { return consumer.isTransientGeometry(); }
+        /** Whether this part changes its local vertices each frame. Cuboids remain reusable. */
+        public boolean transientGeometry(int part) { return consumer.isPartTransientGeometry(part); }
     }
 
     // ---- No-op consumer for layers Remix cannot draw ----
+
+    static boolean isDiscarding(VertexConsumer consumer) {
+        return consumer == NoOpVertexConsumer.INSTANCE;
+    }
 
     private static class NoOpVertexConsumer implements VertexConsumer {
         static final NoOpVertexConsumer INSTANCE = new NoOpVertexConsumer();

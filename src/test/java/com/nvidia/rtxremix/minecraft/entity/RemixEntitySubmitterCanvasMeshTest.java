@@ -107,7 +107,7 @@ class RemixEntitySubmitterCanvasMeshTest {
         assertEquals(BASE_PART + 1 + PATTERN_COUNT, source.getPartCount());
 
         RemixCapturingConsumer scratch = new RemixCapturingConsumer(null, false);
-        RemixEntitySubmitter.emitCanvasPatterns(scratch, source, FIRST_PATTERN, PATTERN_COUNT, LAYER);
+        RemixEntitySubmitter.emitCanvasPatterns(scratch, source, FIRST_PATTERN, PATTERN_COUNT, LAYER, 1f);
         scratch.finishOpenVertex();
         return scratch;
     }

@@ -52,10 +52,12 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private RenderLayerUtils.Topology topology = RenderLayerUtils.Topology.QUADS;
     /**
      * Whether the layer streams its vertex content afresh every frame. Resolved with
-     * the layer and carried to the CapturedLayer; the submitter bypasses the mesh pool
-     * on it.
+     * the layer; non-cuboid parts bypass the mesh pool when it is set.
      */
     private boolean transientGeometry;
+    private boolean usesColor = true;
+    /** Consumers and their wrappers remain on the capture's render thread. */
+    private final EntityRenderContext context = EntityRenderContext.get();
 
     // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC) ----
     private int vertexCount = 0;
@@ -77,6 +79,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private final int[] texcoordBoundsMin = new int[MAX_VERTICES];
     private final int[] texcoordBoundsMax = new int[MAX_VERTICES];
     private final boolean[] generatedNormals = new boolean[MAX_VERTICES];
+    private final boolean[] projectedVertices = new boolean[MAX_VERTICES];
 
     // ---- Per-vertex accumulation state ----
     private float vx, vy, vz;
@@ -86,10 +89,12 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private int vOverlay = OverlayTexture.DEFAULT_UV;
     private boolean vertexOpen = false;
     private boolean explicitNormal = false;
+    private boolean projectedVertex;
     private int currentVertexBoneIndex = -1;
 
     private final Matrix4f lastPose = new Matrix4f();
     private boolean lastPoseValid = false;
+    private int lastPoseBone = -1;
 
     // ---- Rigid part records (recording consumers only) ----
     // A part is a run of consecutive vertices sharing one pivot: whole quads in a
@@ -143,6 +148,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private final int[] partStart = new int[MAX_PARTS];
     private final int[] partVertexCount = new int[MAX_PARTS];
     private final int[] partBone = new int[MAX_PARTS];
+    private final boolean[] partProjected = new boolean[MAX_PARTS];
     private final long[] partHash = new long[MAX_PARTS];
     private int parts = 0;
     private boolean partOpen = false;
@@ -213,30 +219,25 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * this consumer saw, and returns the bone index the next vertex belongs to.
      */
     private int detectBoneChange(Matrix4f currentPose) {
-        EntityRenderContext ctx = EntityRenderContext.get();
         if (!lastPoseValid || !lastPose.equals(currentPose)) {
-            ctx.pushBone(currentPose);
+            lastPoseBone = context.pushBone(currentPose);
             lastPose.set(currentPose);
             lastPoseValid = true;
         }
-        return ctx.currentBoneIndex();
+        return lastPoseBone;
     }
 
     /**
-     * Registers a cuboid's pivot and keeps this consumer's own bone tracking in step.
-     *
-     * <p>The pivot must be pushed through here rather than straight into
-     * {@link EntityRenderContext}: {@link #detectBoneChange} skips its own push when a
-     * later vertex's pose equals {@link #lastPose}, so a pivot this consumer never saw
-     * would let unrelated quads inherit the cuboid's bone index and merge into its
-     * rigid part. One bone index belongs to one source part.
+     * Registers a cuboid's pivot and remembers this consumer's pose index.
+     * Each cuboid owns a new rigid part even when its pose equals the preceding one.
      *
      * @return the bone index assigned to this cuboid
      */
     public int beginCuboid(Matrix4f pose) {
-        int boneIndex = EntityRenderContext.get().pushBone(pose);
+        int boneIndex = context.pushBone(pose);
         lastPose.set(pose);
         lastPoseValid = true;
+        lastPoseBone = boneIndex;
         return boneIndex;
     }
 
@@ -347,12 +348,21 @@ public class RemixCapturingConsumer implements VertexConsumer {
         return this;
     }
 
+    /** OverlayVertexConsumer writes its generated UV after normal(), so keep this vertex open. */
+    public VertexConsumer projectedNormal(float x, float y, float z) {
+        vnx = x; vny = y; vnz = z;
+        explicitNormal = true;
+        projectedVertex = true;
+        return this;
+    }
+
     // ---- Vertex finalization ----
 
     private void beginVertex(int boneIndex) {
         flushOpenVertex();
         vertexOpen = true;
         explicitNormal = false;
+        projectedVertex = false;
         currentVertexBoneIndex = boneIndex;
         vnx = 0.0f; vny = 0.0f; vnz = 1.0f;
         vu = 0.0f; vv = 0.0f;
@@ -384,7 +394,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
         px[i] = vx; py[i] = vy; pz[i] = vz;
         this.nx[i] = vnx; this.ny[i] = vny; this.nz[i] = vnz;
         this.tu[i] = vu; this.tv[i] = vv;
-        colors[i] = applyEntityOverlay(vColor, vOverlay);
+        colors[i] = usesColor ? applyEntityOverlay(vColor, vOverlay) : 0xFFFFFFFF;
+        projectedVertices[i] = projectedVertex;
         boneIndices[i] = boneIndex;
         texcoordBoundsMin[i] = 0;
         texcoordBoundsMax[i] = 0;
@@ -624,6 +635,10 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private final float[] quadUnitBrightness = {1.0f, 1.0f, 1.0f, 1.0f};
     private final int[] quadLightScratch = new int[4];
     private final int[] quadColors = new int[4];
+    private final int[] cardCornerX = new int[4];
+    private final int[] cardCornerY = new int[4];
+    private final float[] cardCornerU = new float[4];
+    private final float[] cardCornerV = new float[4];
 
     /**
      * Allocation-free replacement for the vanilla default, which allocates two
@@ -711,7 +726,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         }
         boolean cardFace = isFullCardFace(vd, quad.getFace());
         int[] rects = cardFace
-                && EntityRenderContext.get().getBlockItemLayer() != BlockTextureManager.L_GLASS
+                && context.getBlockItemLayer() != BlockTextureManager.L_GLASS
                 ? cardFaceRects(quad.getSprite())
                 : null;
         if (rects != null) {
@@ -891,10 +906,10 @@ public class RemixCapturingConsumer implements VertexConsumer {
         int w = contents.getWidth();
         int h = contents.getHeight();
         float z = Float.intBitsToFloat(vd[2]);
-        int[] cornerX = new int[4];
-        int[] cornerY = new int[4];
-        float[] cornerU = new float[4];
-        float[] cornerV = new float[4];
+        int[] cornerX = cardCornerX;
+        int[] cornerY = cardCornerY;
+        float[] cornerU = cardCornerU;
+        float[] cornerV = cardCornerV;
         for (int v = 0; v < 4; v++) {
             int off = v * 8;
             int cx = Float.intBitsToFloat(vd[off]) == 0f ? 0 : 1;
@@ -961,7 +976,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
         px[i] = x; py[i] = y; pz[i] = z;
         this.nx[i] = nx; this.ny[i] = ny; this.nz[i] = nz;
         tu[i] = u; tv[i] = v;
-        colors[i] = color;
+        colors[i] = usesColor ? color : 0xFFFFFFFF;
+        projectedVertices[i] = false;
         boneIndices[i] = boneIndex;
         texcoordBoundsMin[i] = boundsMin;
         texcoordBoundsMax[i] = boundsMax;
@@ -986,6 +1002,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
         int start = lastVertexIndex - 3;
         int bone = boneIndices[start];
+        boolean projected = projectedVertices[start] || projectedVertices[start + 1]
+                || projectedVertices[start + 2] || projectedVertices[start + 3];
         if (boneIndices[start + 1] != bone
                 || boneIndices[start + 2] != bone
                 || boneIndices[start + 3] != bone) {
@@ -994,6 +1012,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         }
 
         if (partOpen && partBone[parts] == bone
+                && partProjected[parts] == projected
                 && partStart[parts] + partVertexCount[parts] == start) {
             partVertexCount[parts] += 4;
         } else {
@@ -1002,9 +1021,10 @@ public class RemixCapturingConsumer implements VertexConsumer {
             partStart[parts] = start;
             partVertexCount[parts] = 4;
             partBone[parts] = bone;
+            partProjected[parts] = projected;
             partSides[parts] = null;
             partSprite[parts] = null;
-            partBlockItemLayer[parts] = EntityRenderContext.get().getBlockItemLayer();
+            partBlockItemLayer[parts] = context.getBlockItemLayer();
             partCardFace[parts] = NO_VERTICES;
             lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
             partOpen = true;
@@ -1035,6 +1055,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         partStart[parts] = lastVertexIndex;
         partVertexCount[parts] = 1;
         partBone[parts] = bone;
+        partProjected[parts] = false;
         partSides[parts] = null;
         partSprite[parts] = null;
         // Streamed strip vertices never come from a baked item quad, so the
@@ -1186,6 +1207,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * reproduced by {@link #emitCuboidGeometry} when the cuboid is rebuilt.
      */
     public void acceptCuboid(ModelPart.Quad[] sides, int color, Matrix4f pose, Sprite sprite) {
+        flushOpenVertex();
         int boneIndex = beginCuboid(pose);
         closeOpenPart();
         if (parts >= MAX_PARTS) return;
@@ -1194,7 +1216,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         partBone[parts] = boneIndex;
         partSides[parts] = sides;
         partSprite[parts] = sprite;
-        partTint[parts] = color;
+        partTint[parts] = usesColor ? color : 0xFFFFFFFF;
         partHash[parts] = 0L;
         // A constant rather than a context sample, so a replayed cuboid, which has
         // no context to sample, agrees with the live one. Translucent and glass
@@ -1214,6 +1236,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * caller's own snapshotted transforms, not to this consumer's bone tracking.
      */
     public void replayCuboidPart(ModelPart.Quad[] sides, int color, int boneIndex, Sprite sprite) {
+        flushOpenVertex();
         closeOpenPart();
         if (parts >= MAX_PARTS) return;
         partStart[parts] = NO_VERTICES;
@@ -1221,7 +1244,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         partBone[parts] = boneIndex;
         partSides[parts] = sides;
         partSprite[parts] = sprite;
-        partTint[parts] = color;
+        partTint[parts] = usesColor ? color : 0xFFFFFFFF;
         partHash[parts] = 0L;
         partBlockItemLayer[parts] = EntityRenderContext.NO_BLOCK_ITEM;
         partCardFace[parts] = NO_VERTICES;
@@ -1272,7 +1295,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
     }
     /** True while this consumer is bound to the active Remix entity capture. */
     public boolean isRemixCaptureActive() {
-        return EntityRenderContext.get().isRemixPass();
+        return context.isRemixPass();
     }
 
     /**
@@ -1311,7 +1334,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         }
     }
 
-    /** Order in which the entity first requested this layer. Scales the shell offset. */
+    /** Order in which the entity first requested this layer. Outside glint, it also scales the shell offset. */
     public int getLayerIndex() { return layerIndex; }
 
     public void setLayerIndex(int layerIndex) { this.layerIndex = layerIndex; }
@@ -1324,7 +1347,12 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     public Identifier getTextureId() { return textureId; }
     public RenderLayerUtils.Topology getTopology() { return topology; }
-    public boolean isTransientGeometry() { return transientGeometry; }
+    /** Only this part's projected or streamed vertices bypass the rigid mesh pool. */
+    public boolean isPartTransientGeometry(int part) {
+        return partSides[part] == null && (transientGeometry || partProjected[part]);
+    }
+
+    void setUsesColor(boolean usesColor) { this.usesColor = usesColor; }
     public int getVertexCount() { return vertexCount; }
 
     public float[] getPx() { return px; }
@@ -1357,5 +1385,6 @@ public class RemixCapturingConsumer implements VertexConsumer {
         vertexCount = 0;
         resetOpenVertexState();
         lastPoseValid = false;
+        lastPoseBone = -1;
     }
 }

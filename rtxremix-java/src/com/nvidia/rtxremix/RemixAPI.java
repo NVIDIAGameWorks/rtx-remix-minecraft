@@ -53,7 +53,8 @@ public class RemixAPI {
     public static final int COPY_OUTPUT_OBJECT_PICKING  = 3;
     public static final int COPY_OUTPUT_GUI             = 4;
 
-    private RemixAPI() {}
+    /** Allows native-call test doubles; {@link #load(String)} initializes the runtime implementation. */
+    protected RemixAPI() {}
 
     public static long makeVersion(int major, int minor, int patch) {
         return ((long) major << 48) | ((long) minor << 16) | (long) patch;
@@ -330,60 +331,13 @@ public class RemixAPI {
             return;
         }
 
-        // First pass: count total patches across entries so we can allocate
-        // the flat per-patch arrays exactly once.
-        int entryCount = info.entries.length;
-        int totalPatches = 0;
-        for (int e = 0; e < entryCount; e++) {
-            TextureBatchEntry entry = info.entries[e];
-            if (entry == null || entry.patches == null || entry.patches.length == 0) {
-                throw new RemixException("UpdateTextureFromMemory entry is missing patches",
-                        ErrorCode.INVALID_ARGUMENTS);
-            }
-            totalPatches += entry.patches.length;
-        }
-        if (totalPatches == 0) {
-            return;
-        }
-
-        long[] handles = new long[entryCount];
-        int[] entryPatchCounts = new int[entryCount];
-        int[] dstXs = new int[totalPatches];
-        int[] dstYs = new int[totalPatches];
-        int[] widths = new int[totalPatches];
-        int[] heights = new int[totalPatches];
-        ByteBuffer[] pixelBuffers = new ByteBuffer[totalPatches];
-        int[] rowPitches = new int[totalPatches];
-        int[] formats = new int[totalPatches];
-
-        int flat = 0;
-        for (int e = 0; e < entryCount; e++) {
-            TextureBatchEntry entry = info.entries[e];
-            handles[e] = entry.handle;
-            entryPatchCounts[e] = entry.patches.length;
-            for (int p = 0; p < entry.patches.length; p++) {
-                TexturePatch patch = entry.patches[p];
-                if (patch == null || patch.pixelData == null) {
-                    throw new RemixException("UpdateTextureFromMemory patch is missing pixel data",
-                            ErrorCode.INVALID_ARGUMENTS);
-                }
-                dstXs[flat] = patch.dstX;
-                dstYs[flat] = patch.dstY;
-                widths[flat] = patch.width;
-                heights[flat] = patch.height;
-                pixelBuffers[flat] = patch.pixelData;
-                rowPitches[flat] = patch.rowPitch;
-                formats[flat] = patch.format;
-                flat++;
-            }
-        }
-
+        info.pack();
         int result = RemixBridge.updateTextureFromMemory(
-                handles, entryPatchCounts,
-                dstXs, dstYs,
-                widths, heights,
-                pixelBuffers,
-                rowPitches, formats);
+                info.handles, info.entryPatchCounts,
+                info.dstXs, info.dstYs,
+                info.widths, info.heights,
+                info.pixelBuffers,
+                info.rowPitches, info.formats);
         if (result != ErrorCode.SUCCESS) {
             throw new RemixException("UpdateTextureFromMemory failed", result);
         }

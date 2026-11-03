@@ -15,7 +15,6 @@ import static com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.PatternC
 import static com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.PatternCanvasRole.FRAME;
 import static com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.PatternCanvasRole.NONE;
 import static com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.PatternCanvasRole.PATTERN;
-import static com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.shellLayerFor;
 import static com.nvidia.rtxremix.minecraft.entity.RenderLayerUtils.SurfaceMode.CUTOUT;
 import static com.nvidia.rtxremix.minecraft.entity.RenderLayerUtils.SurfaceMode.OPAQUE;
 import static com.nvidia.rtxremix.minecraft.entity.RenderLayerUtils.SurfaceMode.TRANSLUCENT;
@@ -123,20 +122,6 @@ class RemixEntitySubmitterPatternCanvasTest {
         reader.beginLayer(BANNER_ATLAS, TRANSLUCENT);
         assertEquals(BASE, reader.next(flag, PATTERN_PASS));
         assertEquals(0, reader.depth());
-    }
-
-    @Test
-    void canvasCuboidsAddTheirDepthToTheShellLayer() {
-        // Base and patterns share one render layer, so the layer ordinal alone would
-        // bake them all at the same depth.
-        assertEquals(1, shellLayerFor(1, 0, BASE));
-        assertEquals(3, shellLayerFor(1, 2, PATTERN));
-    }
-
-    @Test
-    void everyOtherPartKeepsItsLayerOrdinal() {
-        assertEquals(1, shellLayerFor(1, 2, FRAME));
-        assertEquals(1, shellLayerFor(1, 2, NONE));
     }
 
     @Test
