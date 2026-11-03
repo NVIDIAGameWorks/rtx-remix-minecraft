@@ -56,7 +56,9 @@
 .PARAMETER PrismDataDir
     Override Prism Launcher's data directory (default: detected, or the
     managed portable install at %LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher).
-    Needed when Prism is on PATH but uses a non-standard data dir.
+    Needed when Prism is on PATH but uses a non-standard data dir, or for a
+    headless run on a Prism detection cannot find, such as a portable copy
+    kept anywhere. Interactively, the launcher question asks for that folder.
 
 .PARAMETER SkipHashCheck
     Skip SHA-256 verification on downloaded artifacts. Default is to verify.
@@ -139,6 +141,11 @@ $script:PRISM_INSTANCE_LEGACY_NAMES = @(
     'RTX Remix 1.21.1 (Fabric)'
 )
 $script:PRISM_PORTABLE_DIR   = Join-Path $env:LOCALAPPDATA 'RtxRemixMinecraft\PrismLauncher'
+# The data folder of a Prism named at the launcher question because detection
+# cannot find it: a portable copy can be kept anywhere. Initialize-Prism writes
+# it once the instance is in that Prism, and Get-LauncherState reads it, so
+# later runs detect that Prism too.
+$script:PRISM_DATA_DIR_RECORD = Join-Path $env:LOCALAPPDATA 'RtxRemixMinecraft\prism-data-dir.txt'
 $script:MANAGED_JDK_DIR      = Join-Path $env:LOCALAPPDATA 'RtxRemixMinecraft\jdk-21'
 $script:FABRIC_API_VERSION   = '0.116.10+1.21.1'
 $script:FABRIC_LOADER_VER    = '0.16.5'
@@ -394,17 +401,64 @@ function New-SessionTempPath {
 }
 
 # --- Prerequisite checks ---
-function Test-NotAdmin {
-    # Per-user paths resolve incorrectly under elevation (%APPDATA% points
-    # at SYSTEM's profile). Refuse to run.
-    $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        Write-Err 'Do not run the installer as Administrator.'
-        Write-Err 'Run it from a normal (non-elevated) command prompt so per-user paths resolve correctly.'
-        return $false
+function Test-Elevated {
+    # Whether this process holds administrator rights: run as administrator,
+    # or any program with User Account Control off or in the built-in
+    # Administrator account.
+    $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-DesktopUserSid {
+    # The SID of the account signed in to this Windows session: the owner of
+    # the session's explorer.exe. $null when no Explorer runs in the session
+    # or Windows does not say who owns it.
+    $sessionId = (Get-Process -Id $PID).SessionId
+    try {
+        $shell = Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe' AND SessionId = $sessionId" -ErrorAction Stop |
+            Select-Object -First 1
+        if ($shell) {
+            $owner = Invoke-CimMethod -InputObject $shell -MethodName GetOwnerSid -ErrorAction Stop
+            if ($owner.ReturnValue -eq 0) { return $owner.Sid }
+        }
+    } catch {
+        Write-Trace "Could not tell who owns this session's Explorer: $($_.Exception.Message)"
     }
-    return $true
+    return $null
+}
+
+function Test-ElevationAllowed {
+    <#
+      Administrator rights alone are harmless: the per-user folders the
+      installer writes to (%APPDATA%, %LOCALAPPDATA%, the launchers' data)
+      belong to the account it runs as, not to its rights. Some PCs give
+      every program those rights without asking, with User Account Control
+      off, in the built-in Administrator account, or when install.bat starts
+      from a program that is elevated itself, and the installer then still
+      runs as the account signed in to the desktop. It refuses administrator
+      rights as another account, such as an administrator's password typed
+      at a standard user's prompt, whose folders it would install into; and,
+      to be safe, administrator rights when it cannot tell whose desktop it
+      is on.
+    #>
+    if (-not (Test-Elevated)) { return $true }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $desktopSid = Get-DesktopUserSid
+    if ($desktopSid -eq $identity.User.Value) {
+        Write-Trace "Running with administrator rights as $($identity.Name), the account signed in to this desktop."
+        return $true
+    }
+    if ($desktopSid) {
+        $desktopName = try { ([Security.Principal.SecurityIdentifier]$desktopSid).Translate([Security.Principal.NTAccount]).Value } catch { $null }
+        $signedIn = if ($desktopName) { "$desktopName, the account signed in to this desktop" } else { 'the account signed in to this desktop' }
+        Write-Err "The installer is running as $($identity.Name), not as $signedIn."
+        Write-Err "It would install into that account's folders. Close this window and start install.bat by double-clicking it."
+    } else {
+        Write-Err 'The installer is running as administrator and cannot tell which account is signed in to this desktop.'
+        Write-Err 'Close this window and start install.bat by double-clicking it. If Windows starts every program as administrator, run this in Command Prompt instead:'
+        Write-Err "  runas /trustlevel:0x20000 `"$(Join-Path $script:SCRIPT_DIR 'install.bat')`""
+    }
+    return $false
 }
 
 function Test-InteractiveHost {
@@ -812,9 +866,29 @@ function Find-PrismExe {
     return $null
 }
 
+function Get-PrismDataDirForExe {
+    # Where the Prism at $Exe keeps its data: beside the program when
+    # portable.txt marks a portable copy, otherwise %APPDATA%\PrismLauncher.
+    param([string]$Exe)
+    $folder = Split-Path -Parent $Exe
+    if (Test-Path -LiteralPath (Join-Path $folder 'portable.txt')) { return $folder }
+    return Join-Path $env:APPDATA 'PrismLauncher'
+}
+
+function Read-PrismDataDirRecord {
+    # The data folder of the Prism named at an earlier launcher question that
+    # got the instance, or $null when none is recorded or that folder is gone.
+    if (-not (Test-Path -LiteralPath $script:PRISM_DATA_DIR_RECORD)) { return $null }
+    $dir = [System.IO.File]::ReadAllText($script:PRISM_DATA_DIR_RECORD).Trim()
+    # Not -PathType Container: that throws for a share that cannot be reached.
+    if ($dir -and (Test-Path -LiteralPath $dir)) { return $dir }
+    return $null
+}
+
 function Get-LauncherState {
-    # Detection order: explicit -PrismDataDir > our portable > Prism default
-    # data dir (%APPDATA%\PrismLauncher with or without cfg) > nothing.
+    # Detection order: explicit -PrismDataDir > the record of a Prism named at
+    # an earlier launcher question > our portable > an installed Prism's data
+    # dir (Get-PrismDataDirForExe) > nothing.
     # Not $prismDataDir: variable names are case-insensitive, so that would
     # shadow the -PrismDataDir parameter and the override would never be seen.
     $dataDir      = $null
@@ -831,15 +905,25 @@ function Get-LauncherState {
             Write-Warn "-PrismDataDir path does not exist: $PrismDataDir (ignoring; will fall back to auto-detection)"
         }
     }
+    if (-not $hasPrism) {
+        $recorded = Read-PrismDataDirRecord
+        if ($recorded) {
+            $hasPrism = $true
+            $dataDir = $recorded
+        }
+    }
     if (-not $hasPrism -and (Test-Path -LiteralPath (Join-Path $script:PRISM_PORTABLE_DIR 'prismlauncher.exe'))) {
         $hasPrism = $true
         $dataDir = $script:PRISM_PORTABLE_DIR
     }
-    if (-not $hasPrism -and (Find-PrismExe)) {
-        # The program decides, not %APPDATA%\PrismLauncher: Prism's uninstaller
-        # leaves that folder (and its cfg) behind, so data alone is not an install.
-        $hasPrism = $true
-        $dataDir = Join-Path $env:APPDATA 'PrismLauncher'
+    if (-not $hasPrism) {
+        $exe = Find-PrismExe
+        if ($exe) {
+            # The program decides, not %APPDATA%\PrismLauncher: Prism's uninstaller
+            # leaves that folder (and its cfg) behind, so data alone is not an install.
+            $hasPrism = $true
+            $dataDir = Get-PrismDataDirForExe -Exe $exe
+        }
     }
     $hasMs = Test-Path -LiteralPath (Join-Path $env:APPDATA '.minecraft\launcher_profiles.json')
     return [pscustomobject]@{
@@ -1343,6 +1427,57 @@ function Get-OtherLauncherLabel {
     return 'Prism'
 }
 
+# Offered by the launcher question whenever detection found no Prism.
+$script:OWN_PRISM_MENU_ITEM = [pscustomobject]@{ Label = 'Use a Prism I already have'; Hint = 'a portable copy or one not detected; asks for its folder'; Value = 'OwnPrism' }
+
+function Read-PrismDataDir {
+    <#
+      Asks where a Prism that detection missed is and returns its data
+      folder. Takes the folder holding prismlauncher.exe or a data folder
+      holding prismlauncher.cfg, or either file, quoted as Explorer's Copy as
+      path quotes it. Throws 'Cancelled by user.' on an empty answer.
+    #>
+    Write-Host ''
+    Write-Host '  Enter the folder holding your prismlauncher.exe, such as where you unpacked'
+    Write-Host '  a portable copy. A Prism data folder holding prismlauncher.cfg works too.'
+    while ($true) {
+        Write-Host ''
+        Write-Host -NoNewline '  Prism folder (Enter to cancel): '
+        $entered = "$(Read-Host)".Trim().Trim('"')
+        if (-not $entered) { throw 'Cancelled by user.' }
+        # Typed text can hold characters no path may, which Test-Path reports as
+        # an error. -PathType Container throws on those, and on an unreachable
+        # share, so a folder is whatever exists and is not a file.
+        $folder = $null
+        if (Test-Path -LiteralPath $entered -PathType Leaf -ErrorAction SilentlyContinue) {
+            $folder = Split-Path -Parent (Resolve-Path -LiteralPath $entered).ProviderPath
+        } elseif (Test-Path -LiteralPath $entered -ErrorAction SilentlyContinue) {
+            $folder = (Resolve-Path -LiteralPath $entered).ProviderPath
+        }
+        if ($folder) {
+            $cfg = Join-Path $folder 'prismlauncher.cfg'
+            if (Test-Path -LiteralPath $cfg) { return Split-Path -Parent $cfg }
+            $exe = Join-Path $folder 'prismlauncher.exe'
+            if (Test-Path -LiteralPath $exe) { return Get-PrismDataDirForExe -Exe $exe }
+        }
+        Write-Warn "No prismlauncher.exe or prismlauncher.cfg in $entered"
+    }
+}
+
+function Select-OwnPrism {
+    # The launcher question's answer for a Prism detection missed: this run
+    # uses the folder the player names. Initialize-Prism records it for later
+    # runs only once the instance is in that Prism, so naming the wrong one
+    # and then cancelling, or a failed install, leaves nothing behind.
+    param([pscustomobject]$State)
+    $dataDir = Read-PrismDataDir
+    $State.HasPrism = $true
+    $State.PrismDataDir = $dataDir
+    # Added, not set: not every caller's state has the property.
+    $State | Add-Member -NotePropertyName PrismNamed -NotePropertyValue $true -Force
+    return 'Prism'
+}
+
 function Select-Launcher {
     param(
         [pscustomobject]$State,
@@ -1385,8 +1520,10 @@ function Select-Launcher {
         $choice = Invoke-Menu -Title '  Microsoft launcher detected. Use it, or install Prism portable instead?' -Items @(
             [pscustomobject]@{ Label = 'Use Microsoft launcher';  Hint = 'already installed';                          Value = 'Microsoft' }
             [pscustomobject]@{ Label = 'Install Prism portable';  Hint = "recommended for modded setups (downloads $($script:MANAGED_JDK_DIR | Split-Path))"; Value = 'Prism' }
+            $script:OWN_PRISM_MENU_ITEM
         )
         if (-not $choice) { throw 'Cancelled by user.' }
+        if ($choice -eq 'OwnPrism') { return (Select-OwnPrism -State $State) }
         return $choice
     }
     if ($State.HasPrism -and $State.HasMs) {
@@ -1405,11 +1542,13 @@ function Select-Launcher {
     $choice = Invoke-Menu -Title '  No launcher detected. Install Prism or point at Microsoft?' -Items @(
         [pscustomobject]@{ Label = 'Install Prism (portable)'; Hint = 'recommended'; Value = 'Prism' }
         [pscustomobject]@{ Label = 'Use Microsoft Launcher';  Hint = 'must be installed manually first'; Value = 'Microsoft' }
+        $script:OWN_PRISM_MENU_ITEM
     )
     if (-not $choice) { throw 'Cancelled by user.' }
     if ($choice -eq 'Microsoft') {
         throw 'Microsoft launcher not detected. Install from https://www.minecraft.net/en-us/download and re-run.'
     }
+    if ($choice -eq 'OwnPrism') { return (Select-OwnPrism -State $State) }
     return 'Prism'
 }
 
@@ -2241,6 +2380,12 @@ function Initialize-Prism {
     if (-not $State.PrismDataDir) { $State.PrismDataDir = $script:PRISM_PORTABLE_DIR }
     $instanceDir = Join-Path $State.PrismDataDir "instances\$($script:PRISM_INSTANCE_NAME)"
     Initialize-PrismInstance -InstanceDir $instanceDir
+    # The record of a Prism named at the launcher question lives and dies with
+    # the instance: written once the instance is there, and removed with it by
+    # Remove-PrismInstance.
+    if ($State.PrismNamed -and (Test-Path -LiteralPath (Join-Path $instanceDir 'instance.cfg'))) {
+        Write-FileAtomic -Path $script:PRISM_DATA_DIR_RECORD -Content $State.PrismDataDir
+    }
     Write-Info 'Configuring Minecraft 1.21.1 launcher JVM defaults...'
     Sync-JvmArgs -For Prism -PrismCfg (Join-Path $instanceDir 'instance.cfg') -Unattended:$Unattended
     Set-PrismJavaPin -InstanceCfg (Join-Path $instanceDir 'instance.cfg')
@@ -2702,7 +2847,7 @@ function Invoke-InstallOrUpgrade {
     Start-StepCounter -Total 5
 
     Write-Step 'Checking prerequisites'
-    if (-not (Test-NotAdmin)) { return 1 }
+    if (-not (Test-ElevationAllowed)) { return 1 }
     $state = Get-LauncherState
     # Fetch the richer state too; lets Select-Launcher do the "auto-pick
     # the launcher with an existing install" bias on Upgrade/Repair.
@@ -2808,23 +2953,19 @@ function Start-InstalledLauncher {
     param([string]$Launcher, [string]$PrismDataDir)
     try {
         if ($Launcher -eq 'Prism') {
-            $portableExe = Join-Path $script:PRISM_PORTABLE_DIR 'prismlauncher.exe'
-            $exe = $null
-            if ((-not $PrismDataDir -or $PrismDataDir -eq $script:PRISM_PORTABLE_DIR) -and (Test-Path -LiteralPath $portableExe)) {
-                $exe = $portableExe
-            } else {
-                $exe = Find-PrismExe
-            }
+            # A portable copy, ours included, keeps prismlauncher.exe in its data folder.
+            $exe = Join-Path $(if ($PrismDataDir) { $PrismDataDir } else { $script:PRISM_PORTABLE_DIR }) 'prismlauncher.exe'
+            if (-not (Test-Path -LiteralPath $exe)) { $exe = Find-PrismExe }
             if (-not $exe) { Write-Warn 'Could not find prismlauncher.exe to start; open Prism Launcher yourself.'; return }
             Write-Info 'Starting Prism Launcher...'
             $startArgs = @{ FilePath = $exe; WorkingDirectory = (Split-Path -Parent $exe) }
-            # Only a data folder other than the portable copy's and Prism's own
-            # default needs --dir; default launches stay as they were. One string,
-            # because Start-Process does not quote array elements: a path with
-            # spaces is quoted, and trailing backslashes are doubled so they
-            # cannot escape the closing quote.
+            # Only a data folder other than the one Prism runs from (a portable
+            # copy's) and Prism's own default needs --dir; default launches stay
+            # as they were. One string, because Start-Process does not quote
+            # array elements: a path with spaces is quoted, and trailing
+            # backslashes are doubled so they cannot escape the closing quote.
             $dir = if ($PrismDataDir) { $PrismDataDir.TrimEnd('\') } else { $null }
-            if ($dir -and $dir -ne $script:PRISM_PORTABLE_DIR.TrimEnd('\') -and $dir -ne (Join-Path $env:APPDATA 'PrismLauncher')) {
+            if ($dir -and $dir -ne (Split-Path -Parent $exe) -and $dir -ne (Join-Path $env:APPDATA 'PrismLauncher')) {
                 $startArgs.ArgumentList = '--dir "{0}"' -f ($PrismDataDir -replace '(\\+)$', '$1$1')
             }
             # Prism attaches to the console of whatever starts it and writes its
@@ -3088,6 +3229,8 @@ function Remove-PrismInstance {
         Remove-Item -LiteralPath $path -Recurse -Force
         Write-Info "Removed Prism instance at $path"
     }
+    # The record only leads later runs to this instance.
+    if ((Read-PrismDataDirRecord) -eq $DataDir) { Remove-Item -LiteralPath $script:PRISM_DATA_DIR_RECORD -Force }
 }
 
 # --- Export ---

@@ -207,6 +207,7 @@ loom {
 // which is what gets installed at runtime on the user's machine). One literal
 // serves both the compile dependency and stageFabricApi.
 def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.116.10+1.21.1"
+def fabricLoaderVersion = "0.16.5"
 
 configurations {
     fabricTestRuntime {
@@ -218,14 +219,14 @@ dependencies {
     // Minecraft and Fabric
     minecraft "com.mojang:minecraft:1.21.1"
     mappings "net.fabricmc:yarn:1.21.1+build.3:v2"
-    def fabricLoader = modImplementation("net.fabricmc:fabric-loader:0.16.5")
+    modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
 
     modImplementation fabricApiCoordinate
 
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    fabricTestRuntime "net.fabricmc:fabric-loader-junit:${fabricLoader.version}"
+    fabricTestRuntime "net.fabricmc:fabric-loader-junit:${fabricLoaderVersion}"
 }
 
 def verifyTestMixinPackage = tasks.register('verifyTestMixinPackage') {
@@ -245,9 +246,11 @@ def verifyTestMixinPackage = tasks.register('verifyTestMixinPackage') {
     }
 }
 
+// Indigo needs Minecraft registries and Fabric's runtime access transformations.
+// Keep those separate from the plain JVM tests, which inspect untransformed classes.
 def fabricTest = tasks.register('fabricTest', Test) {
     group = 'verification'
-    description = 'Runs capture integration tests under Fabric Loader without launching Minecraft.'
+    description = 'Runs renderer integration tests under Fabric Loader.'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath - configurations.testRuntimeClasspath +
             configurations.fabricTestRuntime
