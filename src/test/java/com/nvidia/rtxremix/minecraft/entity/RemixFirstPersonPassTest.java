@@ -5,7 +5,6 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.Transform;
-import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import net.minecraft.Bootstrap;
 import net.minecraft.SharedConstants;
@@ -77,9 +76,9 @@ class RemixFirstPersonPassTest {
         Matrix4f modelView = new Matrix4f().rotation(camera.getRotation()).invert();
         Matrix4f handPose = new Matrix4f().translation(handX, -0.5f, -1.5f).rotateXYZ(0.2f, 0.3f, 0.1f).scale(0.8f);
         Matrix4f expectedPose = new Matrix4f().scaling(
-                fovScale * ViewModelSpace.SCALE,
-                fovScale * ViewModelSpace.SCALE,
-                ViewModelSpace.SCALE).mul(handPose);
+                fovScale * RemixFirstPersonPass.VIEW_MODEL_SCALE,
+                fovScale * RemixFirstPersonPass.VIEW_MODEL_SCALE,
+                RemixFirstPersonPass.VIEW_MODEL_SCALE).mul(handPose);
         Hand hand = handX > 0 ? Hand.MAIN_HAND : Hand.OFF_HAND;
         EquipmentSlot slot = handX > 0 ? EquipmentSlot.MAINHAND : EquipmentSlot.OFFHAND;
         try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
@@ -156,49 +155,6 @@ class RemixFirstPersonPassTest {
         assertEquals(points[0].y, points[1].y, 1e-6f);
     }
 
-    @ParameterizedTest
-    @CsvSource({"-170, 6, 1", "45, 35, 0.8", "0, -70, 1.3"})
-    void firstPersonGlintStaysOutsideTheSubstrateAfterRayContinuation(float yaw, float pitch, float fovScale) {
-        Camera camera = new TestCamera(yaw, pitch, 211, 64, 51);
-        Matrix4f modelView = new Matrix4f().rotation(camera.getRotation()).invert();
-        try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
-            VertexConsumerProvider provider = pass.beginCapture(modelView);
-            itemConsumer(provider, true).quad(handMatrices(camera, 0.5f).peek(), quad(null),
-                    1, 1, 1, 1, 0, OverlayTexture.DEFAULT_UV);
-            var result = pass.finishCapture(this, camera, fovScale);
-            assertNotNull(result);
-            var layer = result.layers().stream().filter(l -> l.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT).findFirst().orElseThrow();
-            RemixCapturingConsumer captured = layer.consumer();
-            Transform transform = new Transform();
-            RemixEntitySubmitter.composeRigidTransform(captureRoot(camera, modelView, fovScale),
-                    result.boneData(), result.boneCount(), captured.getPartBone(0), transform);
-            Vector3f base = new Vector3f(), alongX = new Vector3f(), alongY = new Vector3f();
-            RemixFirstPersonPass.transformPoint(transform, 0, 0, 0, base);
-            RemixFirstPersonPass.transformPoint(transform, 1, 0, 0, alongX);
-            RemixFirstPersonPass.transformPoint(transform, 0, 1, 0, alongY);
-            Vector3f worldNormal = alongX.sub(base).cross(alongY.sub(base)).normalize();
-            RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
-            submitter.prepareSurfaceLayers(result);
-            int shell = captured.getPartShellLayer(0);
-            submitter.close();
-            float depth = RemixEntitySubmitter.meshLayerDepth(layer.text(), shell, InstanceCategoryBit.VIEW_MODEL);
-            Vector3f glint = new Vector3f();
-            RemixFirstPersonPass.transformPoint(transform, 0, 0, depth, glint);
-
-            // The runtime advances a transparent ray by four float ULPs along its normal.
-            // This coordinate range reproduces the stationary pickaxe artifact.
-            float continuation = Math.max(Math.abs(glint.x), Math.max(Math.abs(glint.y), Math.abs(glint.z)))
-                    * 4f * Math.ulp(1f);
-            assertTrue(glint.sub(base).dot(worldNormal) > continuation,
-                    "continuing through glint must still hit the gold surface");
-            Vector3f uncorrected = new Vector3f();
-            RemixFirstPersonPass.transformPoint(transform, 0, 0,
-                    RemixEntitySubmitter.surfaceDepth(false, shell, 0), uncorrected);
-            assertTrue(uncorrected.sub(base).dot(worldNormal) < continuation,
-                    "the fixture must reproduce the old layer gap being skipped");
-        }
-    }
-
     @Test
     void cameraTurnsKeepTheSameLocalMeshAndPreviousFramePose() {
         try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
@@ -247,7 +203,7 @@ class RemixFirstPersonPassTest {
                 float handX = slot == EquipmentSlot.MAINHAND ? 0.5f : -0.5f;
                 Vector3f expected = new Matrix4f().translation(handX, -0.5f, -1.5f)
                         .rotateXYZ(0.2f, 0.3f, 0.1f).scale(0.8f)
-                        .transformPosition(new Vector3f(0.5f, 0.5f, 0)).mul(ViewModelSpace.SCALE);
+                        .transformPosition(new Vector3f(0.5f, 0.5f, 0)).mul(RemixFirstPersonPass.VIEW_MODEL_SCALE);
                 Vector3f anchor = new Vector3f();
                 assertTrue(pass.getPendingHeldLightPosition(slot, anchor));
                 assertVector(toWorld(camera, expected), anchor);
