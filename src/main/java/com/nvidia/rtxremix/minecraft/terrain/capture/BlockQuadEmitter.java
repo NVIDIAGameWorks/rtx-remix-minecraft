@@ -122,6 +122,8 @@ public final class BlockQuadEmitter {
     private static final byte FACE_CULL_UNKNOWN = 0;
     private static final byte FACE_CULL_HIDDEN = 1;
     private static final byte FACE_CULL_DRAWN = 2;
+    /** Vanilla culls the face only because an opaque block touches a see-through block: kept, see {@link ContactFaces}. */
+    private static final byte FACE_CULL_CONTACT = 3;
     private final long[] faceCullKeys = new long[1 << FACE_CULL_CACHE_BITS];
     private final byte[] faceCullResults = new byte[1 << FACE_CULL_CACHE_BITS];
 
@@ -460,6 +462,7 @@ public final class BlockQuadEmitter {
         float su1 = sprite != null ? sprite.getMaxU() : 1;
         float sv1 = sprite != null ? sprite.getMaxV() : 1;
 
+        insetContactFace(world, state, nx, ny, nz, lx, ly, lz);
         writer.stageQuad(tempPositions, tempUvs, nx, ny, nz, color,
                 spriteId, su0, sv0, su1, sv1, layerName);
     }
@@ -529,6 +532,7 @@ public final class BlockQuadEmitter {
                 tempPositions[v * 3 + 1] = fqPos[v * 3 + 1] + ly;
                 tempPositions[v * 3 + 2] = fqPos[v * 3 + 2] + lz;
             }
+            insetContactFace(world, state, fq.nx(), fq.ny(), fq.nz(), lx, ly, lz);
 
             writer.stageQuad(tempPositions, fq.uvs(), fq.nx(), fq.ny(), fq.nz(),
                     fq.color(), fq.spriteId(),
@@ -897,6 +901,15 @@ public final class BlockQuadEmitter {
     // --- Helpers ---
 
     private boolean shouldDrawBlockSide(BlockRenderView world, BlockState state, Direction side) {
+        return faceCull(world, state, side) != FACE_CULL_HIDDEN;
+    }
+
+    /** True for a face vanilla would cull but that is kept because it touches an opaque block. */
+    private boolean isContactFace(BlockRenderView world, BlockState state, Direction side) {
+        return faceCull(world, state, side) == FACE_CULL_CONTACT;
+    }
+
+    private byte faceCull(BlockRenderView world, BlockState state, Direction side) {
         int neighborX = mutablePos.getX() + side.getOffsetX();
         int neighborY = mutablePos.getY() + side.getOffsetY();
         int neighborZ = mutablePos.getZ() + side.getOffsetZ();
@@ -906,14 +919,50 @@ public final class BlockQuadEmitter {
                 | side.ordinal();
         int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> (64 - FACE_CULL_CACHE_BITS));
         if (faceCullKeys[slot] == key && faceCullResults[slot] != FACE_CULL_UNKNOWN) {
-            return faceCullResults[slot] == FACE_CULL_DRAWN;
+            return faceCullResults[slot];
         }
 
         neighborPos.set(neighborX, neighborY, neighborZ);
-        boolean drawn = Block.shouldDrawSide(state, world, mutablePos, side, neighborPos);
+        byte result;
+        if (Block.shouldDrawSide(state, world, mutablePos, side, neighborPos)) {
+            result = FACE_CULL_DRAWN;
+        } else if (keepsContactFace(world, state, neighbor)) {
+            result = FACE_CULL_CONTACT;
+        } else {
+            result = FACE_CULL_HIDDEN;
+        }
         faceCullKeys[slot] = key;
-        faceCullResults[slot] = drawn ? FACE_CULL_DRAWN : FACE_CULL_HIDDEN;
-        return drawn;
+        faceCullResults[slot] = result;
+        return result;
+    }
+
+    /**
+     * A see-through block (glass, stained glass, ice, slime, honey) keeps the face an opaque full block hides.
+     * Without it the block is an open shell: a ray that enters has no surface to leave through, so the
+     * medium is never closed and whatever the block rests on is not coloured by it. Reads {@code neighborPos}.
+     */
+    private boolean keepsContactFace(BlockRenderView world, BlockState state, BlockState neighbor) {
+        if (state.isOpaque() || !neighbor.isOpaque()) {
+            return false;
+        }
+        String layer = classifyBlockLayer(state);
+        return ("glass".equals(layer) || "translucent".equals(layer)) && neighbor.isOpaqueFullCube(world, neighborPos);
+    }
+
+    /** Moves a quad lying on a kept contact face a hair into its block, so it is not coplanar with the neighbour. */
+    private void insetContactFace(BlockRenderView world, BlockState state,
+                                  float nx, float ny, float nz, float lx, float ly, float lz) {
+        if (state.isOpaque()) {
+            return;
+        }
+        Direction face = Direction.getFacing(nx, ny, nz);
+        if (!isContactFace(world, state, face)) {
+            return;
+        }
+        int axis = face.getAxis().ordinal();
+        float blockMin = axis == 0 ? lx : axis == 1 ? ly : lz;
+        ContactFaces.insetOntoBlockFace(tempPositions, axis,
+                face.getOffsetX() + face.getOffsetY() + face.getOffsetZ(), blockMin, ContactFaces.INSET);
     }
 
     private BlockState getCachedBlockState(BlockView world, int worldX, int worldY, int worldZ) {
