@@ -29,7 +29,9 @@ import java.util.concurrent.ExecutionException;
  * position to project from, and reflections and refractions see the surface from
  * elsewhere, so Remix gets the same sum baked once into a texture laid over the
  * world instead: {@link #TILE_BLOCKS} blocks per repeat, the tile spanning
- * {@link #SCREENS_PER_TILE} of vanilla's screen widths.
+ * {@link #SCREENS_PER_TILE} of vanilla's screen widths. Fixed to the world, the
+ * pattern matches vanilla's scale at one distance only and does not stay put on
+ * screen.
  *
  * <p>For the tile to repeat without a seam, every layer must itself repeat a whole
  * number of times across it. Vanilla's layers are rotated by arbitrary angles, so
@@ -55,24 +57,52 @@ final class EndPortalSurface {
     /** {@code EndPortalLayers} in {@code rendertype_end_gateway.json}. */
     static final int GATEWAY_LAYERS = 16;
 
-    /** Blocks the tile spans along each axis before it repeats. */
-    static final int TILE_BLOCKS = 8;
+    /**
+     * Blocks the tile spans before it repeats, along both axes of a horizontal face and
+     * along the horizontal axis of a vertical one. Vanilla's pattern spans one screen
+     * width whatever the distance; at 24 blocks a screen it matches vanilla's speck
+     * sizes from about eight blocks away, where a block covers some 60 pixels of a
+     * 1600-pixel window. At 4 blocks a screen the specks came out a fraction of
+     * vanilla's size and blurred into noise.
+     */
+    static final int TILE_BLOCKS = 48;
+    /**
+     * Blocks the tile spans vertically on a vertical face. Vanilla stretches its pattern
+     * to the window, so on a 16:9 screen its specks are 16:9 wide; a vertical face's
+     * horizontal axis is the screen's for an upright camera, so it is squeezed to match.
+     * A horizontal face has no fixed screen axis and stays square, and looked at from
+     * above at an angle, perspective widens its specks much as vanilla's are.
+     */
+    static final int SIDE_TILE_HEIGHT_BLOCKS = TILE_BLOCKS * 9 / 16;
     /**
      * Vanilla screen widths the tile spans. Two keeps every layer's lattice rounding
      * under about ten percent of scale except one; at one the largest layers would
      * round to half or double their size.
      */
     static final int SCREENS_PER_TILE = 2;
-    /** Texels along each side of the tile, 128 per block. */
-    static final int TILE_SIZE = 1024;
     /**
-     * Emissive intensity of the surface material, whose albedo is black. Vanilla's
-     * portal reads as a dark field with bright specks wherever it is seen. At 3 the
-     * field at night is as dark against lit stone as vanilla's; at 10 it glows cyan,
-     * and at the entity default the whole surface turns pale blue. Under noon exposure
-     * the specks fade at any value that keeps the night field dark.
+     * Texels along each side of the tile, about 43 per block. Layer 1 repeats 8.5 times
+     * across the tile, 2176 of its texels, so a smaller tile drops more of its
+     * single-texel specks.
      */
-    static final float EMISSIVE_INTENSITY = 3.0f;
+    static final int TILE_SIZE = 2048;
+    /**
+     * Emissive intensity of the surface material, which reflects nothing. Vanilla's
+     * portal reads as a dark field with bright specks wherever it is seen, but here
+     * the scene's auto-exposure decides how bright emission looks. At 4 the field at
+     * night is about as dark as vanilla's; at 10 it glowed cyan, and at the entity
+     * default of 100 the whole surface turned pale blue. Under noon exposure the
+     * specks dim to near black at any value that keeps the night field dark.
+     */
+    static final float EMISSIVE_INTENSITY = 4.0f;
+    /**
+     * How far each baked texel is pulled toward its own grey. Vanilla's colours are
+     * display values; as emission they pass through Remix's exposure and tone mapping,
+     * after which the undesaturated field and its specks came out markedly more
+     * saturated than vanilla's (0.89 against 0.76 HSV saturation for the night field).
+     * A half matched vanilla's saturation but turned the brightest specks white.
+     */
+    static final float DESATURATION = 0.3f;
 
     private static final Identifier SKY_TEXTURE =
             Identifier.ofVanilla("textures/environment/end_sky.png");
@@ -131,9 +161,9 @@ final class EndPortalSurface {
     byte[] poll(Identifier surfaceId, ResourceManager resources) {
         CompletableFuture<byte[]> bake = bakes.computeIfAbsent(surfaceId, id -> {
             int layers = GATEWAY_TEXTURE_ID.equals(id) ? GATEWAY_LAYERS : PORTAL_LAYERS;
-            return CompletableFuture.supplyAsync(() -> bake(
+            return CompletableFuture.supplyAsync(() -> desaturate(bake(
                     read(resources, SKY_TEXTURE), read(resources, PORTAL_TEXTURE_SOURCE),
-                    layers, TILE_SIZE));
+                    layers, TILE_SIZE), DESATURATION));
         });
         if (!bake.isDone()) return null;
         bakes.remove(surfaceId);
@@ -233,6 +263,23 @@ final class EndPortalSurface {
             b += channel(texel, 0) * COLORS[i * 3 + 2];
         }
         return (unorm(r) << 16) | (unorm(g) << 8) | unorm(b);
+    }
+
+    /**
+     * Mixes each opaque RGBA texel toward its Rec. 709 luma by {@code amount}, in place,
+     * and returns the same array.
+     */
+    static byte[] desaturate(byte[] rgba, float amount) {
+        for (int o = 0; o < rgba.length; o += 4) {
+            int r = rgba[o] & 0xFF;
+            int g = rgba[o + 1] & 0xFF;
+            int b = rgba[o + 2] & 0xFF;
+            float luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+            rgba[o] = (byte) Math.round(r + (luma - r) * amount);
+            rgba[o + 1] = (byte) Math.round(g + (luma - g) * amount);
+            rgba[o + 2] = (byte) Math.round(b + (luma - b) * amount);
+        }
+        return rgba;
     }
 
     private static int sample(Image image, double u, double v) {

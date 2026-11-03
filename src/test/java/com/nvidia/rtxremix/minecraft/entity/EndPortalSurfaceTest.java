@@ -65,6 +65,17 @@ class EndPortalSurfaceTest {
     }
 
     @Test
+    void desaturatePullsEachTexelTowardItsLumaAndKeepsAlpha() {
+        // Luma of (0, 100, 200) is 0.7152 * 100 + 0.0722 * 200 = 85.96.
+        byte[] rgba = {0, 100, (byte) 200, (byte) 0xFF};
+        EndPortalSurface.desaturate(rgba, 0.5f);
+        assertEquals(43, rgba[0] & 0xFF);
+        assertEquals(93, rgba[1] & 0xFF);
+        assertEquals(143, rgba[2] & 0xFF);
+        assertEquals(255, rgba[3] & 0xFF);
+    }
+
+    @Test
     void bakeRepeatsWithoutASeam() {
         // A texture with a distinct value in every texel: a layer that does not repeat
         // a whole number of times across the tile shades a point and the same point

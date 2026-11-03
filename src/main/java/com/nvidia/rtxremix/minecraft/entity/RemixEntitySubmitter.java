@@ -616,6 +616,8 @@ public class RemixEntitySubmitter {
         float emissiveIntensity = EMISSIVE_INTENSITY;
         /** Roughness when no LabPBR texture supplies one. */
         float roughnessConstant = 0.7f;
+        /** Metalness when no LabPBR texture supplies one. */
+        float metallicConstant = 0f;
         boolean hasPBR;
         final List<RemixTexture> ownedTextures = new ArrayList<>();
 
@@ -2174,9 +2176,10 @@ public class RemixEntitySubmitter {
      * Texture set for the end portal and gateway surfaces, from the tile
      * {@link EndPortalSurface} bakes. Vanilla draws those surfaces unlit, so the tile
      * is emission only and the albedo a single black texel, which reflects no diffuse
-     * light. A black surface still has a dielectric's specular reflection; full
-     * roughness spreads it, where the default mirrored the noon sky as a grey sheen.
-     * Returns null while the bake runs, so the caller retries next frame.
+     * light. A black dielectric still reflects a few percent specularly, which read as
+     * a grey sheen under the noon sky, so the surface is a black metal, whose specular
+     * colour is its albedo, at full roughness. Returns null while the bake runs, so the
+     * caller retries next frame.
      */
     private EntityTextureSet createEndPortalTextureSet(Identifier textureId) {
         var client = MinecraftClient.getInstance();
@@ -2209,6 +2212,7 @@ public class RemixEntitySubmitter {
         }
         textures.emissiveIntensity = EndPortalSurface.EMISSIVE_INTENSITY;
         textures.roughnessConstant = 1.0f;
+        textures.metallicConstant = 1.0f;
         return textures;
     }
 
@@ -2642,7 +2646,7 @@ public class RemixEntitySubmitter {
         MaterialInfoOpaqueEXT.Builder opaque = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f)
                 .roughnessConstant(textures.roughness != null ? 1f : textures.roughnessConstant)
-                .metallicConstant(textures.metallic != null ? 1f : 0f);
+                .metallicConstant(textures.metallic != null ? 1f : textures.metallicConstant);
 
         switch (key.surfaceMode()) {
             case OPAQUE -> { }

@@ -315,8 +315,8 @@ patterns, and beds, are re-stitched with their sidecars, so a pattern with an
 The end portal and end gateway surfaces are baked from
 `textures/entity/end_portal.png` and `textures/environment/end_sky.png`,
 layered the way vanilla's shader layers them, so repainting either texture
-changes both surfaces. They take no sidecars, have a black albedo, and emit at
-an intensity of 3 (`EndPortalSurface`).
+changes both surfaces. They take no sidecars, reflect no light, and emit at an
+intensity of 4 (`EndPortalSurface`).
 
 Dropped and held block items borrow the block atlas and its materials, so they
 need nothing of their own. Downloaded player skins have no sidecar path of

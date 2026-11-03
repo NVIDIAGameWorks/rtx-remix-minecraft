@@ -145,7 +145,8 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
             consumer = new RemixCapturingConsumer(textureId, true, topology, transientGeometry);
         }
         if (EndPortalSurface.isSurfaceTexture(textureId)) {
-            consumer.projectTexcoords(EndPortalSurface.TILE_BLOCKS, originX, originY, originZ);
+            consumer.projectTexcoords(EndPortalSurface.TILE_BLOCKS,
+                    EndPortalSurface.SIDE_TILE_HEIGHT_BLOCKS, originX, originY, originZ);
         }
         consumer.setLayerIndex(activeCount);
         if (activeCount == activeLayers.length) {

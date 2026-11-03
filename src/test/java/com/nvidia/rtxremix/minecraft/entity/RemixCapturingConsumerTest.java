@@ -69,7 +69,7 @@ class RemixCapturingConsumerTest {
     void projectedTexcoordsFollowEachQuadsPlaneAndContinueAcrossBlocks() {
         EntityRenderContext.get().begin(true);
         RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
-        consumer.projectTexcoords(8, -1, 64, 9);
+        consumer.projectTexcoords(8, 4, -1, 64, 9);
         Matrix4f pose = new Matrix4f();
 
         // The end portal's top face, then an end gateway's north face: position only,
@@ -84,26 +84,64 @@ class RemixCapturingConsumerTest {
         }
         consumer.finishOpenVertex();
 
-        // X -1 sits at 7 within an 8-block tile and Z 9 at 1; the horizontal face
-        // projects X and Z, the north face X and Y.
+        // The top face runs U east from X -1, at 7 of an 8-block tile, and V north from
+        // Z 9, so -10 to -9 and 6 to 7 of 8. The north face runs U west, -X from 1 to 0,
+        // and V up Y 64, at 0 of the 4-block side height.
         float[] tu = consumer.getTu();
         float[] tv = consumer.getTv();
         assertEquals(7.0f / 8, tu[0]);
-        assertEquals(2.0f / 8, tv[0]);
+        assertEquals(6.0f / 8, tv[0]);
         assertEquals(1.0f, tu[1]);
-        assertEquals(1.0f / 8, tv[2]);
-        assertEquals(1.0f, tu[4]);
-        assertEquals(1.0f / 8, tv[4]);
+        assertEquals(7.0f / 8, tv[2]);
+        assertEquals(0.0f, tu[4]);
+        assertEquals(1.0f / 4, tv[4]);
         assertEquals(0.0f, tv[5]);
-        assertEquals(7.0f / 8, tu[6]);
+        assertEquals(1.0f / 8, tu[6]);
+    }
+
+    @Test
+    void cubeSidesKeepOneHandednessRoundTheirEdges() {
+        EntityRenderContext.get().begin(true);
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        consumer.projectTexcoords(8, 8, 0, 0, 0);
+        Matrix4f pose = new Matrix4f();
+
+        // An end gateway's four sides, each starting with the edge that runs rightwards
+        // across it seen from outside: south, east, north, west, anticlockwise seen from
+        // above.
+        float[][] quads = {
+                {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1},
+                {1, 0, 1}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1},
+                {1, 0, 0}, {0, 0, 0}, {0, 1, 0}, {1, 1, 0},
+                {0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}
+        };
+        for (float[] p : quads) {
+            consumer.vertex(pose, p[0], p[1], p[2]);
+        }
+        consumer.finishOpenVertex();
+
+        // Walking anticlockwise is walking rightwards across each face seen from
+        // outside, so U grows along every face rather than turning back at an edge,
+        // which is what a pattern mirrored across the edge would do.
+        float[] tu = consumer.getTu();
+        for (int face = 0; face < 4; face++) {
+            int first = face * 4;
+            assertTrue(tu[first + 1] > tu[first], "face " + face);
+        }
     }
 
     @Test
     void projectedCoordinateOfOneBlocksFarEdgeIsTheNextBlocksNearEdge() {
         for (int origin = -9; origin < 9; origin++) {
-            if (Math.floorMod(origin, 8) == 7) continue;
-            assertEquals(RemixCapturingConsumer.projectedCoordinate(origin, 1.0f, 8),
-                    RemixCapturingConsumer.projectedCoordinate(origin + 1, 0.0f, 8), 1e-6f);
+            if (Math.floorMod(origin, 8) != 7) {
+                assertEquals(RemixCapturingConsumer.projectedCoordinate(origin, 1.0f, 8, true),
+                        RemixCapturingConsumer.projectedCoordinate(origin + 1, 0.0f, 8, true), 1e-6f);
+            }
+            // Against the axis too, except where the descending coordinate wraps.
+            if (Math.floorMod(-origin - 2, 8) != 7) {
+                assertEquals(RemixCapturingConsumer.projectedCoordinate(origin, 1.0f, 8, false),
+                        RemixCapturingConsumer.projectedCoordinate(origin + 1, 0.0f, 8, false), 1e-6f);
+            }
         }
     }
 
@@ -111,7 +149,7 @@ class RemixCapturingConsumerTest {
     void reinitStopsProjectingTexcoords() {
         EntityRenderContext.get().begin(true);
         RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
-        consumer.projectTexcoords(8, 3, 0, 3);
+        consumer.projectTexcoords(8, 8, 3, 0, 3);
         consumer.clear();
         consumer.reinit(null, true, RenderLayerUtils.Topology.QUADS, false);
         Matrix4f pose = new Matrix4f();
