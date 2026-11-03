@@ -13,8 +13,10 @@ also part of every mod file name.
 
 ### Fixed
 
-- Blocks that a mod draws through Fabric's renderer API keep their colour tint
-  with path tracing on, such as the runes on Twilight Forest's castle doors.
+- An upgrade now delivers changed lighting profile defaults to existing
+  installs. A shipped profile under `rtx-remix/mods/minecraft-logic/` that
+  still holds an earlier release's default is updated on the next launch;
+  profiles you edited are kept as before.
 - The installer runs on PCs that give every program administrator rights, such
   as with User Account Control turned off or in the built-in Administrator
   account. It still refuses administrator rights as an account other than the
@@ -24,6 +26,8 @@ also part of every mod file name.
   and later runs remember it. A portable Prism the installer does detect, on
   the PATH or behind a Start menu shortcut, now gets the instance in its own
   folder rather than in `%APPDATA%\PrismLauncher`.
+- Blocks that a mod draws through Fabric's renderer API keep their colour tint
+  with path tracing on, such as the runes on Twilight Forest's castle doors.
 
 ## 0.1.0 - 2026-10-23
 
