@@ -800,7 +800,7 @@ Java_com_nvidia_rtxremix_RemixBridge_setCrashDumpDetail(JNIEnv*, jclass, jboolea
 
 JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_startup(JNIEnv*, jclass,
-    jlong hwnd, jboolean disableSrgb, jboolean forceNoSwapchain,
+    jlong hwnd, jboolean disableSrgb, jint windowOwnership,
     jboolean editorMode, jboolean combineGui, jboolean interopImage)
 {
     if (!g_inited || !g_remix.Startup) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
@@ -808,7 +808,7 @@ Java_com_nvidia_rtxremix_RemixBridge_startup(JNIEnv*, jclass,
     info.sType                         = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
     info.hwnd                          = (HWND)(uintptr_t)hwnd;
     info.disableSrgbConversionForOutput = disableSrgb;
-    info.forceNoVkSwapchain            = forceNoSwapchain;
+    info.windowOwnership               = (remixapi_WindowOwnership)windowOwnership;
     info.editorModeEnabled             = editorMode;
     info.combineGuiInFinalColor        = combineGui;
     info.interopImage                  = interopImage;
@@ -853,9 +853,6 @@ Java_com_nvidia_rtxremix_RemixBridge_present(JNIEnv*, jclass,
     jint disableCpuWaitForExternalSemaphores)
 {
     if (!g_inited || !g_remix.Present) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    if (hwndOverride == 0) {
-        return (jint)remixCall([&] { return g_remix.Present(nullptr); });
-    }
     remixapi_PresentInfo info = {};
     info.sType        = REMIXAPI_STRUCT_TYPE_PRESENT_INFO;
     info.hwndOverride = (HWND)(uintptr_t)hwndOverride;

@@ -36,6 +36,7 @@ public final class GlInterop {
     private int vkDoneSemaphore;
     private int clientDoneSemaphore;
     private long clientDoneSemaphoreValue;
+    private long lastWaitedVkDoneSemaphoreValue = -1;
     private int[] barrierTextures = new int[0];
     private int[] barrierLayouts = new int[0];
 
@@ -89,11 +90,18 @@ public final class GlInterop {
                 "depth");
         if (recreated) {
             rebuildBarrierArrays();
+            lastWaitedVkDoneSemaphoreValue = -1;
         }
         return recreated;
     }
 
     public void waitForVk(InteropInfo info) {
+        if (info.dxvkDoneSemaphore_ValueToWait == lastWaitedVkDoneSemaphoreValue) {
+            return;
+        }
+        if (info.dxvkDoneSemaphore_ValueToWait < lastWaitedVkDoneSemaphoreValue) {
+            throw new IllegalStateException("Vulkan-done semaphore value moved backwards");
+        }
         drainStaleGlErrors();
         int result = RemixBridge.openglSemaphoreParameterui64vEXT(
                 vkDoneSemaphore,
@@ -106,6 +114,7 @@ public final class GlInterop {
         glWaitSemaphoreEXT(
                 vkDoneSemaphore, NO_BUFFERS, barrierTextures, barrierLayouts);
         checkGlError("glWaitSemaphoreEXT");
+        lastWaitedVkDoneSemaphoreValue = info.dxvkDoneSemaphore_ValueToWait;
     }
 
     public void signalDone() {
@@ -179,6 +188,7 @@ public final class GlInterop {
         }
         barrierTextures = new int[0];
         barrierLayouts = new int[0];
+        lastWaitedVkDoneSemaphoreValue = -1;
         LOGGER.info("GlInterop: destroyed");
     }
 

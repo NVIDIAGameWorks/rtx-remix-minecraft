@@ -10,7 +10,7 @@ package com.nvidia.rtxremix;
 public class StartupInfo {
     public long hwnd;
     public boolean disableSrgbConversionForOutput;
-    public boolean forceNoVkSwapchain;
+    public WindowOwnership windowOwnership = WindowOwnership.HOST_WINDOW;
     public boolean editorModeEnabled;
     /** If true, GUI is composited into FINAL_COLOR output (useful for debugging) */
     public boolean combineGuiInFinalColor;
@@ -21,7 +21,7 @@ public class StartupInfo {
     public static class Builder {
         private long hwnd;
         private boolean disableSrgbConversionForOutput;
-        private boolean forceNoVkSwapchain;
+        private WindowOwnership windowOwnership = WindowOwnership.HOST_WINDOW;
         private boolean editorModeEnabled;
         private boolean combineGuiInFinalColor;
         private boolean interopImage = false;
@@ -36,8 +36,8 @@ public class StartupInfo {
             return this;
         }
 
-        public Builder forceNoVkSwapchain(boolean value) {
-            this.forceNoVkSwapchain = value;
+        public Builder windowOwnership(WindowOwnership value) {
+            this.windowOwnership = value;
             return this;
         }
 
@@ -60,7 +60,7 @@ public class StartupInfo {
             StartupInfo info = new StartupInfo();
             info.hwnd = this.hwnd;
             info.disableSrgbConversionForOutput = this.disableSrgbConversionForOutput;
-            info.forceNoVkSwapchain = this.forceNoVkSwapchain;
+            info.windowOwnership = this.windowOwnership;
             info.editorModeEnabled = this.editorModeEnabled;
             info.combineGuiInFinalColor = this.combineGuiInFinalColor;
             info.interopImage = this.interopImage;

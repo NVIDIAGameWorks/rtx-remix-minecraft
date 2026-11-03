@@ -70,7 +70,7 @@
 
 #define REMIXAPI_VERSION_MAJOR 0
 #define REMIXAPI_VERSION_MINOR 16
-#define REMIXAPI_VERSION_PATCH 0
+#define REMIXAPI_VERSION_PATCH 1
 
 
 // External
@@ -188,6 +188,15 @@ extern "C" {
 
   typedef uint32_t remixapi_Bool;
 
+  typedef enum remixapi_WindowOwnership {
+    // Remix presents directly to the application-owned StartupInfo::hwnd.
+    REMIXAPI_WINDOW_OWNERSHIP_HOST_WINDOW = 0,
+    // The application owns presentation; Remix exposes output through dxvk_GetExternalSwapchain.
+    REMIXAPI_WINDOW_OWNERSHIP_EXTERNAL = 1,
+    // Remix owns and presents through a child HWND while StartupInfo::hwnd remains the input host.
+    REMIXAPI_WINDOW_OWNERSHIP_REMIX_OWNED_CHILD_WINDOW = 2,
+  } remixapi_WindowOwnership;
+
   typedef struct remixapi_Rect2D {
     int32_t left;
     int32_t top;
@@ -233,11 +242,10 @@ extern "C" {
     void*               pNext;
     remixapi_HWND       hwnd;
     remixapi_Bool       disableSrgbConversionForOutput;
-    // If true, 'dxvk_GetExternalSwapchain' can be used to retrieve a raw VkImage,
-    // so the application can present it, for example by using OpenGL interop:
-    // converting VkImage to OpenGL, and presenting it via OpenGL.
-    // Default: false. Use VkSwapchainKHR to present frame into HWND.
-    remixapi_Bool       forceNoVkSwapchain;
+    // Selects ownership of the output window and presentation path. Defaults to HOST_WINDOW.
+    // EXTERNAL enables dxvk_GetExternalSwapchain for client-owned presentation.
+    // REMIX_OWNED_CHILD_WINDOW keeps hwnd as the input host and creates a child HWND for Vulkan WSI.
+    remixapi_WindowOwnership windowOwnership;
     remixapi_Bool       editorModeEnabled;
     // With this disabled, the user must fetch the GUI buffer using 
     // the, remixapi_dxvk_CopyRenderingOutputType, api with the, 

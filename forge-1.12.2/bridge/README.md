@@ -55,7 +55,7 @@ attachment.
 `acquire` waits without replacing client color. `releaseAcquired` releases an
 aborted frame without copying and is idempotent. `copyToFramebuffer` combines
 acquire and release for clients with their own swapchain; use
-`forceNoVkSwapchain=true` and `skipVulkanSwapchain=1` in that mode. It cannot
+`WindowOwnership.EXTERNAL` and `skipVulkanSwapchain=1` in that mode. It cannot
 include a runtime menu drawn during presentation. The pinned runtime does not
 resize its interop images with the window in this mode; use runtime-owned
 presentation for resize support.
