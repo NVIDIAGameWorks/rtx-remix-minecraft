@@ -870,6 +870,8 @@ def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gr
         "build",
         "-x",
         "test",
+        "-x",
+        "fabricTest",
         "stageFabricApi",
         "-Parch=arm64",
         "--console=plain",

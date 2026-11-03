@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderPhase;
 import net.minecraft.client.render.VertexFormatElement;
@@ -157,8 +156,9 @@ final class RenderLayerUtils {
      * (the lead between a mob and its holder), and the beacon beam, whose texture
      * coordinate scrolls with world time. Everything else it draws is rigid: a
      * model part or baked quad whose pose changes while its local vertices do not.
-     * Consumers additionally classify individual fully posed parts as transient when
-     * a wrapper has removed their local pose, as projected glint does.
+     * Consumers additionally mark projected glint parts as transient: their generated
+     * texture coordinates depend on the current pose. Raw positions alone do not
+     * imply changing geometry.
      */
     static boolean isStreamedPerFrame(RenderLayer layer) {
         return streamedPerFrameCache.computeIfAbsent(layer, RenderLayerUtils::isStreamedPerFrameUncached);
@@ -174,15 +174,21 @@ final class RenderLayerUtils {
         return topology == Topology.TRIANGLE_STRIP || beaconBeamProgram;
     }
 
-    /** Immutable phase and glyph facts shared by captures of the same layer. */
-    record LayerState(SurfaceMode surfaceMode, boolean text) {}
+    /** Immutable phase facts shared by captures of the same layer. */
+    record LayerState(SurfaceMode surfaceMode, boolean text, int identity) {}
+    private static int nextLayerIdentity;
 
     private static final Map<RenderLayer, LayerState> layerStates =
             Collections.synchronizedMap(new WeakHashMap<>());
 
     static LayerState state(RenderLayer layer) {
         return layerStates.computeIfAbsent(layer, key -> new LayerState(surfaceModeUncached(key),
-                extractTexture(key).map(DynamicTextureCache::isGlyphPage).orElse(false)));
+                key instanceof RenderLayer.MultiPhase multiPhase && isTextProgram(multiPhase.getPhases()),
+                nextLayerIdentity++));
+    }
+
+    private static boolean isTextProgram(RenderLayer.MultiPhaseParameters phases) {
+        return phases.program == RenderPhase.TEXT_PROGRAM || phases.program == RenderPhase.TEXT_INTENSITY_PROGRAM;
     }
 
     static void clearCachedState() { layerStates.clear(); }
@@ -197,10 +203,6 @@ final class RenderLayerUtils {
      * transparent, so alpha blending them over the surface is the closest surface
      * behaviour and it is classified as translucent.
      */
-    static SurfaceMode surfaceMode(RenderLayer layer) {
-        return state(layer).surfaceMode();
-    }
-
     private static SurfaceMode surfaceModeUncached(RenderLayer layer) {
         if (!(layer instanceof RenderLayer.MultiPhase multiPhase)) {
             return SurfaceMode.CUTOUT;
@@ -215,8 +217,7 @@ final class RenderLayerUtils {
                 phases.transparency == RenderPhase.TRANSLUCENT_TRANSPARENCY
                         || phases.transparency == RenderPhase.CRUMBLING_TRANSPARENCY,
                 phases.program == RenderPhase.ENTITY_SOLID_PROGRAM,
-                phases.program == RenderPhase.TEXT_PROGRAM
-                        || phases.program == RenderPhase.TEXT_INTENSITY_PROGRAM);
+                isTextProgram(phases));
     }
 
     /**

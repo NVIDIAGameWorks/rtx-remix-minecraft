@@ -107,7 +107,7 @@ public class RemixEntitySubmitter {
 
     /**
      * Block units each face of a part stands off the shell layer below it; see
-     * {@link #shellLayerFor} and {@link #shellOffsets}.
+     * {@link #shellOffsets}.
      */
     static final float SHELL_OFFSET = 0.0005f;
     /**
@@ -124,6 +124,9 @@ public class RemixEntitySubmitter {
             TEXT_QUAD_STEP * (RemixCapturingConsumer.MAX_VERTICES / 4);
     private static final float POM_DISPLACE_IN = 0.25f;
     private static final float EMISSIVE_INTENSITY = 100.0f;
+    /** Matches Remix's unlit-albedo baseline rather than the luminous-entity intensity. */
+    private static final float GLINT_INTENSITY = 2.0f;
+    private int glintStrength = 255;
     private static final float COPPER_BEACON_LENS_EMISSION_SCALE = 100.0f;
     private static final float THIN_SSS_MEASUREMENT_DISTANCE = 0.75f;
     private static final int DEFAULT_CUTOUT_ALPHA_REFERENCE = 1;
@@ -218,15 +221,20 @@ public class RemixEntitySubmitter {
      * <p>{@code surfaceMode} is a component because the material is baked into
      * the pooled mesh and atlasSurfaceMode narrows item parts one at a time, so
      * two parts of one layer can share a geometry hash and need different materials.
+     * The per-quad step distinguishes text meshes even when the layer depth is zero.
      */
     record HashedMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                          RenderLayerUtils.Topology topology,
-                         float shellDepth, int vertexCount, long geometryHash)
+                         float shellDepth, int vertexCount, long geometryHash, float quadStep)
             implements RigidMeshKey {
+        HashedMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode, RenderLayerUtils.Topology topology,
+                      float shellDepth, int vertexCount, long geometryHash) {
+            this(texId, surfaceMode, topology, shellDepth, vertexCount, geometryHash, 0);
+        }
         @Override
         public int hashCode() {
-            return RigidMeshLookupKey.hashedHash(
-                    texId, surfaceMode, topology, shellDepth, vertexCount, geometryHash);
+            return 31 * RigidMeshLookupKey.hashedHash(
+                    texId, surfaceMode, topology, shellDepth, vertexCount, geometryHash) + Float.hashCode(quadStep);
         }
     }
 
@@ -262,8 +270,12 @@ public class RemixEntitySubmitter {
      * per-instance update instead of a native mesh create per part per frame.
      */
     record CuboidMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
-                         float shellDepth, ModelPart.Quad[] sides, Sprite sprite)
+                         float shellDepth, ModelPart.Quad[] sides, Sprite sprite, float quadStep)
             implements RigidMeshKey {
+        CuboidMeshKey(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
+                      float shellDepth, ModelPart.Quad[] sides, Sprite sprite) {
+            this(texId, surfaceMode, shellDepth, sides, sprite, 0);
+        }
         @Override
         public boolean equals(Object other) {
             return other instanceof CuboidMeshKey key
@@ -271,12 +283,14 @@ public class RemixEntitySubmitter {
                     && surfaceMode == key.surfaceMode
                     && Float.compare(shellDepth, key.shellDepth) == 0
                     && sides == key.sides
-                    && sprite == key.sprite;
+                    && sprite == key.sprite
+                    && Float.compare(quadStep, key.quadStep) == 0;
         }
 
         @Override
         public int hashCode() {
-            return RigidMeshLookupKey.cuboidHash(texId, surfaceMode, shellDepth, sides, sprite);
+            return 31 * RigidMeshLookupKey.cuboidHash(texId, surfaceMode, shellDepth, sides, sprite)
+                    + Float.hashCode(quadStep);
         }
     }
 
@@ -337,6 +351,7 @@ public class RemixEntitySubmitter {
         private Identifier texId;
         private RenderLayerUtils.SurfaceMode surfaceMode;
         private float shellDepth;
+        private float quadStep;
         private RenderLayerUtils.Topology topology;
         private int vertexCount;
         private long geometryHash;
@@ -356,6 +371,12 @@ public class RemixEntitySubmitter {
 
         void setLayer(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
                       float shellDepth) {
+            setLayer(texId, surfaceMode, shellDepth, 0);
+        }
+
+        void setLayer(Identifier texId, RenderLayerUtils.SurfaceMode surfaceMode,
+                      float shellDepth, float quadStep) {
+            this.quadStep = quadStep;
             this.texId = texId;
             this.surfaceMode = surfaceMode;
             this.shellDepth = shellDepth;
@@ -368,7 +389,7 @@ public class RemixEntitySubmitter {
             this.sprite = sprite;
             this.vertexCount = 0;
             this.geometryHash = 0L;
-            this.hashCode = cuboidHash(layerHashPrefix, sides, sprite);
+            this.hashCode = 31 * cuboidHash(layerHashPrefix, sides, sprite) + Float.hashCode(quadStep);
         }
 
         void setHashed(RenderLayerUtils.Topology topology, int vertexCount, long geometryHash) {
@@ -378,7 +399,7 @@ public class RemixEntitySubmitter {
             this.geometryHash = geometryHash;
             this.sides = null;
             this.sprite = null;
-            this.hashCode = hashedHash(layerHashPrefix, topology, vertexCount, geometryHash);
+            this.hashCode = 31 * hashedHash(layerHashPrefix, topology, vertexCount, geometryHash) + Float.hashCode(quadStep);
         }
 
         /**
@@ -408,9 +429,9 @@ public class RemixEntitySubmitter {
 
         RigidMeshKey immutableCopy() {
             return switch (form) {
-                case CUBOID -> new CuboidMeshKey(texId, surfaceMode, shellDepth, sides, sprite);
+                case CUBOID -> new CuboidMeshKey(texId, surfaceMode, shellDepth, sides, sprite, quadStep);
                 case HASHED -> new HashedMeshKey(texId, surfaceMode, topology, shellDepth,
-                        vertexCount, geometryHash);
+                        vertexCount, geometryHash, quadStep);
                 case CANVAS -> {
                     Sprite[] sprites = new Sprite[canvasPatternCount];
                     int[] tints = new int[canvasPatternCount];
@@ -442,14 +463,16 @@ public class RemixEntitySubmitter {
                         && surfaceMode == key.surfaceMode()
                         && Float.compare(shellDepth, key.shellDepth()) == 0
                         && sides == key.sides()
-                        && sprite == key.sprite();
+                        && sprite == key.sprite()
+                        && Float.compare(quadStep, key.quadStep()) == 0;
                 case HASHED -> other instanceof HashedMeshKey key
                         && Objects.equals(texId, key.texId())
                         && surfaceMode == key.surfaceMode()
                         && topology == key.topology()
                         && Float.compare(shellDepth, key.shellDepth()) == 0
                         && vertexCount == key.vertexCount()
-                        && geometryHash == key.geometryHash();
+                        && geometryHash == key.geometryHash()
+                        && Float.compare(quadStep, key.quadStep()) == 0;
                 case CANVAS -> other instanceof CanvasMeshKey key && equalsCanvas(key);
             };
         }
@@ -701,6 +724,8 @@ public class RemixEntitySubmitter {
             return;
         }
         frameOpen = true;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null) setGlintStrength(client.options.getGlintStrength().getValue());
         retainedEntityParts.beginFrame();
         lastDrawCount = 0;
         lastMeshCreateCount = 0;
@@ -824,11 +849,9 @@ public class RemixEntitySubmitter {
                       PartCategoryPolicy policy) {
         if (result.layers().isEmpty()) return;
 
-        collectCanvasBases(result);
-        // The layer carries the ordinal it was assigned when the entity first
-        // requested it. Counting position in this list instead would shift every
-        // later layer's shell offset, and therefore its mesh key, on any frame
-        // where an earlier layer happened to emit nothing.
+        prepareSurfaceLayers(result);
+        // Use each layer's captured identity, including on pose replay. Empty
+        // layers are omitted from this list and cannot supply a replacement index.
         try {
             for (RemixVertexConsumerProvider.CapturedLayer layer : result.layers()) {
                 submitLayer(result, layer, worldTransform, baseCategoryFlags, policy, layer.layerIndex());
@@ -852,6 +875,7 @@ public class RemixEntitySubmitter {
         if (texId == null) return;
         RenderLayer renderLayer = layer.renderLayer();
         RenderLayerUtils.SurfaceMode layerMode = layer.surfaceMode();
+        if (layerMode == RenderLayerUtils.SurfaceMode.GLINT && glintStrength == 0) return;
         RenderLayerUtils.SurfaceMode surfaceMode = playerSkinSurfaceMode(layerMode,
                 result.owner() instanceof PlayerEntity
                         && renderLayer == RenderLayer.getEntityTranslucent(texId));
@@ -898,21 +922,21 @@ public class RemixEntitySubmitter {
             }
             if (canvasPatternCount > 0) {
                 submitCanvasPatterns(result, consumer, canvasFirstPart, canvasPatternCount,
-                        texId, surfaceMode, layerIndex, worldTransform, patternCategoryFlags);
+                        texId, surfaceMode, layerIndex, consumer.getPartShellLayer(canvasFirstPart) - 1,
+                        worldTransform, patternCategoryFlags);
                 canvasPatternCount = 0;
             }
             if (canvasReader.isBacking(role, sides, bone)) continue;
-            submitRigidPart(result, consumer, part, texId,
-                    atlasSurfaceMode(texId, surfaceMode, consumer.getPartBlockItemLayer(part)),
-                    layer.topology(), layer.text(), layer.transientGeometry(part), layerIndex,
-                    shellLayerFor(layerShellIndex(layer),
-                            canvasReader.depth(), role), role,
-                    worldTransform, baseCategoryFlags | textureCategoryFlags
-                            | policy.categoryFlags(role));
+            RenderLayerUtils.SurfaceMode partMode = atlasSurfaceMode(texId, surfaceMode, consumer.getPartBlockItemLayer(part));
+            int categoryFlags = baseCategoryFlags | textureCategoryFlags | policy.categoryFlags(role);
+            prepareRigidMeshKey(layer, part, partMode, categoryFlags);
+            submitRigidPart(result, consumer, part, texId, partMode,
+                    layer.topology(), layer.transientGeometry(part), layerIndex, role, worldTransform, categoryFlags);
         }
         if (canvasPatternCount > 0) {
             submitCanvasPatterns(result, consumer, canvasFirstPart, canvasPatternCount,
-                    texId, surfaceMode, layerIndex, worldTransform, patternCategoryFlags);
+                    texId, surfaceMode, layerIndex, consumer.getPartShellLayer(canvasFirstPart) - 1,
+                    worldTransform, patternCategoryFlags);
         }
     }
 
@@ -1047,7 +1071,6 @@ public class RemixEntitySubmitter {
         private ModelPart.Quad[] runSides;
         private int runBone;
         private int depth;
-        private int maximumDepth;
 
         /** Starts a capture whose part bones index {@code boneData}, twelve floats each. */
         void beginEntity(float[] boneData) {
@@ -1079,7 +1102,6 @@ public class RemixEntitySubmitter {
             solidRole = patternAtlas ? PatternCanvasRole.FRAME : PatternCanvasRole.NONE;
             runOpen = false;
             depth = 0;
-            maximumDepth = 0;
         }
 
         /** Classifies the layer's next cuboid part, which hangs off {@code bone}. */
@@ -1087,7 +1109,6 @@ public class RemixEntitySubmitter {
             if (!canvasLayer) return solidRole;
             if (runOpen && sides == runSides && samePose(bone, runBone)) {
                 depth++;
-                maximumDepth = Math.max(maximumDepth, depth);
                 return PatternCanvasRole.PATTERN;
             }
             runOpen = true;
@@ -1101,8 +1122,6 @@ public class RemixEntitySubmitter {
         int depth() {
             return depth;
         }
-
-        int maximumDepth() { return maximumDepth; }
 
         /**
          * Whether a solid-layer canvas cuboid is vanilla's untinted depth backing for a
@@ -1131,35 +1150,74 @@ public class RemixEntitySubmitter {
         }
     }
 
-    /**
-     * The shell layer a part's mesh is baked with. Every part takes its layer's
-     * ordinal except canvas base and pattern cuboids, which add their canvas depth:
-     * they share one render layer, so the ordinal alone would bake every pattern at
-     * the base's depth and leave them fighting for the same surface.
-     */
-    static int shellLayerFor(int layerIndex, int canvasDepth, PatternCanvasRole role) {
-        return role == PatternCanvasRole.BASE || role == PatternCanvasRole.PATTERN
-                ? layerIndex + canvasDepth
-                : layerIndex;
-    }
-
     private final CanvasReader canvasReader = new CanvasReader();
-    private int extraGlintLayers;
-
-    int layerShellIndex(RemixVertexConsumerProvider.CapturedLayer layer) {
-        return layer.layerIndex() + (layer.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT ? extraGlintLayers : 0);
+    private static final class SurfaceGroup {
+        RemixCapturingConsumer consumer;
+        int part;
+        int depth;
     }
 
-    void collectCanvasBases(RemixEntityPass.EntityCaptureResult result) {
+    private final List<SurfaceGroup> surfaceGroups = new ArrayList<>();
+    private int surfaceGroupCount;
+
+    /** Orders only layers painting the same geometry at the same pose. */
+    void prepareSurfaceLayers(RemixEntityPass.EntityCaptureResult result) {
         canvasReader.beginEntity(result.boneData());
-        extraGlintLayers = 0;
-        for (RemixVertexConsumerProvider.CapturedLayer layer : result.layers()) {
-            Identifier texId = layer.textureId();
-            if (texId == null) continue;
-            canvasReader.collectBases(texId,
-                    layer.surfaceMode(), layer.consumer());
-            extraGlintLayers = Math.max(extraGlintLayers, canvasReader.maximumDepth());
+        List<RemixVertexConsumerProvider.CapturedLayer> layers = result.layers();
+        for (int i = 0; i < layers.size(); i++) {
+            RemixVertexConsumerProvider.CapturedLayer layer = layers.get(i);
+            canvasReader.collectBases(layer.textureId(), layer.surfaceMode(), layer.consumer());
         }
+        for (int i = 0; i < surfaceGroupCount; i++) surfaceGroups.get(i).consumer = null;
+        surfaceGroupCount = 0;
+        // Vanilla requests glint before its substrate. Resolve all substrates first.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < layers.size(); i++) {
+                RemixVertexConsumerProvider.CapturedLayer layer = layers.get(i);
+                boolean glint = layer.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT;
+                if (glint != (pass == 1)) continue;
+                RemixCapturingConsumer consumer = layer.consumer();
+                canvasReader.beginLayer(layer.textureId(), layer.surfaceMode());
+                for (int part = 0; part < consumer.getPartCount(); part++) {
+                    ModelPart.Quad[] sides = consumer.getPartSides(part);
+                    int bone = consumer.getPartBone(part);
+                    PatternCanvasRole role = sides == null ? PatternCanvasRole.NONE : canvasReader.next(sides, bone);
+                    if (canvasReader.isBacking(role, sides, bone)) continue;
+                    SurfaceGroup group = surfaceGroup(consumer, part, result.boneData());
+                    group.depth = Math.max(glint ? 1 : 0, group.depth + 1);
+                    consumer.setPartShellLayer(part, group.depth);
+                }
+            }
+        }
+    }
+
+    private SurfaceGroup surfaceGroup(RemixCapturingConsumer consumer, int part, float[] bones) {
+        for (int i = 0; i < surfaceGroupCount; i++) {
+            SurfaceGroup group = surfaceGroups.get(i);
+            if (sameSurface(consumer, part, group.consumer, group.part, bones)) return group;
+        }
+        if (surfaceGroupCount == surfaceGroups.size()) surfaceGroups.add(new SurfaceGroup());
+        SurfaceGroup group = surfaceGroups.get(surfaceGroupCount++);
+        group.consumer = consumer;
+        group.part = part;
+        group.depth = -1;
+        return group;
+    }
+
+    private static boolean sameSurface(RemixCapturingConsumer a, int partA,
+                                       RemixCapturingConsumer b, int partB, float[] bones) {
+        int boneA = a.getPartBone(partA), boneB = b.getPartBone(partB);
+        if (boneA != boneB && (boneA < 0 || boneB < 0
+                || !Arrays.equals(bones, boneA * 12, boneA * 12 + 12,
+                                  bones, boneB * 12, boneB * 12 + 12))) return false;
+        ModelPart.Quad[] sides = a.getPartSides(partA);
+        if (sides != null || b.getPartSides(partB) != null) return sides == b.getPartSides(partB);
+        int count = a.getPartVertexCount(partA);
+        if (count != b.getPartVertexCount(partB)) return false;
+        int startA = a.getPartStart(partA), startB = b.getPartStart(partB);
+        return Arrays.equals(a.getPx(), startA, startA + count, b.getPx(), startB, startB + count)
+                && Arrays.equals(a.getPy(), startA, startA + count, b.getPy(), startB, startB + count)
+                && Arrays.equals(a.getPz(), startA, startA + count, b.getPz(), startB, startB + count);
     }
 
     private static boolean isDynamicMapTexture(Identifier textureId) {
@@ -1206,10 +1264,8 @@ public class RemixEntitySubmitter {
                                  Identifier texId,
                                  RenderLayerUtils.SurfaceMode surfaceMode,
                                  RenderLayerUtils.Topology topology,
-                                 boolean text,
                                  boolean transientGeometry,
                                  int layerIndex,
-                                 int shellLayer,
                                  PatternCanvasRole role,
                                  Transform worldTransform,
                                  int categoryFlags) {
@@ -1217,16 +1273,7 @@ public class RemixEntitySubmitter {
         int vertexCount = consumer.getPartVertexCount(partIndex);
         ModelPart.Quad[] sides = consumer.getPartSides(partIndex);
         Sprite sprite = consumer.getPartSprite(partIndex);
-        float shellDepth = meshLayerDepth(text, shellLayer, categoryFlags);
-        // Key and material both derive from this part's narrowed mode, so a
-        // pooled mesh is never handed to a part whose material differs from the
-        // one baked into it.
-        rigidMeshLookupKey.setLayer(texId, surfaceMode, shellDepth);
-        if (sides != null) {
-            rigidMeshLookupKey.setCuboid(sides, sprite);
-        } else {
-            rigidMeshLookupKey.setHashed(topology, vertexCount, consumer.getPartHash(partIndex));
-        }
+        float shellDepth = rigidMeshLookupKey.shellDepth;
         // Materialised only on a pool miss or an identity change; the steady state
         // never allocates a key.
         pendingPartKey = null;
@@ -1257,6 +1304,18 @@ public class RemixEntitySubmitter {
                         role,
                         beacon != null),
                 worldTransform);
+    }
+
+    RigidMeshLookupKey prepareRigidMeshKey(RemixVertexConsumerProvider.CapturedLayer layer, int part,
+                                          RenderLayerUtils.SurfaceMode mode, int categoryFlags) {
+        RemixCapturingConsumer consumer = layer.consumer();
+        float depth = meshLayerDepth(layer.text(), consumer.getPartShellLayer(part), categoryFlags);
+        rigidMeshLookupKey.setLayer(layer.textureId(), mode, depth,
+                layer.text() ? TEXT_QUAD_STEP * ViewModelSpace.layerSpacingScale(categoryFlags) : 0);
+        ModelPart.Quad[] sides = consumer.getPartSides(part);
+        if (sides != null) rigidMeshLookupKey.setCuboid(sides, consumer.getPartSprite(part));
+        else rigidMeshLookupKey.setHashed(layer.topology(), consumer.getPartVertexCount(part), consumer.getPartHash(part));
+        return rigidMeshLookupKey;
     }
 
     private static CopperBeaconBlockEntity placedBeaconLens(Object owner, Sprite sprite) {
@@ -1356,9 +1415,10 @@ public class RemixEntitySubmitter {
                                       Identifier texId,
                                       RenderLayerUtils.SurfaceMode surfaceMode,
                                       int layerIndex,
+                                      int shellLayer,
                                       Transform worldTransform,
                                       int categoryFlags) {
-        rigidMeshLookupKey.setLayer(texId, surfaceMode, meshLayerDepth(false, layerIndex, categoryFlags));
+        rigidMeshLookupKey.setLayer(texId, surfaceMode, meshLayerDepth(false, shellLayer, categoryFlags));
         rigidMeshLookupKey.setCanvas(consumer.getPartSides(firstPart), consumer, firstPart, patternCount,
                 ViewModelSpace.layerSpacingScale(categoryFlags));
         pendingPartKey = null;
@@ -1367,7 +1427,7 @@ public class RemixEntitySubmitter {
             RigidMeshKey meshKey = rigidMeshLookupKey.immutableCopy();
             pendingPartKey = meshKey;
             rebuildScratch.clear();
-            emitCanvasPatterns(rebuildScratch, consumer, firstPart, patternCount, layerIndex,
+            emitCanvasPatterns(rebuildScratch, consumer, firstPart, patternCount, shellLayer,
                     ViewModelSpace.layerSpacingScale(categoryFlags));
             rebuildScratch.finishOpenVertex();
             // Every layer's depth is already in its vertices, so the mesh is built at shell 0.
@@ -1561,6 +1621,10 @@ public class RemixEntitySubmitter {
                                      boolean cuboid,
                                      int tintColor,
                                      PatternCanvasRole role) {
+        if (surfaceMode == RenderLayerUtils.SurfaceMode.GLINT) {
+            int tint = 0xFF000000 | glintStrength * 0x010101;
+            return internedTintBlend(PatternCanvasRole.NONE, tint);
+        }
         if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)
                 && surfaceMode != RenderLayerUtils.SurfaceMode.GLINT) {
             return surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT
@@ -1580,6 +1644,10 @@ public class RemixEntitySubmitter {
             return VERTEX_COLOR_MODULATE;
         }
         return internedTintBlend(PatternCanvasRole.NONE, tintColor);
+    }
+
+    void setGlintStrength(double strength) {
+        glintStrength = (int) Math.round(Math.clamp(strength, 0.0, 1.0) * 255);
     }
 
     private InstanceInfoBlendEXT internedTintBlend(PatternCanvasRole role, int tintColor) {
@@ -1857,12 +1925,12 @@ public class RemixEntitySubmitter {
         return false;
     }
     /** Per-vertex displacement of a text part: each quad steps along its normal by its draw order. */
-    private static void textOffsets(float[] nx, float[] ny, float[] nz,
-                                    int start, int count, float shellDepth,
-                                    float[] ox, float[] oy, float[] oz) {
+    static void textOffsets(float[] nx, float[] ny, float[] nz,
+                            int start, int count, float shellDepth, float quadStep,
+                            float[] ox, float[] oy, float[] oz) {
         for (int i = 0; i < count; i++) {
             int source = start + i;
-            float depth = shellDepth + (i >> 2) * TEXT_QUAD_STEP;
+            float depth = shellDepth + (i >> 2) * quadStep;
             ox[i] = nx[source] * depth;
             oy[i] = ny[source] * depth;
             oz[i] = nz[source] * depth;
@@ -1878,7 +1946,7 @@ public class RemixEntitySubmitter {
                                           int sourceStart,
                                           int vertCount,
                                           RenderLayerUtils.Topology topology,
-                                          boolean text,
+                                          float quadStep,
                                           float shellDepth,
                                           RemixMaterial mat) {
         float[] cpx = consumer.getPx(), cpy = consumer.getPy(), cpz = consumer.getPz();
@@ -1889,15 +1957,15 @@ public class RemixEntitySubmitter {
         int[] boundsMax = consumer.getTexcoordBoundsMax();
 
         // Text steps its quads even on the base layer; anything else on the base layer stays put.
-        boolean offset = text || shellDepth > 0;
+        boolean offset = quadStep > 0 || shellDepth > 0;
         if (offset) {
             if (shellOffsetX.length < vertCount) {
                 shellOffsetX = new float[vertCount];
                 shellOffsetY = new float[vertCount];
                 shellOffsetZ = new float[vertCount];
             }
-            if (text) {
-                textOffsets(cnx, cny, cnz, sourceStart, vertCount, shellDepth,
+            if (quadStep > 0) {
+                textOffsets(cnx, cny, cnz, sourceStart, vertCount, shellDepth, quadStep,
                         shellOffsetX, shellOffsetY, shellOffsetZ);
             } else {
                 shellOffsets(cpx, cpy, cpz, cnx, cny, cnz, sourceStart, vertCount,
@@ -2051,7 +2119,7 @@ public class RemixEntitySubmitter {
             return null;
         }
         RemixMeshSurface surface = buildSurface(consumer, sourceStart, vertexCount,
-                topology, DynamicTextureCache.isGlyphPage(textureId), shellDepth, material);
+                topology, rigidMeshLookupKey.quadStep, shellDepth, material);
         try {
             RemixMesh mesh = new RemixMesh(new RemixMeshSurface[]{surface});
             try (ProfileScope createScope = ProfileScope.begin("Entity createRigidMesh")) {
@@ -2122,6 +2190,16 @@ public class RemixEntitySubmitter {
         if (cached != null && !cached.isDeleted()) return;
         if (cached != null) materialCache.remove(materialKey);
         Identifier textureId = materialKey.textureId();
+
+        if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)
+                && materialKey.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT) {
+            BlockTextureManager btm = BlockTextureManager.get();
+            if (btm == null || !btm.isInitialized()) return;
+            EntityTextureSet textures = new EntityTextureSet();
+            textures.albedo = btm.getBlockAtlasTexture();
+            cacheMaterial(materialKey, createMaterial(materialKey, textures));
+            return;
+        }
 
         // Ordinary item surfaces borrow terrain's atlas materials; glint owns its additive blend.
         if (BlockTextureManager.BLOCK_ATLAS_ID.equals(textureId)
@@ -2677,7 +2755,8 @@ public class RemixEntitySubmitter {
                 ? textures.albedo : textures.emissive;
         if (emissive != null) {
             materialBuilder.emissiveTexture(emissive.getHandle())
-                    .emissiveIntensity(EMISSIVE_INTENSITY);
+                    .emissiveIntensity(key.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT
+                            ? GLINT_INTENSITY : EMISSIVE_INTENSITY);
         }
 
         MaterialInfo info = materialBuilder.opaqueExt(opaque.build()).build();

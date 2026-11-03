@@ -126,6 +126,37 @@ class RemixFirstPersonPassTest {
     }
 
     @ParameterizedTest
+    @ValueSource(floats = {7, 30, 70, 110, 140})
+    void fovCorrectionPreservesProjectedSideFaceSpacing(float worldFov) {
+        Camera camera = new TestCamera(45, 35, 0, 0, 0);
+        Matrix4f modelView = new Matrix4f().rotation(camera.getRotation()).invert();
+        float ratio = (float) (Math.tan(Math.toRadians(worldFov / 2)) / Math.tan(Math.toRadians(35)));
+        Vector3f[] points = new Vector3f[2];
+        for (int sample = 0; sample < 2; sample++) {
+            float fov = sample == 0 ? 70 : worldFov;
+            float scale = sample == 0 ? 1 : ratio;
+            try (RemixFirstPersonPass pass = new RemixFirstPersonPass()) {
+                VertexConsumerProvider provider = pass.beginCapture(modelView);
+                itemConsumer(provider, true).quad(handMatrices(camera, 0.5f).peek(), quad(null),
+                        1, 1, 1, 1, 0, OverlayTexture.DEFAULT_UV);
+                var result = pass.finishCapture(this, camera, scale);
+                RemixCapturingConsumer consumer = result.layers().getFirst().consumer();
+                Transform transform = new Transform();
+                RemixEntitySubmitter.composeRigidTransform(captureRoot(camera, modelView, scale),
+                        result.boneData(), result.boneCount(), consumer.getPartBone(0), transform);
+                Matrix4f projection = new Matrix4f().perspective((float) Math.toRadians(fov), 16f / 9, 0.01f, 1000)
+                        .mul(modelView);
+                Vector3f base = new Vector3f(), offset = new Vector3f();
+                RemixFirstPersonPass.transformPoint(transform, 0, 0, 0, base);
+                RemixFirstPersonPass.transformPoint(transform, 0.005f, 0, 0, offset);
+                points[sample] = projection.transformProject(offset).sub(projection.transformProject(base));
+            }
+        }
+        assertEquals(points[0].x, points[1].x, 1e-6f);
+        assertEquals(points[0].y, points[1].y, 1e-6f);
+    }
+
+    @ParameterizedTest
     @CsvSource({"-170, 6, 1", "45, 35, 0.8", "0, -70, 1.3"})
     void firstPersonGlintStaysOutsideTheSubstrateAfterRayContinuation(float yaw, float pitch, float fovScale) {
         Camera camera = new TestCamera(yaw, pitch, 211, 64, 51);
@@ -146,7 +177,11 @@ class RemixFirstPersonPassTest {
             RemixFirstPersonPass.transformPoint(transform, 1, 0, 0, alongX);
             RemixFirstPersonPass.transformPoint(transform, 0, 1, 0, alongY);
             Vector3f worldNormal = alongX.sub(base).cross(alongY.sub(base)).normalize();
-            float depth = RemixEntitySubmitter.meshLayerDepth(layer.text(), layer.layerIndex(), InstanceCategoryBit.VIEW_MODEL);
+            RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
+            submitter.prepareSurfaceLayers(result);
+            int shell = captured.getPartShellLayer(0);
+            submitter.close();
+            float depth = RemixEntitySubmitter.meshLayerDepth(layer.text(), shell, InstanceCategoryBit.VIEW_MODEL);
             Vector3f glint = new Vector3f();
             RemixFirstPersonPass.transformPoint(transform, 0, 0, depth, glint);
 
@@ -158,7 +193,7 @@ class RemixFirstPersonPassTest {
                     "continuing through glint must still hit the gold surface");
             Vector3f uncorrected = new Vector3f();
             RemixFirstPersonPass.transformPoint(transform, 0, 0,
-                    RemixEntitySubmitter.surfaceDepth(false, layer.layerIndex(), 0), uncorrected);
+                    RemixEntitySubmitter.surfaceDepth(false, shell, 0), uncorrected);
             assertTrue(uncorrected.sub(base).dot(worldNormal) < continuation,
                     "the fixture must reproduce the old layer gap being skipped");
         }

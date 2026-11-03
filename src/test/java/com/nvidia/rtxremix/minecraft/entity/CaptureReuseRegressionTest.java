@@ -93,10 +93,93 @@ class CaptureReuseRegressionTest {
         cuboid.renderCuboid(matrices.peek(), consumer, 0, OverlayTexture.DEFAULT_UV, -1);
         var layer = provider.endEntity().getFirst();
         assertEquals(3, layer.consumer().getPartCount());
-        assertTrue(layer.transientGeometry(0));
+        assertFalse(layer.transientGeometry(0), "raw positions alone do not imply changing geometry");
         assertFalse(layer.transientGeometry(1), "a neighboring fully posed part must not invalidate this local mesh");
         assertFalse(layer.transientGeometry(2));
         assertSame(cuboid.sides, layer.consumer().getPartSides(2));
+    }
+
+    @Test
+    void projectedCoordinatesDoNotDemoteStaticUnposedParts() {
+        EntityRenderContext.get().begin(true);
+        RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+        long previousHash = 0;
+        for (int frame = 0; frame < 3; frame++) {
+            provider.beginEntity();
+            RemixCapturingConsumer consumer = (RemixCapturingConsumer) provider.getBuffer(RenderLayer.getGlint());
+            quad(consumer, null);
+            for (int i = 0; i < 4; i++) {
+                consumer.vertex(i & 1, i >> 1, frame).texture(frame, 0);
+                consumer.projectedNormal(0, 0, 1);
+            }
+            var layer = provider.endEntity().getFirst();
+            assertEquals(2, consumer.getPartCount(), "static and projected parts need separate cache policies");
+            assertFalse(layer.transientGeometry(0));
+            assertTrue(layer.transientGeometry(1));
+            if (frame > 0) assertEquals(previousHash, consumer.getPartHash(0));
+            previousHash = consumer.getPartHash(0);
+        }
+    }
+
+    @Test
+    void capturedTextAndMapQuadsUseViewModelSpacingEvenOnTheBaseLayer() {
+        EntityRenderContext.get().begin(true);
+        RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+        RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
+        try {
+            provider.beginEntity();
+            VertexConsumer text = provider.getBuffer(RenderLayer.getText(Identifier.of("test", "font")));
+            MatrixStack matrices = new MatrixStack();
+            quad(text, matrices);
+            quad(text, matrices);
+            var layers = provider.endEntity();
+            submitter.prepareSurfaceLayers(result(layers));
+            var layer = layers.getFirst();
+            var world = (RemixEntitySubmitter.HashedMeshKey) submitter.prepareRigidMeshKey(layer, 0,
+                    layer.surfaceMode(), 0).immutableCopy();
+            var held = (RemixEntitySubmitter.HashedMeshKey) submitter.prepareRigidMeshKey(layer, 0,
+                    layer.surfaceMode(), InstanceCategoryBit.VIEW_MODEL).immutableCopy();
+            assertEquals(0, world.shellDepth());
+            assertEquals(0, held.shellDepth());
+            assertTrue(world.quadStep() > 0);
+            assertEquals(world.quadStep(), held.quadStep() * ViewModelSpace.SCALE, 1e-9f);
+            org.junit.jupiter.api.Assertions.assertNotEquals(world, held);
+        } finally {
+            submitter.close();
+        }
+    }
+
+    @Test
+    void unrelatedPatternsAndBaseLayersCannotMoveOrRenameSwordGlint() {
+        RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+        RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
+        int previousIdentity = -1;
+        ModelPart.Cuboid sword = cuboid(), shield = cuboid();
+        try {
+            for (int patternCount : new int[] {0, 5, 0}) {
+                EntityRenderContext.get().reset();
+                EntityRenderContext.get().begin(true);
+                provider.beginEntity();
+                MatrixStack matrices = new MatrixStack();
+                sword.renderCuboid(matrices.peek(), provider.getBuffer(RenderLayer.getGlint()), 0, OverlayTexture.DEFAULT_UV, -1);
+                if (patternCount > 0) {
+                    provider.getBuffer(RenderLayer.getEyes(Identifier.of("test", "eyes.png")));
+                    VertexConsumer patterns = provider.getBuffer(RenderLayer.getEntityTranslucent(
+                            Identifier.of("minecraft", "textures/atlas/shield_patterns.png")));
+                    for (int p = 0; p < patternCount; p++) shield.renderCuboid(matrices.peek(), patterns, 0, OverlayTexture.DEFAULT_UV, -1);
+                }
+                sword.renderCuboid(matrices.peek(), provider.getBuffer(RenderLayer.getEntityCutout(
+                        BlockTextureManager.BLOCK_ATLAS_ID)), 0, OverlayTexture.DEFAULT_UV, -1);
+                var layers = provider.endEntity();
+                submitter.prepareSurfaceLayers(result(layers));
+                var glint = layers.getFirst();
+                assertEquals(1, glint.consumer().getPartShellLayer(0), "only the sword's own surfaces set its shell depth");
+                if (previousIdentity >= 0) assertEquals(previousIdentity, glint.layerIndex());
+                previousIdentity = glint.layerIndex();
+            }
+        } finally {
+            submitter.close();
+        }
     }
 
     @Test
@@ -115,7 +198,7 @@ class CaptureReuseRegressionTest {
         var captured = provider.endEntity();
         assertEquals(2, captured.size());
         int[] ranks = captured.stream().mapToInt(RemixVertexConsumerProvider.CapturedLayer::layerIndex).toArray();
-        assertArrayEquals(new int[] {3, 1}, ranks);
+        assertTrue(ranks[0] != ranks[1], "different layers must have distinct identities");
         var snapshot = new RemixEntityPass.PoseSnapshot();
         snapshot.record(result(captured));
         context.reset();
@@ -147,12 +230,12 @@ class CaptureReuseRegressionTest {
         var patterns = layers.stream().filter(l -> l != glint).findFirst().orElseThrow();
         RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
         try {
-            submitter.collectCanvasBases(result(layers));
+            submitter.prepareSurfaceLayers(result(layers));
             float glintDepth = RemixEntitySubmitter.meshLayerDepth(false,
-                    submitter.layerShellIndex(glint), InstanceCategoryBit.VIEW_MODEL);
+                    glint.consumer().getPartShellLayer(0), InstanceCategoryBit.VIEW_MODEL);
             RemixCapturingConsumer expanded = new RemixCapturingConsumer(null, false);
             RemixEntitySubmitter.emitCanvasPatterns(expanded, patterns.consumer(), 1, 4,
-                    patterns.layerIndex(), ViewModelSpace.layerSpacingScale(InstanceCategoryBit.VIEW_MODEL));
+                    patterns.consumer().getPartShellLayer(1) - 1, ViewModelSpace.layerSpacingScale(InstanceCategoryBit.VIEW_MODEL));
             expanded.finishOpenVertex();
             int v = 0;
             for (int pattern = 0; pattern < 4; pattern++) {
@@ -169,9 +252,9 @@ class CaptureReuseRegressionTest {
             var snapshot = new RemixEntityPass.PoseSnapshot();
             snapshot.record(result(layers));
             var replay = RemixEntityPass.replayLayers(snapshot, new RemixVertexConsumerProvider());
-            submitter.collectCanvasBases(result(replay, snapshot.boneData, snapshot.boneCount));
+            submitter.prepareSurfaceLayers(result(replay, snapshot.boneData, snapshot.boneCount));
             assertEquals(glintDepth, RemixEntitySubmitter.meshLayerDepth(false,
-                    submitter.layerShellIndex(replay.getFirst()), InstanceCategoryBit.VIEW_MODEL));
+                    replay.getFirst().consumer().getPartShellLayer(0), InstanceCategoryBit.VIEW_MODEL));
         } finally {
             submitter.close();
         }

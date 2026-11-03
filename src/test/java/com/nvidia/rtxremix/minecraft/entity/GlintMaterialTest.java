@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
 import com.nvidia.rtxremix.InstanceCategoryBit;
+import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,48 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 class GlintMaterialTest {
     private static final Identifier GLINT = Identifier.of("minecraft", "textures/misc/enchanted_glint_item.png");
+
+    @Test
+    void glintIgnoresModelTintAndFollowsAccessibilityStrength() {
+        RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
+        try {
+            var full = submitter.blendExtFor(GLINT, RenderLayerUtils.SurfaceMode.GLINT, true,
+                    0xFFFF0000, RemixEntitySubmitter.PatternCanvasRole.NONE);
+            assertEquals(0xFFFFFFFF, full.tFactor);
+            assertEquals(InstanceInfoBlendEXT.RT_TEXTURE_ARG_TFACTOR, full.textureColorArg2Source);
+            submitter.setGlintStrength(0.5);
+            var half = submitter.blendExtFor(GLINT, RenderLayerUtils.SurfaceMode.GLINT, false,
+                    0xFF00FF00, RemixEntitySubmitter.PatternCanvasRole.NONE);
+            assertEquals(0xFF808080, half.tFactor);
+            submitter.setGlintStrength(0);
+            var zero = submitter.blendExtFor(GLINT, RenderLayerUtils.SurfaceMode.GLINT, true,
+                    0xFFFFFFFF, RemixEntitySubmitter.PatternCanvasRole.NONE);
+            assertEquals(0xFF000000, zero.tFactor);
+        } finally {
+            submitter.close();
+        }
+    }
+
+    @Test
+    void baseLayerTextMeshKeysIncludePerQuadSpacing() {
+        var lookup = new RemixEntitySubmitter.RigidMeshLookupKey();
+        float worldStep = RemixEntitySubmitter.surfaceDepth(true, 0, 1);
+        lookup.setLayer(GLINT, RenderLayerUtils.SurfaceMode.CUTOUT, 0, worldStep);
+        lookup.setHashed(RenderLayerUtils.Topology.QUADS, 8, 123);
+        var world = lookup.immutableCopy();
+        float heldStep = worldStep * ViewModelSpace.layerSpacingScale(InstanceCategoryBit.VIEW_MODEL);
+        lookup.setLayer(GLINT, RenderLayerUtils.SurfaceMode.CUTOUT, 0, heldStep);
+        lookup.setHashed(RenderLayerUtils.Topology.QUADS, 8, 123);
+        var held = lookup.immutableCopy();
+        assertNotEquals(world, held);
+        assertFalse(lookup.equals(world));
+        assertTrue(lookup.equals(held));
+        assertEquals(held.hashCode(), lookup.hashCode());
+        float[] normal = new float[8], x = new float[8], y = new float[8], z = new float[8];
+        java.util.Arrays.fill(normal, 1);
+        RemixEntitySubmitter.textOffsets(x, y, normal, 0, 8, 0, heldStep, x, y, z);
+        assertEquals(worldStep, z[4] * ViewModelSpace.SCALE, 1e-9f);
+    }
 
     @Test
     void glintAddsTextureColorWithoutUsingItsOpaqueAlphaAsCoverage() {

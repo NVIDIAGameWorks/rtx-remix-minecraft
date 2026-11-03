@@ -78,8 +78,7 @@ public abstract class ModelPartMixin {
             int light,
             int overlay,
             int color) {
-        // Local reads first: the cuboid count and list type reject group and
-        // multi-cuboid parts before the capture check pays for its thread-local lookup.
+        // Reject group and multi-cuboid parts before querying the cached capture leaf.
         if (cuboids.size() != 1 || !(cuboids instanceof ImmutableList<?>)) return original.call(cuboids);
         RemixCapturingConsumer consumer = RemixConsumerDispatch.findCapture(vertexConsumer);
         if (consumer != null && consumer.isRemixCaptureActive()) {

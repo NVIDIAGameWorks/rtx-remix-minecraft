@@ -76,12 +76,14 @@ class ProjectedGlintCaptureTest {
             Transform root = new Transform();
             RemixFirstPersonPass.setCaptureToWorld(camera, correction, new Matrix4f(), root);
             assertEquals(2, result.layers().size());
+            RemixEntitySubmitter submitter = new RemixEntitySubmitter(null, null);
+            submitter.prepareSurfaceLayers(result);
             int glintOrder = -1, baseOrder = -1;
             for (var layer : result.layers()) {
                 RemixCapturingConsumer captured = layer.consumer();
                 boolean glint = layer.surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT;
-                if (glint) glintOrder = layer.layerIndex();
-                else baseOrder = layer.layerIndex();
+                if (glint) glintOrder = captured.getPartShellLayer(0);
+                else baseOrder = captured.getPartShellLayer(0);
                 assertEquals(glint, layer.transientGeometry(0), "posed projection is streamed instead of filling the mesh cache");
                 assertEquals(4, captured.getVertexCount());
                 Transform part = new Transform();
@@ -107,6 +109,7 @@ class ProjectedGlintCaptureTest {
                 if (glint) assertTrue(nonzeroUV, "UVs written after normal() must survive capture");
                 else assertFalse(captured.getBoneIndices()[0] < 0);
             }
+            submitter.close();
             assertTrue(baseOrder < glintOrder, "glint shell is outside the item, independent of buffer request order");
         }
     }

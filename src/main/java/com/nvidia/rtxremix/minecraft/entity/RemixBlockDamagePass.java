@@ -90,8 +90,8 @@ public final class RemixBlockDamagePass {
                     ModelLoader.BLOCK_DESTRUCTION_RENDER_LAYERS.get(stage));
             call.render(matrices, projector.target(crack));
             layers = provider.endEntity();
-            reusableBoneData = ctx.snapshotBoneTransforms(reusableBoneData);
             boneCount = ctx.getBoneCount();
+            if (boneCount != 0) reusableBoneData = ctx.snapshotBoneTransforms(reusableBoneData);
         } catch (Exception e) {
             failures.noteFailure("capturing", "block damage", pos, e);
             return;

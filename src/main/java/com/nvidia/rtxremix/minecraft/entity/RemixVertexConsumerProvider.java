@@ -70,34 +70,12 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
      * {@link #beginEntity()} call.
      */
     public List<CapturedLayer> endEntity() {
-        return finishEntity(true);
-    }
-
-    /** Finalizes a replay whose non-empty layers already carry their captured ranks. */
-    public List<CapturedLayer> endReplay() {
-        return finishEntity(false);
-    }
-
-    private List<CapturedLayer> finishEntity(boolean rankLayers) {
         resultBuffer.clear();
-        int glintCount = 0;
-        if (rankLayers) {
-            for (int i = 0; i < activeCount; i++) {
-                if (activeConsumers[i].capturedLayer().surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT) glintCount++;
-            }
-        }
-        int baseIndex = 0;
-        int glintIndex = activeCount - glintCount;
         for (int i = 0; i < activeCount; i++) {
             RemixCapturingConsumer consumer = activeConsumers[i];
-            if (rankLayers) {
-                consumer.setLayerIndex(consumer.capturedLayer().surfaceMode() == RenderLayerUtils.SurfaceMode.GLINT
-                        ? glintIndex++ : baseIndex++);
-            }
             consumer.finishOpenVertex();
             // A cuboid part carries no vertices, so a layer can be non-empty with zero
-            // captured vertices. Live captures rank requested layers before dropping empty ones,
-            // so empty geometry cannot shift the shell order or retained identities.
+            // captured vertices. Layer identity is independent of requests for other layers.
             if (consumer.getVertexCount() > 0 || consumer.getPartCount() > 0) {
                 CapturedLayer layer = consumer.capturedLayer();
                 resultBuffer.add(layer);
@@ -175,6 +153,9 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
         void bind(RenderLayer renderLayer) {
             this.renderLayer = renderLayer;
             this.state = RenderLayerUtils.state(renderLayer);
+            consumer.setLayerIndex(state.identity());
+            consumer.setUsesColor(renderLayer.getVertexFormat().getElements()
+                    .contains(net.minecraft.client.render.VertexFormatElement.COLOR));
         }
 
         public Identifier textureId() { return consumer.getTextureId(); }
@@ -183,7 +164,7 @@ public class RemixVertexConsumerProvider implements VertexConsumerProvider {
         boolean text() { return state.text(); }
         public RemixCapturingConsumer consumer() { return consumer; }
         public int vertexCount() { return consumer.getVertexCount(); }
-        /** Stable layer rank; submission puts glint beyond any canvas pattern stack. */
+        /** Layer identity, independent of which other layers this capture requested. */
         public int layerIndex() { return consumer.getLayerIndex(); }
         /** How to read the vertices as triangles. */
         public RenderLayerUtils.Topology topology() { return consumer.getTopology(); }

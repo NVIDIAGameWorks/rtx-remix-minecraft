@@ -250,7 +250,17 @@ class PrismLauncher:
         project = util.PROJECT_DIR
         gradle = [str(project / "gradlew.bat")]
         if build:
-            gradle += ["build", "-x", "test", "stageFabricApi", f"-Parch={arch}", "--console=plain", "--quiet"]
+            gradle += [
+                "build",
+                "-x",
+                "test",
+                "-x",
+                "fabricTest",
+                "stageFabricApi",
+                f"-Parch={arch}",
+                "--console=plain",
+                "--quiet",
+            ]
         else:
             gradle += ["stageFabricApi", "--quiet"]
         util.run(gradle, cwd=project, env=runner.gradle_env())

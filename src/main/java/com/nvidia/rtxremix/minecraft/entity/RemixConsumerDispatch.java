@@ -127,15 +127,20 @@ public final class RemixConsumerDispatch {
         }
     }
 
-    private static final List<SpriteRemap> spriteRemaps = new ArrayList<>();
-    private static int spriteRemapDepth;
+    private static final class SpriteRemaps {
+        final List<SpriteRemap> remaps = new ArrayList<>();
+        int depth;
+    }
+
+    private static final ThreadLocal<SpriteRemaps> spriteRemaps = ThreadLocal.withInitial(SpriteRemaps::new);
 
     /** Reuses only the sprite remap; vanilla and other mods still own cuboid drawing. */
     private static void emitSpriteCuboid(VertexConsumer consumer, ModelPart.Cuboid cuboid, MatrixStack.Entry entry,
                                          int light, int overlay, int color, Sprite sprite) {
-        int depth = spriteRemapDepth++;
-        if (depth == spriteRemaps.size()) spriteRemaps.add(new SpriteRemap());
-        SpriteRemap remap = spriteRemaps.get(depth);
+        SpriteRemaps pool = spriteRemaps.get();
+        int depth = pool.depth++;
+        if (depth == pool.remaps.size()) pool.remaps.add(new SpriteRemap());
+        SpriteRemap remap = pool.remaps.get(depth);
         remap.target = consumer;
         remap.sprite = sprite;
         try {
@@ -143,7 +148,7 @@ public final class RemixConsumerDispatch {
         } finally {
             remap.target = null;
             remap.sprite = null;
-            spriteRemapDepth--;
+            pool.depth--;
         }
     }
 

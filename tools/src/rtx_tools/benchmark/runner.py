@@ -1949,7 +1949,7 @@ def benchmark_run_plan(args) -> dict[str, Any]:
         "build": {
             "enabled": not bool(getattr(args, "no_build", False)),
             "task": build_task,
-            "args": [build_task, "-x", "test", f"-Parch={arch}", "--quiet"],
+            "args": [build_task, "-x", "test", "-x", "fabricTest", f"-Parch={arch}", "--quiet"],
         },
         "stripEntitiesOnStage": strip_entities_on_stage(config),
         "resultDirPattern": str(util.RESULTS_DIR / "<timestamp>"),
@@ -3110,6 +3110,8 @@ def run_gradle_build(arch: str, ci: bool) -> None:
         task,
         "-x",
         "test",
+        "-x",
+        "fabricTest",
         f"-Parch={arch}",
         "--console=plain",
         "--quiet",

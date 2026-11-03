@@ -653,7 +653,7 @@ public class RemixEntityPass {
         snapshot.frame = sweepFrame;
     }
 
-    /** Rebuilds the recorded layers without reranking the non-empty subset. */
+    /** Rebuilds recorded geometry with its retained layer identities. */
     static List<RemixVertexConsumerProvider.CapturedLayer> replayLayers(
             PoseSnapshot snapshot, RemixVertexConsumerProvider provider) {
         provider.beginEntity();
@@ -661,12 +661,11 @@ public class RemixEntityPass {
             SnapshotLayer layer = snapshot.layers[i];
             VertexConsumer buffer = provider.getBuffer(layer.renderLayer);
             if (!(buffer instanceof RemixCapturingConsumer consumer)) {
-                provider.endReplay();
+                provider.endEntity();
                 return List.of();
             }
-            // Keep the ordinal the layer was first given: it scales the shell offset
-            // baked into the mesh, so replaying under a different one would key a
-            // different mesh and separate the layer from the body it belongs to.
+            // Retained instances keep the identity stored with this pose snapshot.
+            // Surface depth is resolved separately from the replayed geometry.
             consumer.setLayerIndex(layer.layerIndex);
             for (int p = 0; p < layer.partCount; p++) {
                 SnapshotPart part = layer.parts[p];
@@ -674,7 +673,7 @@ public class RemixEntityPass {
             }
         }
 
-        return provider.endReplay();
+        return provider.endEntity();
     }
 
     /**
