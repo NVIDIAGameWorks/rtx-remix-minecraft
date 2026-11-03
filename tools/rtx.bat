@@ -3,6 +3,11 @@ rem SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. 
 rem SPDX-License-Identifier: Apache-2.0
 
 setlocal
+rem Typed at a PowerShell 7 prompt, this inherits PowerShell 7's PSModulePath,
+rem whose modules shadow Windows PowerShell's own: the uv installer below then
+rem cannot load Get-ExecutionPolicy. Clearing it, for the installer and for
+rem every Windows PowerShell the tools start, lets each build its default path.
+set "PSModulePath="
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 where uv >nul 2>nul

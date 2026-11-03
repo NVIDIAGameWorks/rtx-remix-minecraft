@@ -6,8 +6,8 @@
 # for that path, which proves the file is an untouched earlier default rather
 # than someone's edit. Append a line whenever a payload file changes and never
 # remove one: an install can still hold any version that ever shipped.
-# NativeExtractorTest fails with the line to append when the current payload
-# is missing from this list.
+# ShippedPayloadHistoryTest fails with the line to append when the current
+# payload is missing from this list.
 
 # 0.1.0
 ca3e2f855a249f678ab0f6670e346c55084da9df4d3534ad4496575aeda459df  rtx-remix/mods/minecraft-logic/confs/biomes/plains.conf
