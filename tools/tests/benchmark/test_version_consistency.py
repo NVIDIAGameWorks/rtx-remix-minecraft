@@ -23,7 +23,14 @@ def gradle_dependency_version(group: str, artifact: str) -> str:
     match = re.search(rf'"{re.escape(group)}:{re.escape(artifact)}:([^\"]+)"', text)
     if not match:
         raise AssertionError(f"build.gradle has no {group}:{artifact} dependency")
-    return match.group(1)
+    version = match.group(1)
+    variable = re.fullmatch(r"\$\{(\w+)\}", version)
+    if variable:
+        assignment = re.search(rf'\bdef\s+{re.escape(variable.group(1))}\s*=\s*"([^"]+)"', text)
+        if not assignment:
+            raise AssertionError(f"build.gradle has no literal assignment for {variable.group(1)}")
+        version = assignment.group(1)
+    return version
 
 
 def powershell_literal(path: Path, variable: str) -> str:
@@ -35,6 +42,12 @@ def powershell_literal(path: Path, variable: str) -> str:
 
 
 class VersionConsistencyTests(unittest.TestCase):
+    def test_fabric_test_loader_matches_runtime_loader(self):
+        self.assertEqual(
+            gradle_dependency_version("net.fabricmc", "fabric-loader"),
+            gradle_dependency_version("net.fabricmc", "fabric-loader-junit"),
+        )
+
     def test_packaging_version_defaults_match_gradle(self):
         expected = gradle_mod_version()
         self.assertEqual(
