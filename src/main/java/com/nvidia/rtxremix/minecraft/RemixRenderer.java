@@ -103,6 +103,23 @@ public class RemixRenderer {
     private static final List<String> ACCOUNT_OPTIONS =
             List.of("--username", "--accessToken", "--uuid", "--xuid", "--clientId");
 
+    /**
+     * Whether a fatal fault inside a Remix call goes to the runtime's crash
+     * reporter. False leaves it to HotSpot, whose {@code hs_err_pid*.log} keeps
+     * the Java frames that led to the call.
+     */
+    private static final boolean FORWARD_REMIX_FAULTS =
+            Boolean.parseBoolean(System.getProperty("rtxremix.forwardRemixFaults", "true"));
+
+    /**
+     * {@code runtime} crashes the game inside a Remix call on the render thread
+     * once {@link #FAULT_IN_REMIX_CALL_FRAME} frames have been presented, and
+     * {@code jvm} faults inside {@code jvm.dll} under the same call instead.
+     * Checks where a native crash on the render thread is reported.
+     */
+    private static final String FAULT_IN_REMIX_CALL = System.getProperty("rtxremix.debug.faultInRemixCall", "");
+    private static final int FAULT_IN_REMIX_CALL_FRAME = 120;
+
     // Remix API instance
     private RemixAPI remixApi;
     private boolean initialized = false;
@@ -112,6 +129,7 @@ public class RemixRenderer {
     
     private boolean submitFrameCalled = false;
     private boolean presentFailureLogged = false;
+    private int presentedFrames = 0;
 
     // Scene managers
     private ChunkManager chunkManager;
@@ -250,6 +268,10 @@ public class RemixRenderer {
 
             remixApi = RemixAPI.load(dllPath);
             LOGGER.info("RTX Remix API loaded successfully");
+            if (!FORWARD_REMIX_FAULTS) {
+                remixApi.setFaultForwarding(false);
+                LOGGER.info("Native crashes in Remix calls go to hs_err_pid*.log, as rtxremix.forwardRemixFaults=false asks");
+            }
 
             // RTXREMIX_EXTRA_RTXCONF="rtx.a=1;rtx.b=true" applies arbitrary rtx.conf
             // overrides for this session. Applied before startup() so options that
@@ -1329,6 +1351,9 @@ public class RemixRenderer {
      * per run rather than once per frame.
      */
     public void presentFrameVk() {
+        if (!FAULT_IN_REMIX_CALL.isEmpty() && presentedFrames == FAULT_IN_REMIX_CALL_FRAME) {
+            faultInRemixCall();
+        }
         boolean failed = false;
         try {
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
@@ -1347,6 +1372,7 @@ public class RemixRenderer {
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
             }
+            presentedFrames++;
             submitFrameCalled = false;
         } catch (Exception e) {
             failed = true;
@@ -1354,6 +1380,22 @@ public class RemixRenderer {
         }
         if (!failed) {
             presentFailureLogged = false;
+        }
+    }
+
+    private void faultInRemixCall() {
+        boolean insideJvm = FAULT_IN_REMIX_CALL.equals("jvm");
+        if (!insideJvm && !FAULT_IN_REMIX_CALL.equals("runtime")) {
+            LOGGER.warn("Ignoring rtxremix.debug.faultInRemixCall={}: expected runtime or jvm",
+                    FAULT_IN_REMIX_CALL);
+            return;
+        }
+        LOGGER.warn("Crashing inside a Remix call ({}), as rtxremix.debug.faultInRemixCall asks",
+                FAULT_IN_REMIX_CALL);
+        try {
+            remixApi.faultInRemixCall(insideJvm);
+        } catch (RemixException e) {
+            LOGGER.error("Could not crash inside a Remix call: {} (code: {})", e.getMessage(), e.getErrorCode());
         }
     }
 

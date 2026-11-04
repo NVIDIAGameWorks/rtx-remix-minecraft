@@ -206,7 +206,10 @@ turn it off. You can change both at any time in the Permissions tab of the
 **RTX Remix Graphics Settings** menu.
 
 Crash data waits under `rtx-remix\logs\.sentry-native\` in the game folder
-until it is sent, and is deleted after a successful upload. NVIDIA uses the data
+until it is sent, and is deleted after a successful upload. With technical crash
+information unchecked, RTX Remix still records a crash there but sends nothing:
+the next launch asks whether to send that report, and deletes it if you decline.
+NVIDIA uses the data
 to find and fix problems and to decide what to work on, under the
 [NVIDIA Privacy Policy](https://www.nvidia.com/en-us/about-nvidia/privacy-policy/).
 The runtime's
@@ -269,7 +272,7 @@ following:
 | Which resource packs are on | Options, Resource Packs. Material bugs depend on this. |
 | The output of `/rtx status` | Type it in chat and copy the lines. |
 | `latest.log` and `remix-dxvk.log` | `latest.log` is at the paths above, and `remix-dxvk.log` is in `rtx-remix\logs\` in the same game folder. Attach the files rather than pasting part of them. |
-| For a crash, the crash files | Zip whatever the game folder has of `crash\`, `crash-reports\`, and `hs_err_pid*.log`, and attach the zip. |
+| For a crash, the crash files | Copy `rtx-remix\logs\remix-dxvk.log` before you start the game again, because the next launch replaces it. Its `Sentry session id` line finds the report RTX Remix sent, if crash reporting is on. Then zip whatever the game folder has of `crash-reports\`, `hs_err_pid*.log`, and `crash\`, and attach the zip with the logs. |
 | A screenshot of the problem | F2 saves one to the `screenshots\` folder. |
 | For a visual bug, a matching pair | Take the shot, type `/rtx off`, take a second shot from the same spot, then `/rtx on`. The pair shows what changed. |
 
