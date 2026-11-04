@@ -73,7 +73,7 @@ function Invoke-Menu {
     return $script:answers[$script:answered - 1]
 }
 function Confirm-YesNo { param([string]$Prompt, [switch]$DefaultNo) return $true }
-function Test-NotAdmin { return $true }
+function Test-ElevationAllowed { return $true }
 function Test-HostIsArm64 { return $false }
 function Get-DetectedState {
     $state = Get-LauncherState
@@ -284,6 +284,16 @@ def select(run: Run, **arguments) -> str:
     result = run("Select", **arguments)
     assert not result.stderr
     return result.stdout
+
+
+def test_the_harness_replaces_only_functions_the_installer_defines():
+    # A replacement for a function the installer has renamed is never called, and the real one runs instead: the
+    # elevation check then refuses a CI runner whose jobs run as LocalSystem.
+    defined = set(re.findall(r"(?im)^\s*function\s+([\w-]+)", INSTALLER.read_text(encoding="utf-8")))
+    replaced = re.findall(r"(?im)^function\s+([\w-]+)", HARNESS)
+
+    assert replaced
+    assert [name for name in replaced if name not in defined] == []
 
 
 def test_all_three_start_ticked(run: Run):
