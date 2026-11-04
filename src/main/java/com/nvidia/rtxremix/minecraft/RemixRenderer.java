@@ -104,6 +104,14 @@ public class RemixRenderer {
             List.of("--username", "--accessToken", "--uuid", "--xuid", "--clientId");
 
     /**
+     * Whether a fatal fault inside a Remix call goes to the runtime's crash
+     * reporter. False leaves it to HotSpot, whose {@code hs_err_pid*.log} keeps
+     * the Java frames that led to the call.
+     */
+    private static final boolean FORWARD_REMIX_FAULTS =
+            Boolean.parseBoolean(System.getProperty("rtxremix.forwardRemixFaults", "true"));
+
+    /**
      * {@code runtime} crashes the game inside a Remix call on the render thread
      * once {@link #FAULT_IN_REMIX_CALL_FRAME} frames have been presented, and
      * {@code jvm} faults inside {@code jvm.dll} under the same call instead.
@@ -260,6 +268,10 @@ public class RemixRenderer {
 
             remixApi = RemixAPI.load(dllPath);
             LOGGER.info("RTX Remix API loaded successfully");
+            if (!FORWARD_REMIX_FAULTS) {
+                remixApi.setFaultForwarding(false);
+                LOGGER.info("Native crashes in Remix calls go to hs_err_pid*.log, as rtxremix.forwardRemixFaults=false asks");
+            }
 
             // RTXREMIX_EXTRA_RTXCONF="rtx.a=1;rtx.b=true" applies arbitrary rtx.conf
             // overrides for this session. Applied before startup() so options that
@@ -1339,7 +1351,7 @@ public class RemixRenderer {
      * per run rather than once per frame.
      */
     public void presentFrameVk() {
-        if (!FAULT_IN_REMIX_CALL.isEmpty() && ++presentedFrames == FAULT_IN_REMIX_CALL_FRAME) {
+        if (!FAULT_IN_REMIX_CALL.isEmpty() && presentedFrames == FAULT_IN_REMIX_CALL_FRAME) {
             faultInRemixCall();
         }
         boolean failed = false;
@@ -1360,6 +1372,7 @@ public class RemixRenderer {
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
             }
+            presentedFrames++;
             submitFrameCalled = false;
         } catch (Exception e) {
             failed = true;

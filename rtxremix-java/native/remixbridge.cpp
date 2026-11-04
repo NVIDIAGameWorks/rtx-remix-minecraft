@@ -282,8 +282,14 @@ static void installCrashHandler() {
     g_prevFilter = SetUnhandledExceptionFilter(crashExceptionFilter);
 }
 
+// The runtime starts Crashpad in CreateD3D9, after installCrashHandler, and
+// Crashpad's filter then replaces this one. Restore the earlier filter only
+// while this one is still installed, so Crashpad keeps catching faults in the
+// guarded Shutdown and after it.
 static void uninstallCrashHandler() {
-    SetUnhandledExceptionFilter(g_prevFilter);
+    LPTOP_LEVEL_EXCEPTION_FILTER current = SetUnhandledExceptionFilter(g_prevFilter);
+    if (current != crashExceptionFilter)
+        SetUnhandledExceptionFilter(current);
     g_prevFilter = nullptr;
 }
 
@@ -300,8 +306,14 @@ static void uninstallCrashHandler() {
 // it. While Crashpad is up that filter never returns: its handler process
 // writes the dump and terminates the game with the exception code. If it does
 // return, HotSpot reports the fault as it always has.
+//
+// Forwarding is limited to x64, the only architecture it has been checked on;
+// elsewhere the guard leaves every fault to HotSpot, as before.
+// RemixBridge.setRemixFaultForwarding(false) turns it off on x64 too, so
+// HotSpot writes hs_err_pid*.log with the Java frames instead.
 // ════════════════════════════════════════════════════════════════════════════
 
+static volatile LONG g_forwardRemixFaults = 1;
 static uintptr_t g_jvmImageBegin = 0;
 static uintptr_t g_jvmImageEnd   = 0;
 
@@ -342,6 +354,12 @@ static bool isFatalRemixFault(DWORD code) {
 }
 
 static LONG remixFaultFilter(EXCEPTION_POINTERS* ep) {
+#if !defined(_M_X64)
+    (void)ep;
+    return EXCEPTION_CONTINUE_SEARCH;
+#else
+    if (!g_forwardRemixFaults)
+        return EXCEPTION_CONTINUE_SEARCH;
     const EXCEPTION_RECORD* record = ep->ExceptionRecord;
     if (!isFatalRemixFault(record->ExceptionCode))
         return EXCEPTION_CONTINUE_SEARCH;
@@ -380,6 +398,7 @@ static LONG remixFaultFilter(EXCEPTION_POINTERS* ep) {
     // Whatever the forwarded filter answered, HotSpot still owns this thread
     // and is the one to end the process.
     return EXCEPTION_CONTINUE_SEARCH;
+#endif
 }
 
 // Runs one call into the runtime under the guard. Keep the body to the call
@@ -843,6 +862,14 @@ Java_com_nvidia_rtxremix_RemixBridge_faultInRemixCall(JNIEnv* env, jclass, jbool
     if (insideJvm)
         return remixCall([&] { return env->GetArrayLength((jarray)unmapped); });
     return (jint)remixCall([&] { return g_remix.DrawInstance((const remixapi_InstanceInfo*)unmapped); });
+}
+
+// Whether the Remix call guard hands a fatal fault in the runtime to the
+// runtime's crash reporter. On by default; callable before initialize.
+JNIEXPORT void JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_setRemixFaultForwarding(JNIEnv*, jclass, jboolean enabled)
+{
+    InterlockedExchange(&g_forwardRemixFaults, enabled ? 1 : 0);
 }
 
 JNIEXPORT jint JNICALL
@@ -1626,7 +1653,11 @@ Java_com_nvidia_rtxremix_RemixBridge_d3d9Release(JNIEnv*, jclass, jlong comPtr)
 {
     if (comPtr == 0) return 0;
     auto pUnk = (IUnknown*)(uintptr_t)comPtr;
-    return (jint)remixCall([&] { return pUnk->Release(); });
+    void** vtable = *(void***)pUnk;
+    // IUnknown vtable[2] = Release
+    typedef ULONG(__stdcall* PFN_Release)(IUnknown*);
+    auto pfnRelease = (PFN_Release)vtable[2];
+    return (jint)remixCall([&] { return pfnRelease(pUnk); });
 }
 
 // ─── extension allocation ────────────────────────────────────────────────
@@ -1996,8 +2027,10 @@ JNIEXPORT jlong JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyZoneBegin(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked()) return 0;
     const char* cname = env->GetStringUTFChars(name, nullptr);
+    if (!cname) return 0;
+    const size_t nameLength = strlen(cname);
     uint64_t srcloc = remixCall([&] { return s_allocSrclocName(
-        0, "Java", 4, cname, strlen(cname), cname, strlen(cname)); });
+        0, "Java", 4, cname, nameLength, cname, nameLength); });
     env->ReleaseStringUTFChars(name, cname);
     TracyCZoneCtx ctx = remixCall([&] { return s_emitZoneBeginAlloc(srcloc, 1); });
     return (jlong)ctx.id | ((jlong)ctx.active << 32);
@@ -2020,6 +2053,7 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracySetThreadName(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked() || !s_setThreadName) return;
     const char* cname = env->GetStringUTFChars(name, nullptr);
+    if (!cname) return;
     remixCall([&] { s_setThreadName(cname); });
     env->ReleaseStringUTFChars(name, cname);
 }
@@ -2053,7 +2087,9 @@ JNIEXPORT void JNICALL Java_com_nvidia_rtxremix_RemixBridge_tracyMessage(
     std::lock_guard<std::mutex> lock(s_tracyMutex);
     if (!initTracyFunctionsLocked() || !s_emitMessage) return;
     const char* cmessage = env->GetStringUTFChars(message, nullptr);
-    remixCall([&] { s_emitMessage(cmessage, strlen(cmessage), 0); });
+    if (!cmessage) return;
+    const size_t messageLength = strlen(cmessage);
+    remixCall([&] { s_emitMessage(cmessage, messageLength, 0); });
     env->ReleaseStringUTFChars(message, cmessage);
 }
 

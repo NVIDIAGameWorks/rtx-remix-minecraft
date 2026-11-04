@@ -404,11 +404,16 @@ are left alone. Run source-management commands from the repository root:
   or `rtxremix-java/native/build_native.bat x64` or `arm64`.
 
 Every call from the bridge into the runtime, the Remix C API, its D3D9
-objects, and its Tracy exports, goes through `remixCall`. Remix calls run on
-Java threads, where HotSpot catches a native fault before any unhandled-exception
-filter; the guard hands a fatal fault in the runtime to the runtime's crash
-reporter first and leaves faults in `jvm.dll`, stack overflows, and
-floating-point exceptions to HotSpot. Keep the guarded body to the call itself.
+objects, and its Tracy exports, goes through `remixCall`. The exceptions are
+`LoadLibraryW` and `FreeLibrary` of `d3d9.dll`, which run its `DllMain` under
+the loader lock. Remix calls run on Java threads, where on x64 HotSpot catches
+a native fault before any unhandled-exception filter; there the guard hands a
+fatal fault in the runtime to the runtime's crash reporter first and leaves
+faults in `jvm.dll`, stack overflows, and floating-point exceptions to
+HotSpot. Other architectures leave every fault to HotSpot until forwarding is
+checked on them, and `-Drtxremix.forwardRemixFaults=false` does the same on
+x64. Keep the guarded body to the call itself: marshalling, string lengths,
+and vtable loads stay outside it.
 
 The C API is reached only through JNI, never a JNA interface table. Java-side
 handles stay raw `long` values, not JNA `Pointer`s or wrapper objects. Native

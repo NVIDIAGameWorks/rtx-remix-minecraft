@@ -70,6 +70,14 @@ public final class RemixBridge {
      */
     public static native int faultInRemixCall(boolean insideJvm);
 
+    /**
+     * Sets whether a fatal fault inside a Remix call goes to the runtime's
+     * crash reporter first, which is the default on x64. Off, HotSpot reports
+     * it in {@code hs_err_pid*.log} with the Java frames that led to the call.
+     * Callable before {@link #initialize}.
+     */
+    public static native void setRemixFaultForwarding(boolean enabled);
+
     public static native int dxvkGetInteropInfo(InteropInfo outInfo);
 
     // ─── materials ───────────────────────────────────────────────────────

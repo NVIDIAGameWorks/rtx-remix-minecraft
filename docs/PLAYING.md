@@ -176,7 +176,10 @@ turn it off. You can change both at any time in the Permissions tab of the
 **RTX Remix Graphics Settings** menu.
 
 Crash data waits under `rtx-remix\logs\.sentry-native\` in the game folder
-until it is sent, and is deleted after a successful upload. NVIDIA uses the data
+until it is sent, and is deleted after a successful upload. With technical crash
+information unchecked, RTX Remix still records a crash there but sends nothing:
+the next launch asks whether to send that report, and deletes it if you decline.
+NVIDIA uses the data
 to find and fix problems and to decide what to work on, under the
 [NVIDIA Privacy Policy](https://www.nvidia.com/en-us/about-nvidia/privacy-policy/).
 The runtime's
