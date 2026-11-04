@@ -33,6 +33,8 @@ accessible field net/minecraft/client/render/RenderPhase ADDITIVE_TRANSPARENCY L
 accessible field net/minecraft/client/render/RenderPhase TRANSLUCENT_TRANSPARENCY Lnet/minecraft/client/render/RenderPhase$Transparency;
 accessible field net/minecraft/client/render/RenderPhase CRUMBLING_TRANSPARENCY Lnet/minecraft/client/render/RenderPhase$Transparency;
 accessible field net/minecraft/client/render/RenderPhase BEACON_BEAM_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
+accessible field net/minecraft/client/render/RenderPhase END_PORTAL_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
+accessible field net/minecraft/client/render/RenderPhase END_GATEWAY_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
 accessible field net/minecraft/client/render/RenderPhase ENTITY_SOLID_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
 accessible field net/minecraft/client/render/RenderPhase ENTITY_TRANSLUCENT_EMISSIVE_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;
 accessible field net/minecraft/client/render/RenderPhase EYES_PROGRAM Lnet/minecraft/client/render/RenderPhase$ShaderProgram;

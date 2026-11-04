@@ -22,8 +22,9 @@ pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs
 
 INSTALLER = util.PROJECT_DIR / "packaging" / "installer.ps1"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-# LocalSystem, whose name Windows can look up, and a SID no account has.
-NAMED_ACCOUNT = "S-1-5-18"
+# LocalService, whose name Windows can look up, and a SID no account has. Not LocalSystem: a CI runner's jobs can run as
+# LocalSystem, which would make the desktop's account the running one.
+NAMED_ACCOUNT = "S-1-5-19"
 UNKNOWN_ACCOUNT = "S-1-5-21-1000000000-1000000000-1000000000-1001"
 # Loads the installer's constants and functions without its entry point and runs one step. Check runs
 # Test-ElevationAllowed with administrator rights when -Elevated is given, on a desktop signed in to -Desktop: Self for
@@ -108,7 +109,8 @@ def test_administrator_rights_as_the_account_signed_in_to_the_desktop_are_allowe
 @pytest.mark.parametrize(
     ("desktop", "first"),
     [
-        (NAMED_ACCOUNT, r"The installer is running as .+, not as .+\\SYSTEM, the account signed in to this desktop\."),
+        # Windows translates LocalService's name, so only its DOMAIN\name shape is checked.
+        (NAMED_ACCOUNT, r"The installer is running as .+, not as .+\\.+, the account signed in to this desktop\."),
         (UNKNOWN_ACCOUNT, r"The installer is running as .+, not as the account signed in to this desktop\."),
     ],
     ids=["named", "unknown-name"],

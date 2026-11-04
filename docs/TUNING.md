@@ -141,6 +141,8 @@ their distance.
 | `rtxremix.profile.clientTaskSlowThresholdNs` | A client task slower than this gets its own JFR event | `ProfileScope` |
 | `rtxremix.crashDumpDetail` | Set to true to make the minidump the mod writes to `crash\` after a native crash also copy the memory that thread stacks point at, as version 0.1.0 did, which fills in the objects a crashing thread was using. That memory includes the launch arguments, with the launcher's access token, so keep these dumps private and out of public issues | `RemixRenderer` |
 | `rtxremix.debug.entityTypeSummary` | Enable a periodic per-entity-type capture summary in the log. It costs a map probe per entity per frame and a sort and format pass on the render thread, so it is a diagnostic, not a setting | `RemixEntityPass` |
+| `rtxremix.forwardRemixFaults` | Hand a fatal native fault inside a Remix call to the runtime's crash reporter, on x64. Set to false to leave it to HotSpot, whose `hs_err_pid*.log` keeps the Java frames that led to the call; the runtime then sends no report | `RemixRenderer` |
+| `rtxremix.debug.faultInRemixCall` | Crash the game after 120 presented frames to check crash reporting. `runtime` faults inside `d3d9.dll` during a Remix call on the render thread, which the runtime's crash reporter should catch; `jvm` faults inside `jvm.dll` under the same call, which HotSpot should still report in `hs_err_pid*.log`. Set `RTX_SENTRY_TEST_DSN` to an unreachable endpoint to keep the report on disk under `rtx-remix\logs\.sentry-native\` | `RemixRenderer` |
 
 Tracy zones only appear when the staged runtime was built with Tracy support.
 JFR works with any runtime.
@@ -271,7 +273,7 @@ directory for an installed client. Portable Prism keeps the former at
 | `rtx.conf` | mod | Replaced on full extraction; with a matching marker and runtime present, copied only if missing | Restored on the next launch |
 | `.rtx-remix-version` | mod | Marker recording the extracted version and architecture | Forces full re-extraction of the runtime and `rtx.conf`, preserving existing files under `rtx-remix/` |
 | `remix-sdk.old-*/` | mod | Left behind when the previous runtime was locked at upgrade time | Safe, and cleaned up opportunistically |
-| `rtx-remix/mods/minecraft-logic/` | map or profile author | Missing shipped files are added on launch even with a matching marker; existing files, including edited confs, are never overwritten | A deleted shipped conf returns to its default on the next launch |
+| `rtx-remix/mods/minecraft-logic/` | map or profile author | Missing shipped files are added on launch even with a matching marker; a file still holding an earlier shipped default takes the current one; edited confs are never overwritten | A deleted shipped conf returns to its default on the next launch |
 | `textures/` | mod | The shipped runtime DDS textures, read by name and replaced on full extraction; other files there are left alone | Restored on the next launch even with a matching marker |
 | `config/rtxremix.json` | settings screen | Written when a settings screen closes, and deleted when nothing differs from the defaults | Resets every setting |
 | `camera-paths/<world-key>/` | you | Your recordings | Loses them, so keep this one |

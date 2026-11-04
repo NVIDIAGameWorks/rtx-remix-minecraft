@@ -35,6 +35,12 @@ public final class NativeBridgeSmokeTest {
         RemixBridge.freeExt(distantExt);
         BridgeContractTest.check(RemixBridge.submit(0) == ErrorCode.NOT_INITIALIZED,
                 "An uninitialized runtime must reject submission");
+        BridgeContractTest.check(RemixBridge.faultInRemixCall(false) == ErrorCode.NOT_INITIALIZED,
+                "An uninitialized runtime must refuse the runtime fault probe");
+        BridgeContractTest.check(RemixBridge.faultInRemixCall(true) == ErrorCode.NOT_INITIALIZED,
+                "An uninitialized runtime must refuse the jvm fault probe");
+        RemixBridge.setRemixFaultForwarding(false);
+        RemixBridge.setRemixFaultForwarding(true);
         System.out.println("PASS: Java 8 loaded JNI DLL, allocated/copied/freed native extensions, checked uninitialized guard");
         if (args.length > 1) {
             int result = RemixBridge.initialize(new File(args[1]).getAbsolutePath());

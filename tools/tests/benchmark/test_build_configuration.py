@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import re
 import subprocess
 import unittest
@@ -55,8 +56,168 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("from 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'", body)
         self.assertIn("from('packaging/licenses')", body)
         self.assertIn("into 'packaging/licenses'", body)
-        self.assertNotIn("resourcepacks", body)
+        # The only resource pack is the zipped Materials pack; the retired baseline pack must not come back.
+        self.assertRegex(body, r"from\(materialsArchiveTask\) \{\s*into 'resourcepacks'\s*\}")
+        self.assertEqual(body.count("resourcepacks"), 1)
+        self.assertNotIn("LabPBR", body)
         self.assertNotIn("*.jar", body)
+        # The showcase world rides beside it, where a launcher's saves folder expects it. Both zips stay whole:
+        # the installer decides at install time which of them to unpack.
+        self.assertRegex(body, r"from\(worldArchiveTask\) \{\s*into 'saves'\s*\}")
+        self.assertEqual(body.count("saves"), 1)
+
+    def test_release_content_pins_come_from_tools_config(self):
+        # The installer offers the pack and world the release carries; development launches stage the ones
+        # tools/config.json pins. Players and developers must see the same content, so there is one pin file.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        self.assertIn("new groovy.json.JsonSlurper().parse(releaseContentConfigFile)", build)
+        self.assertIn("def releaseContentConfigFile = file('tools/config.json')", build)
+        for key in ("resourcePack.package", "resourcePack.version", "world.name", "world.version"):
+            self.assertIn(f"releaseContentConfig.{key}", build)
+        self.assertFalse((REPO_ROOT / "packman" / "art-pack.packman.xml").exists())
+        self.assertNotIn("art-pack.packman.xml", build)
+
+    def test_release_content_pins_match_the_names_the_installer_looks_for(self):
+        # A pin the installer's file name patterns do not match would build a zip the installer silently ignores,
+        # so fetchReleaseContent refuses it. The pins in the repository must pass that check.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        materials = re.search(r"materialsVersion ==~ /([^/]+)/", build)
+        world = re.search(r"worldVersion ==~ /([^/]+)/", build)
+        assert materials is not None and world is not None
+        tools_config = json.loads((REPO_ROOT / "tools" / "config.json").read_text(encoding="utf-8"))
+        self.assertRegex(tools_config["resourcePack"]["version"], f"^(?:{materials.group(1)})$")
+        self.assertRegex(tools_config["world"]["version"], f"^(?:{world.group(1)})$")
+
+    def test_release_content_zips_are_reproducible_and_named_for_the_installer(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        for task, name in (
+            ("materialsArchive", "RTX-Remix-Materials-${materialsVersion}.zip"),
+            ("worldArchive", "RTX-Remix-Showcase-World-${worldVersion}.zip"),
+        ):
+            with self.subTest(task=task):
+                archive = re.search(rf"(?ms)^def {task}Task = tasks.register\('{task}', Zip\) \{{(.+?)^\}}", build)
+                self.assertIsNotNone(archive, f"{task} must be a Zip task")
+                assert archive is not None
+                body = archive.group(1)
+                # installer.ps1 finds each zip by this name, in the bundle and in the game folder.
+                self.assertIn(f'archiveFileName.set("{name}")', body)
+                self.assertIn("destinationDirectory.set(layout.buildDirectory.dir('release-content'))", body)
+                self.assertIn("dependsOn fetchReleaseContentTask", body)
+                self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
+                self.assertIn("preserveFileTimestamps = false", body)
+                self.assertIn("reproducibleFileOrder = true", body)
+
+    def test_the_installer_looks_for_the_materials_zip_the_build_names(self):
+        # installer.ps1 installs, replaces, and removes only resource packs with this name, so it must be
+        # materialsArchive's RTX-Remix-Materials-${materialsVersion}.zip for every version fetchReleaseContent accepts.
+        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
+        self.assertIn(r"$script:ART_PACK_PATTERN = '^RTX-Remix-Materials-\d+\.\d+\.\d+\.zip$'", installer.splitlines())
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        materials = re.search(r"materialsVersion ==~ /([^/]+)/", build)
+        assert materials is not None
+        self.assertEqual(materials.group(1), r"\d+\.\d+\.\d+")
+
+    def test_the_installer_looks_for_the_world_zip_the_build_names(self):
+        # installer.ps1 unpacks only a world zip with this name, so it must match worldArchive's
+        # RTX-Remix-Showcase-World-${worldVersion}.zip for every version fetchReleaseContent accepts, v or no v.
+        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8").splitlines()
+        self.assertIn(r"$script:WORLD_ZIP_PATTERN = '^RTX-Remix-Showcase-World-v?\d+\.\d+\.\d+\.zip$'", installer)
+        # It installs the save from the folder worldArchive puts it in, under the same name.
+        self.assertIn("$script:WORLD_FOLDER_NAME = 'NVIDIA RTX Demo'", installer)
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        world = re.search(r"worldVersion ==~ /([^/]+)/", build)
+        assert world is not None
+        self.assertEqual(world.group(1), r"v?\d+\.\d+\.\d+")
+
+    def test_materials_zip_is_a_pack_minecraft_lists(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(
+            r"(?ms)^def materialsArchiveTask = tasks.register\('materialsArchive', Zip\) \{(.+?)^\}", build
+        )
+        assert archive is not None
+        body = archive.group(1)
+        self.assertIn("exclude '.packman*'", body)
+        # The pack's own pack.mcmeta is replaced by the one materialsPackMeta writes.
+        self.assertIn("exclude 'pack.mcmeta'", body)
+        self.assertIn("from(materialsPackMetaTask)", body)
+        # Six stray exports in the source pack that the release leaves out.
+        for channel in ("AO", "C", "H", "M", "N", "R"):
+            self.assertIn(f"exclude 'assets/minecraft/textures/block/item_frame_{channel}.png'", body)
+        self.assertEqual(body.count("item_frame_"), 6)
+        self.assertIn("from('packaging/content/materials/pack.png')", body)
+        self.assertIn("from('packaging/content/materials/README.txt')", body)
+        self.assertIn("filter(ReplaceTokens, tokens: [VERSION: materialsVersion])", body)
+        self.assertIn("from('packaging/content/LICENSE-CC-BY-4.0.txt')", body)
+        self.assertIn("rename { 'LICENSE.txt' }", body)
+        meta = re.search(r"(?ms)^def materialsPackMetaTask = tasks.register\('materialsPackMeta'\) \{(.+?)^\}", build)
+        assert meta is not None
+        # Minecraft shows the description in its pack list; pack_format stays as the pack's authors set it.
+        self.assertIn("def materialsDescription = 'LabPBR textures by NVIDIA for RTX Remix'", build)
+        self.assertIn("meta.pack.description = materialsDescription", meta.group(1))
+        self.assertNotIn("pack_format", meta.group(1))
+
+    def test_world_zip_keeps_only_the_world_a_player_needs(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(r"(?ms)^def worldArchiveTask = tasks.register\('worldArchive', Zip\) \{(.+?)^\}", build)
+        self.assertIsNotNone(archive)
+        assert archive is not None
+        body = archive.group(1)
+        world = re.search(r'(?ms)from\("\$\{worldDir\}/world"\) \{(.+?)^    \}', body)
+        self.assertIsNotNone(world, "the world must come from the Packman package's world/ folder")
+        assert world is not None
+        included = re.search(r"include (.+)", world.group(1))
+        assert included is not None
+        patterns = re.findall(r"'([^']+)'", included.group(1))
+        # No session.lock, playerdata, advancements, stats, datapacks, level.dat_old or Paper's files: a launcher
+        # opens the world fresh, as a player's first visit would.
+        self.assertEqual(len(patterns), 8)
+        self.assertEqual(
+            set(patterns),
+            {"DIM-1/**", "DIM1/**", "data/**", "entities/**", "poi/**", "region/**", "icon.png", "level.dat"},
+        )
+        self.assertIn("into 'NVIDIA RTX Demo'", world.group(1))
+        # The README and license sit beside level.dat in the world folder, not at the zip's root.
+        for source in ("packaging/content/world/README.txt", "packaging/content/LICENSE-CC-BY-4.0.txt"):
+            beside = re.search(rf"(?ms)from\('{re.escape(source)}'\) \{{(.+?)^    \}}", body)
+            self.assertIsNotNone(beside, source)
+            assert beside is not None
+            self.assertIn("into 'NVIDIA RTX Demo'", beside.group(1))
+        self.assertIn("filter(ReplaceTokens, tokens: [VERSION: worldVersion])", body)
+        self.assertIn("rename { 'LICENSE.txt' }", body)
+
+    def test_release_content_links_live_under_remix_runtime(self):
+        # A checkout of a commit that tracks files under a Packman junction writes and deletes them in the shared
+        # package cache, so the pack's and world's links stay where git has never tracked a file.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        self.assertIn("def artPackDir = 'remix-runtime/art-pack'", build)
+        self.assertIn("def worldDir = 'remix-runtime/world'", build)
+        fetch = re.search(
+            r"(?ms)^def fetchReleaseContentTask = tasks.register\('fetchReleaseContent'\) \{(.+?)^\}", build
+        )
+        self.assertIsNotNone(fetch)
+        assert fetch is not None
+        body = fetch.group(1)
+        # The generated manifest links each dependency at one of those two paths and nowhere else.
+        self.assertEqual(re.findall(r"link: (\w+)", body), ["artPackDir", "worldDir"])
+        self.assertIn("linkPath: file(pin.link).absolutePath.replace('\\\\', '/')", body)
+        self.assertIn("pkg: releaseContentConfig.resourcePack.package", body)
+        self.assertIn('pkg: "rtx_remix_minecraft_world_${releaseContentConfig.world.name}"', body)
+        self.assertIn("'pull', temporaryManifest.absolutePath", body)
+        self.assertIn("inputs.file(releaseContentConfigFile)", body)
+        self.assertIn("/remix-runtime/", (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+
+    def test_release_content_runs_packman_by_a_relative_path(self):
+        # cmd /c strips the outer quotes of a quoted script path, which splits a checkout path containing spaces, so
+        # the pull runs packman.cmd from its own folder, as fetchRuntimeTextures does.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        fetch = re.search(
+            r"(?ms)^def fetchReleaseContentTask = tasks.register\('fetchReleaseContent'\) \{(.+?)^\}", build
+        )
+        assert fetch is not None
+        body = fetch.group(1)
+        self.assertIn("workingDir packmanDirectory", body)
+        self.assertIn("commandLine 'cmd', '/d', '/c', '.\\\\packman.cmd', 'pull', temporaryManifest.absolutePath", body)
+        self.assertNotIn("'packman.cmd').absolutePath", body)
 
     def test_distributable_jar_carries_the_runtime_textures(self):
         # A launcher such as CurseForge installs the JAR alone, with no installer to copy textures beside it, so the
@@ -75,7 +236,7 @@ class BuildConfigurationTests(unittest.TestCase):
 
     def test_release_archive_zips_the_staged_installable_tree(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        archive = re.search(r"(?ms)^tasks.register\('releaseArchive', Zip\) \{(.+?)^\}", build)
+        archive = re.search(r"(?ms)^def releaseArchiveTask = tasks.register\('releaseArchive', Zip\) \{(.+?)^\}", build)
         self.assertIsNotNone(archive)
         assert archive is not None
         body = archive.group(1)
@@ -85,6 +246,58 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("destinationDirectory.set(layout.buildDirectory.dir('distributions'))", body)
         self.assertIn("preserveFileTimestamps = false", body)
         self.assertIn("reproducibleFileOrder = true", body)
+
+    def test_release_archive_is_the_installer_bundle(self):
+        # The release carries the JAR, the pack and the world as separate files, so the bundle that holds the
+        # installer and both zips has to read as the installer, not as a second copy of the mod.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        archive = re.search(r"(?ms)^def releaseArchiveTask = tasks.register\('releaseArchive', Zip\) \{(.+?)^\}", build)
+        assert archive is not None
+        body = archive.group(1)
+        self.assertIn("archiveClassifier.set('installer')", body)
+        # The installer's name stays apart from the JAR's, which has no classifier.
+        jar = re.search(r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}", build)
+        assert jar is not None
+        self.assertNotIn("archiveClassifier", jar.group(1))
+
+    def test_release_assets_are_the_four_release_files(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        assets = re.search(r"(?ms)^tasks.register\('stageReleaseAssets', Sync\) \{(.+?)^\}", build)
+        self.assertIsNotNone(assets, "release assets must be staged through Sync so a stale file cannot be uploaded")
+        assert assets is not None
+        body = assets.group(1)
+        self.assertIn("into layout.buildDirectory.dir('release-assets')", body)
+        self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
+        # The JAR, both content zips and the bundle, and nothing else: the workflow uploads every file here.
+        self.assertEqual(
+            re.findall(r"from\(([^)]*)\)", body),
+            ["packageJarArchive", "materialsArchiveTask", "worldArchiveTask", "releaseArchiveTask"],
+        )
+        self.assertNotIn("include", body)
+        self.assertNotIn("exclude", body)
+
+    def test_ordinary_builds_do_not_fetch_release_content(self):
+        # The world is hundreds of megabytes, so build, test and package must never pull it. Only release staging
+        # may name the content tasks. The tools suite does not run Gradle and the check workflow has no Java, so
+        # this reads build.gradle instead of running `gradlew build --dry-run`.
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        content = ("fetchReleaseContent", "materialsPackMeta", "materialsArchive", "worldArchive")
+        release = ("stageReleaseArchive", "releaseArchive", "stageReleaseAssets")
+        remaining = build
+        # Cut each task's definition out of the script. What is left is every other task, and none may name them.
+        for name in (*content, *release):
+            definition = rf"(?ms)^(?:def \w+ = )?tasks\.register\('{name}'[^\n]*\{{\n.+?^\}}\n"
+            self.assertEqual(len(re.findall(definition, remaining)), 1, f"{name} must be defined exactly once")
+            remaining = re.sub(definition, "", remaining)
+        for name in (*content, *release):
+            with self.subTest(reference=name):
+                # Not assertNotRegex: its failure message would print the whole script.
+                reference = re.search(rf".*\b{name}(?:Task)?\b.*", remaining)
+                self.assertIsNone(
+                    reference,
+                    f"{name} may be named only by the release tasks, so no ordinary build reaches it: "
+                    f"{reference.group(0).strip() if reference else ''}",
+                )
 
     def test_python_guard_pattern_rejects_python_payloads_only(self):
         # verifyPackageJar's pattern is the whole defence against a runtime pin
