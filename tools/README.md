@@ -192,7 +192,7 @@ section owns the cross-layer change order and publication requirements.
 |---|---|---|
 | Normal development, demo world, or local dxvk testing | `tools\rtx.bat`, through this checkout's Prism instance | Installed Prism's profile, or `run-prism\instances\rtx-remix-dev\.minecraft` for portable Prism |
 | Manually test in the regular Microsoft Launcher | `tools\rtx.bat install` after `gradlew.bat build` | `%APPDATA%\.minecraft`, or `--game-dir DIR` |
-| Install a produced release | The release archive's `install.bat` | Installer-selected launcher instance |
+| Install a produced release | The installer bundle's `install.bat` | Installer-selected launcher instance |
 
 These are alternatives. Mixing them can leave you inspecting one Minecraft
 directory while a different instance is actually running.
