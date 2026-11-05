@@ -162,10 +162,11 @@ public class RemixAPI {
         int result = RemixBridge.startup(
             info.hwnd,
                 info.disableSrgbConversionForOutput,
-                info.windowOwnership.nativeValue(),
+                info.forceNoVkSwapchain,
                 info.editorModeEnabled,
             info.combineGuiInFinalColor,
-            info.interopImage
+            info.interopImage,
+            info.useRemixOwnedChildWindow
         );
         if (result != ErrorCode.SUCCESS) {
             throw new RemixException("Startup failed", result);

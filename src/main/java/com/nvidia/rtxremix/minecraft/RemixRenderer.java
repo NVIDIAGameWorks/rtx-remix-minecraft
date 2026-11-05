@@ -12,7 +12,6 @@ import com.nvidia.rtxremix.PresentInfo;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.RemixException;
 import com.nvidia.rtxremix.StartupInfo;
-import com.nvidia.rtxremix.WindowOwnership;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstanceStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
@@ -328,8 +327,9 @@ public class RemixRenderer {
 
                 StartupInfo startupInfo = StartupInfo.builder()
                     .hwnd(windowHandle)
-                    .windowOwnership(WindowOwnership.REMIX_OWNED_CHILD_WINDOW)
+                    .forceNoVkSwapchain(false)
                     .interopImage(true)
+                    .useRemixOwnedChildWindow(true)
                     .build();
                 remixApi.startup(startupInfo);
                 LOGGER.info("RTX Remix API started");

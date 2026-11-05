@@ -9,7 +9,6 @@ import com.nvidia.rtxremix.InteropInfo;
 import com.nvidia.rtxremix.PresentInfo;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.StartupInfo;
-import com.nvidia.rtxremix.WindowOwnership;
 import com.nvidia.rtxremix.forge.RemixForgeMod;
 import com.nvidia.rtxremix.forge.interop.LegacyGlInterop;
 import com.nvidia.rtxremix.forge.presentation.FullscreenPresentation;
@@ -64,7 +63,7 @@ final class ForgeRenderer implements PresentationHooks.Backend {
         long hwnd = LegacyGlInterop.currentWindowHandle();
         if (hwnd == 0) throw new IllegalStateException("Minecraft has no current OpenGL window");
         api.startup(StartupInfo.builder().hwnd(hwnd)
-                .windowOwnership(WindowOwnership.REMIX_OWNED_CHILD_WINDOW).interopImage(true)
+                .forceNoVkSwapchain(false).interopImage(true).useRemixOwnedChildWindow(true)
                 .combineGuiInFinalColor(true).build());
         interop = new LegacyGlInterop(api.dxvkGetInteropInfo());
         RemixForgeMod.LOG.info("Forge Remix initialized against API {}.{}.{}.",

@@ -54,10 +54,11 @@ public final class RemixBridge {
     // ─── lifecycle ───────────────────────────────────────────────────────
 
     public static native int startup(long hwnd, boolean disableSrgb,
-                                     int windowOwnership,
+                                     boolean forceNoVkSwapchain,
                                      boolean editorMode,
                                      boolean combineGui,
-                                     boolean interopImage);
+                                     boolean interopImage,
+                                     boolean useRemixOwnedChildWindow);
 
     public static native int shutdown();
 

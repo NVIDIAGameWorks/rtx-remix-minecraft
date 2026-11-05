@@ -188,15 +188,6 @@ extern "C" {
 
   typedef uint32_t remixapi_Bool;
 
-  typedef enum remixapi_WindowOwnership {
-    // Remix presents directly to the application-owned StartupInfo::hwnd.
-    REMIXAPI_WINDOW_OWNERSHIP_HOST_WINDOW = 0,
-    // The application owns presentation; Remix exposes output through dxvk_GetExternalSwapchain.
-    REMIXAPI_WINDOW_OWNERSHIP_EXTERNAL = 1,
-    // Remix owns and presents through a child HWND while StartupInfo::hwnd remains the input host.
-    REMIXAPI_WINDOW_OWNERSHIP_REMIX_OWNED_CHILD_WINDOW = 2,
-  } remixapi_WindowOwnership;
-
   typedef struct remixapi_Rect2D {
     int32_t left;
     int32_t top;
@@ -242,10 +233,8 @@ extern "C" {
     void*               pNext;
     remixapi_HWND       hwnd;
     remixapi_Bool       disableSrgbConversionForOutput;
-    // Selects ownership of the output window and presentation path. Defaults to HOST_WINDOW.
-    // EXTERNAL enables dxvk_GetExternalSwapchain for client-owned presentation.
-    // REMIX_OWNED_CHILD_WINDOW keeps hwnd as the input host and creates a child HWND for Vulkan WSI.
-    remixapi_WindowOwnership windowOwnership;
+    // Default: false. Use VkSwapchainKHR to present frame into HWND.
+    remixapi_Bool       forceNoVkSwapchain;
     remixapi_Bool       editorModeEnabled;
     // With this disabled, the user must fetch the GUI buffer using 
     // the, remixapi_dxvk_CopyRenderingOutputType, api with the, 
@@ -255,6 +244,8 @@ extern "C" {
     // If true, Remix allocates an interop image (along with semaphores) that can be used with non-Vulkan API.
     // See comments on 'remixapi_dxvk_InteropInfo' on the interop flow.
     remixapi_Bool       interopImage;
+    // If true, Remix presents through a child HWND while hwnd remains the input host.
+    remixapi_Bool       useRemixOwnedChildWindow;
   } remixapi_StartupInfo;
 
   typedef remixapi_ErrorCode(REMIXAPI_PTR* PFN_remixapi_Startup)(const remixapi_StartupInfo* info);

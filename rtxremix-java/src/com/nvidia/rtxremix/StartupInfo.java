@@ -10,21 +10,23 @@ package com.nvidia.rtxremix;
 public class StartupInfo {
     public long hwnd;
     public boolean disableSrgbConversionForOutput;
-    public WindowOwnership windowOwnership = WindowOwnership.HOST_WINDOW;
+    public boolean forceNoVkSwapchain;
     public boolean editorModeEnabled;
     /** If true, GUI is composited into FINAL_COLOR output (useful for debugging) */
     public boolean combineGuiInFinalColor;
     public boolean interopImage;
+    public boolean useRemixOwnedChildWindow;
 
     public StartupInfo() {}
 
     public static class Builder {
         private long hwnd;
         private boolean disableSrgbConversionForOutput;
-        private WindowOwnership windowOwnership = WindowOwnership.HOST_WINDOW;
+        private boolean forceNoVkSwapchain;
         private boolean editorModeEnabled;
         private boolean combineGuiInFinalColor;
         private boolean interopImage = false;
+        private boolean useRemixOwnedChildWindow;
 
         public Builder hwnd(long hwnd) {
             this.hwnd = hwnd;
@@ -36,8 +38,8 @@ public class StartupInfo {
             return this;
         }
 
-        public Builder windowOwnership(WindowOwnership value) {
-            this.windowOwnership = value;
+        public Builder forceNoVkSwapchain(boolean value) {
+            this.forceNoVkSwapchain = value;
             return this;
         }
 
@@ -56,14 +58,20 @@ public class StartupInfo {
             return this;
         }
 
+        public Builder useRemixOwnedChildWindow(boolean value) {
+            this.useRemixOwnedChildWindow = value;
+            return this;
+        }
+
         public StartupInfo build() {
             StartupInfo info = new StartupInfo();
             info.hwnd = this.hwnd;
             info.disableSrgbConversionForOutput = this.disableSrgbConversionForOutput;
-            info.windowOwnership = this.windowOwnership;
+            info.forceNoVkSwapchain = this.forceNoVkSwapchain;
             info.editorModeEnabled = this.editorModeEnabled;
             info.combineGuiInFinalColor = this.combineGuiInFinalColor;
             info.interopImage = this.interopImage;
+            info.useRemixOwnedChildWindow = this.useRemixOwnedChildWindow;
             return info;
         }
     }

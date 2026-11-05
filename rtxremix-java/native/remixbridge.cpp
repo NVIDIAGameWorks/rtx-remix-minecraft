@@ -800,18 +800,20 @@ Java_com_nvidia_rtxremix_RemixBridge_setCrashDumpDetail(JNIEnv*, jclass, jboolea
 
 JNIEXPORT jint JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_startup(JNIEnv*, jclass,
-    jlong hwnd, jboolean disableSrgb, jint windowOwnership,
-    jboolean editorMode, jboolean combineGui, jboolean interopImage)
+    jlong hwnd, jboolean disableSrgb, jboolean forceNoVkSwapchain,
+    jboolean editorMode, jboolean combineGui, jboolean interopImage,
+    jboolean useRemixOwnedChildWindow)
 {
     if (!g_inited || !g_remix.Startup) return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
     remixapi_StartupInfo info = {};
     info.sType                         = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
     info.hwnd                          = (HWND)(uintptr_t)hwnd;
     info.disableSrgbConversionForOutput = disableSrgb;
-    info.windowOwnership               = (remixapi_WindowOwnership)windowOwnership;
+    info.forceNoVkSwapchain            = forceNoVkSwapchain;
     info.editorModeEnabled             = editorMode;
     info.combineGuiInFinalColor        = combineGui;
     info.interopImage                  = interopImage;
+    info.useRemixOwnedChildWindow      = useRemixOwnedChildWindow;
     return (jint)remixCall([&] { return g_remix.Startup(&info); });
 }
 
