@@ -5,8 +5,10 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
+import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ChunkSectionPos;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -64,7 +66,7 @@ public record SectionBlockData(
      * @param spriteV0    sprite atlas UV bounds min V
      * @param spriteU1    sprite atlas UV bounds max U
      * @param spriteV1    sprite atlas UV bounds max V
-     * @param renderLayer render layer name ("solid", "cutout", "cutout_mipped", "translucent")
+     * @param material    the quad's Fabric renderer material, or null when the model set none
      * @param isOverlay   true if this quad is a decal overlay (transparent sprite on shared face)
      * @param isFluid     true if this quad belongs to a fluid (water, lava)
      */
@@ -77,7 +79,7 @@ public record SectionBlockData(
         Identifier spriteId,
         float spriteU0, float spriteV0,
         float spriteU1, float spriteV1,
-        String renderLayer,
+        @Nullable RenderMaterial material,
         boolean isOverlay,
         boolean isFluid
     ) {}

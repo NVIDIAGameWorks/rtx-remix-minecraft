@@ -34,7 +34,7 @@ import java.util.function.Predicate;
 /**
  * {@link RenderContext} implementation that captures quads emitted by FRAPI
  * models via {@code emitBlockQuads()}. The captured quads are converted to
- * {@link SectionBlockData.BlockQuad} records with full sprite/layer context.
+ * {@link SectionBlockData.BlockQuad} records with full sprite/material context.
  *
  * <p>Thread-local: one instance is reused per worker thread (via ThreadLocal
  * in {@link BlockQuadEmitter}).
@@ -235,7 +235,7 @@ final class RemixRenderContext implements RenderContext {
                 capturedColorIndex,
                 spriteId,
                 su0, sv0, su1, sv1,
-                "solid",
+                materialVal,
                 false, false
             ));
 
