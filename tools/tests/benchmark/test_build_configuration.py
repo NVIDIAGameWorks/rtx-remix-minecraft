@@ -140,11 +140,10 @@ class BuildConfigurationTests(unittest.TestCase):
         # The pack's own pack.mcmeta is replaced by the one materialsPackMeta writes.
         self.assertIn("exclude 'pack.mcmeta'", body)
         self.assertIn("from(materialsPackMetaTask)", body)
-        # Six stray exports in the source pack that the release leaves out.
-        for channel in ("AO", "C", "H", "M", "N", "R"):
-            self.assertIn(f"exclude 'assets/minecraft/textures/block/item_frame_{channel}.png'", body)
-        self.assertEqual(body.count("item_frame_"), 6)
-        self.assertIn("from('packaging/content/materials/pack.png')", body)
+        # The pack's own icon ships; its README and license give way to the release's.
+        self.assertNotIn("pack.png", body)
+        self.assertIn("exclude 'README.txt'", body)
+        self.assertIn("exclude 'LICENSE.txt'", body)
         self.assertIn("from('packaging/content/materials/README.txt')", body)
         self.assertIn("filter(ReplaceTokens, tokens: [VERSION: materialsVersion])", body)
         self.assertIn("from('packaging/content/LICENSE-CC-BY-4.0.txt')", body)
