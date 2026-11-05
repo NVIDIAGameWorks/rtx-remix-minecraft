@@ -730,8 +730,8 @@ def fetchReleaseContentTask = tasks.register('fetchReleaseContent') {
     }
 }
 
-// The pack's own pack.mcmeta calls it "PBR Test Pack"; the zip's carries the
-// description above and keeps the pack_format the pack's authors set.
+// The zip's pack.mcmeta carries the description above, whatever the pinned
+// pack's own says, and keeps the pack_format the pack's authors set.
 def materialsPackMetaTask = tasks.register('materialsPackMeta') {
     description = 'Writes the pack.mcmeta the Materials zip carries'
     group = 'build'
@@ -760,15 +760,11 @@ def materialsArchiveTask = tasks.register('materialsArchive', Zip) {
     from(artPackDir) {
         exclude '.packman*'
         exclude 'pack.mcmeta'
-        // Six stray exports in the source pack that the release leaves out.
-        exclude 'assets/minecraft/textures/block/item_frame_AO.png'
-        exclude 'assets/minecraft/textures/block/item_frame_C.png'
-        exclude 'assets/minecraft/textures/block/item_frame_H.png'
-        exclude 'assets/minecraft/textures/block/item_frame_M.png'
-        exclude 'assets/minecraft/textures/block/item_frame_N.png'
-        exclude 'assets/minecraft/textures/block/item_frame_R.png'
+        // The pack's README describes PDF guides the package does not carry, so
+        // the zip keeps the release's own README, with the license beside it.
+        exclude 'README.txt'
+        exclude 'LICENSE.txt'
     }
-    from('packaging/content/materials/pack.png')
     from('packaging/content/materials/README.txt') {
         filter(ReplaceTokens, tokens: [VERSION: materialsVersion])
     }
