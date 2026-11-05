@@ -146,7 +146,10 @@ body:
       label: Crash files
       description: >-
         For a crash, zip and attach whatever the game directory has of the
-        `crash` folder, the `crash-reports` folder, and any `hs_err_pid*.log`.
+        `crash-reports` folder, the `crash_report_*.txt` files in the `crash`
+        folder, and any `hs_err_pid*.log`. Leave out the `.dmp` files. Those
+        from version 0.1.0 can contain your Minecraft sign-in token, and so
+        can full-detail dumps, which are opt-in for testing.
     validations:
       required: false
 

@@ -273,6 +273,12 @@ public class RemixRenderer {
                 LOGGER.info("Native crashes in Remix calls go to hs_err_pid*.log, as rtxremix.forwardRemixFaults=false asks");
             }
 
+            if (Boolean.getBoolean("rtxremix.crashDumpDetail")) {
+                remixApi.setCrashDumpDetail(true);
+                LOGGER.warn("rtxremix.crashDumpDetail is on: a crash dump in crash\\ can include "
+                        + "the launcher's access token, so keep it private");
+            }
+
             // RTXREMIX_EXTRA_RTXCONF="rtx.a=1;rtx.b=true" applies arbitrary rtx.conf
             // overrides for this session. Applied before startup() so options that
             // are only read at device/swapchain creation (e.g. frame generation)

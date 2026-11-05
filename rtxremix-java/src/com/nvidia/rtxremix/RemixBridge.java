@@ -42,6 +42,15 @@ public final class RemixBridge {
      */
     public static native int overwriteProcessCommandLine(String replacement);
 
+    // ─── crash dumps ─────────────────────────────────────────────────────
+
+    /**
+     * Sets whether the minidump the bridge writes after a native crash also
+     * copies the memory that stack values point at. Off by default, because
+     * that memory includes the process's launch arguments.
+     */
+    public static native void setCrashDumpDetail(boolean full);
+
     // ─── lifecycle ───────────────────────────────────────────────────────
 
     public static native int startup(long hwnd, boolean disableSrgb,
