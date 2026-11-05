@@ -11,6 +11,8 @@ import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
+import net.fabricmc.fabric.api.renderer.v1.material.BlendMode;
+import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
 import net.fabricmc.fabric.api.renderer.v1.model.FabricBakedModel;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
@@ -38,6 +40,7 @@ import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockRenderView;
 import net.minecraft.world.BlockView;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -540,7 +543,7 @@ public final class BlockQuadEmitter {
             writer.stageQuad(tempPositions, fq.uvs(), fq.nx(), fq.ny(), fq.nz(),
                     color, fq.spriteId(),
                     fq.spriteU0(), fq.spriteV0(), fq.spriteU1(), fq.spriteV1(),
-                    layerName);
+                    frapiQuadLayer(fq.material(), layerName));
         }
 
         writer.flushBlock(texManager);
@@ -1020,7 +1023,20 @@ public final class BlockQuadEmitter {
         // translucent material with the frame as a diffuse layer.
         // Stained glass is already translucent and keeps vanilla's layer.
         if (state.isOf(Blocks.GLASS) || state.isOf(Blocks.GLASS_PANE)) return "glass";
-        RenderLayer layer = RenderLayers.getBlockLayer(state);
+        return layerName(RenderLayers.getBlockLayer(state));
+    }
+
+    /**
+     * The terrain layer a FRAPI quad is bucketed under, chosen as Indigo chooses
+     * it: the layer its material's blend mode names, or its block's layer when
+     * the blend mode is {@link BlendMode#DEFAULT} or the quad has no material.
+     */
+    static String frapiQuadLayer(@Nullable RenderMaterial material, String blockLayer) {
+        if (material == null || material.blendMode() == BlendMode.DEFAULT) return blockLayer;
+        return layerName(material.blendMode().blockRenderLayer);
+    }
+
+    private static String layerName(RenderLayer layer) {
         if (layer == RenderLayer.getSolid()) return "solid";
         if (layer == RenderLayer.getCutoutMipped()) return "cutout_mipped";
         if (layer == RenderLayer.getCutout()) return "cutout";

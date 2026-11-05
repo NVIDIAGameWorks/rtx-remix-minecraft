@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
+import net.fabricmc.fabric.api.renderer.v1.material.BlendMode;
+import net.fabricmc.fabric.api.renderer.v1.material.MaterialFinder;
 import net.fabricmc.fabric.api.renderer.v1.mesh.Mesh;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.impl.client.indigo.renderer.IndigoRenderer;
@@ -243,10 +245,49 @@ class RemixRenderContextTest {
         assertEquals(-1.0f, inner.harvest().getFirst().nz());
     }
 
+    @Test
+    void capturedQuadKeepsABlendModeItsModelSetsAndDefersOtherwise() {
+        MeshBuilderImpl builder = new MeshBuilderImpl();
+        builder.getEmitter().square(Direction.UP, 0, 0, 1, 1, 0).tag(1).emit();
+        builder.getEmitter().square(Direction.UP, 0, 0, 1, 1, 0).tag(2).emit();
+        Mesh mesh = builder.build();
+        RemixRenderContext context = context();
+        // A model that sets its blend mode per quad instead of registering a block layer.
+        MaterialFinder finder = IndigoRenderer.INSTANCE.materialFinder();
+        context.pushTransform(quad -> {
+            if (quad.tag() == 1) {
+                quad.material(finder.copyFrom(quad.material()).blendMode(BlendMode.CUTOUT).find());
+            }
+            return true;
+        });
+
+        mesh.outputTo(context.getEmitter());
+
+        assertEquals(2, context.harvest().size());
+        assertEquals("cutout", BlockQuadEmitter.frapiQuadLayer(context.harvest().get(0).material(), "solid"));
+        assertEquals("solid", BlockQuadEmitter.frapiQuadLayer(context.harvest().get(1).material(), "solid"));
+    }
+
+    @Test
+    void everyBlendModeNamesATerrainLayerOrDefers() {
+        // No blend mode names the glass layer, so a quad that defers to its block shows.
+        assertEquals("glass", BlockQuadEmitter.frapiQuadLayer(null, "glass"));
+        assertEquals("glass", glassBlockQuadLayer(BlendMode.DEFAULT));
+        assertEquals("solid", glassBlockQuadLayer(BlendMode.SOLID));
+        assertEquals("cutout", glassBlockQuadLayer(BlendMode.CUTOUT));
+        assertEquals("cutout_mipped", glassBlockQuadLayer(BlendMode.CUTOUT_MIPPED));
+        assertEquals("translucent", glassBlockQuadLayer(BlendMode.TRANSLUCENT));
+    }
+
     private static RemixRenderContext context() {
         RemixRenderContext context = new RemixRenderContext();
         context.prepare(null, null, BlockPos.ORIGIN, null);
         return context;
+    }
+
+    private static String glassBlockQuadLayer(BlendMode blendMode) {
+        return BlockQuadEmitter.frapiQuadLayer(
+                IndigoRenderer.INSTANCE.materialFinder().blendMode(blendMode).find(), "glass");
     }
 
     enum MeshOutput {
