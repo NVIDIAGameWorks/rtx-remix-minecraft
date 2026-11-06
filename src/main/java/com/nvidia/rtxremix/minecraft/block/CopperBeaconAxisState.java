@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
 
 /** Persistent, world-time-driven animation state for one Copper Beacon axis. */
 public record CopperBeaconAxisState(
@@ -101,7 +101,7 @@ public record CopperBeaconAxisState(
                 tick);
     }
 
-    public void writeNbt(NbtCompound nbt) {
+    public void writeNbt(CompoundTag nbt) {
         nbt.putFloat(POSITION_KEY, position);
         nbt.putInt(MODE_KEY, mode.ordinal());
         nbt.putFloat(ROTATION_SPEED_KEY, rotationSpeed);
@@ -112,7 +112,7 @@ public record CopperBeaconAxisState(
         nbt.putLong(ANCHOR_TICK_KEY, anchorTick);
     }
 
-    public static CopperBeaconAxisState readNbt(NbtCompound nbt) {
+    public static CopperBeaconAxisState readNbt(CompoundTag nbt) {
         CopperBeaconAxisState defaults = defaults(nbt.getLong(ANCHOR_TICK_KEY));
         return new CopperBeaconAxisState(
                 nbt.contains(POSITION_KEY) ? nbt.getFloat(POSITION_KEY) : defaults.position,

@@ -4,11 +4,11 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.visibility;
 
-import net.minecraft.util.math.MathHelper;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.util.Mth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -153,7 +153,7 @@ class ChunkStorageTorusTest {
     }
 
     private static int vanillaTargetOrigin(double cameraCoordinate, int slot, int size) {
-        int cameraBlock = MathHelper.ceil(cameraCoordinate);
+        int cameraBlock = Mth.ceil(cameraCoordinate);
         int span = size * 16;
         int start = cameraBlock - 8 - span / 2;
         return start + Math.floorMod(slot * 16 - start, span);

@@ -6,8 +6,8 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -17,16 +17,16 @@ import org.spongepowered.asm.mixin.injection.At;
  * type on every section build, on the shared workers, so the position is kept per thread
  * instead. It never escapes the method: the colour resolver receives its coordinates as ints.
  */
-@Mixin(ClientWorld.class)
+@Mixin(ClientLevel.class)
 public abstract class ClientWorldColorMixin {
 
-    private static final ThreadLocal<BlockPos.Mutable> rtxremix$blendPos =
-            ThreadLocal.withInitial(BlockPos.Mutable::new);
+    private static final ThreadLocal<BlockPos.MutableBlockPos> rtxremix$blendPos =
+            ThreadLocal.withInitial(BlockPos.MutableBlockPos::new);
 
     @WrapOperation(
-            method = "calculateColor",
-            at = @At(value = "NEW", target = "()Lnet/minecraft/util/math/BlockPos$Mutable;"))
-    private BlockPos.Mutable rtxremix$reuseBlendPos(Operation<BlockPos.Mutable> original) {
+            method = "calculateBlockTint",
+            at = @At(value = "NEW", target = "()Lnet/minecraft/core/BlockPos$MutableBlockPos;"))
+    private BlockPos.MutableBlockPos rtxremix$reuseBlendPos(Operation<BlockPos.MutableBlockPos> original) {
         return rtxremix$blendPos.get();
     }
 }

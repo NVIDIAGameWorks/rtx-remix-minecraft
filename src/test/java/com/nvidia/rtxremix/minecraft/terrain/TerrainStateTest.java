@@ -8,8 +8,6 @@ import com.nvidia.rtxremix.minecraft.terrain.capture.SectionMeshData;
 import com.nvidia.rtxremix.minecraft.light.BlockLightKey;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.HardcodedVertex;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -18,6 +16,8 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -530,7 +530,7 @@ class TerrainStateTest {
     }
 
     private static BlockLightKey lightKey(String path) {
-        return new BlockLightKey(BlockPos.ORIGIN, Identifier.of("test", path), 0);
+        return new BlockLightKey(BlockPos.ZERO, ResourceLocation.fromNamespaceAndPath("test", path), 0);
     }
 
     private static void addSection(TerrainState terrain, int cx, int sy, int cz,

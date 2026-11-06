@@ -5,18 +5,18 @@
 package com.nvidia.rtxremix.minecraft.weather;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.systems.VertexSorter;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.MeshData;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import net.fabricmc.fabric.api.client.rendering.v1.CoreShaderRegistrationCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.VertexFormats;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
 import org.joml.Quaternionf;
@@ -44,17 +44,17 @@ import java.util.List;
 public final class RemixWeatherRenderer {
     private static final float NEAR_PLANE = 0.05f;
     private static final float FAR_PLANE = 1000.0f;
-    private static final Identifier RAIN_TEXTURE =
-            Identifier.ofVanilla("textures/environment/rain.png");
-    private static final Identifier RAIN_SHADER =
-            Identifier.of(RtxRemixCommonMod.MOD_ID, "rain_refraction");
+    private static final ResourceLocation RAIN_TEXTURE =
+            ResourceLocation.withDefaultNamespace("textures/environment/rain.png");
+    private static final ResourceLocation RAIN_SHADER =
+            ResourceLocation.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, "rain_refraction");
 
-    private static ShaderProgram rainShader;
+    private static ShaderInstance rainShader;
 
     private final List<DeferredDraw> draws = new ArrayList<>(2);
     private Matrix4f projection;
     private Matrix4f modelView;
-    private LightmapTextureManager lightmap;
+    private LightTexture lightmap;
     private DepthSeeder depthSeeder;
     private int capturedQuadCount;
     private int lastDrawCount;
@@ -64,11 +64,11 @@ public final class RemixWeatherRenderer {
         CoreShaderRegistrationCallback.EVENT.register(context ->
                 context.register(
                         RAIN_SHADER,
-                        VertexFormats.POSITION_TEXTURE_COLOR_LIGHT,
+                        DefaultVertexFormat.PARTICLE,
                         shader -> rainShader = shader));
     }
 
-    public void beginCaptureFrame(LightmapTextureManager lightmapTextureManager) {
+    public void beginCaptureFrame(LightTexture lightmapTextureManager) {
         closePendingDraws();
         lightmap = lightmapTextureManager;
         capturedQuadCount = 0;
@@ -77,7 +77,7 @@ public final class RemixWeatherRenderer {
     }
 
     public void updateCamera(Camera camera, float fovYDegrees, float aspect) {
-        Quaternionf cameraRotation = camera.getRotation().conjugate(new Quaternionf());
+        Quaternionf cameraRotation = camera.rotation().conjugate(new Quaternionf());
         modelView = new Matrix4f().rotation(cameraRotation);
         projection = new Matrix4f().perspective(
                 (float) Math.toRadians(fovYDegrees),
@@ -86,12 +86,12 @@ public final class RemixWeatherRenderer {
                 FAR_PLANE);
     }
 
-    public void capture(BuiltBuffer buffer, Identifier texture) {
+    public void capture(MeshData buffer, ResourceLocation texture) {
         if (texture == null) {
             buffer.close();
             throw new IllegalStateException("Weather draw did not bind a texture");
         }
-        capturedQuadCount += buffer.getDrawParameters().vertexCount() / 4;
+        capturedQuadCount += buffer.drawState().vertexCount() / 4;
         draws.add(new DeferredDraw(buffer, texture, texture.equals(RAIN_TEXTURE)));
     }
 
@@ -112,16 +112,16 @@ public final class RemixWeatherRenderer {
             throw new IllegalStateException("Weather camera state was not initialized");
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        client.getFramebuffer().beginWrite(true);
+        Minecraft client = Minecraft.getInstance();
+        client.getMainRenderTarget().bindWrite(true);
         try {
             if (depthSeeder == null) {
                 depthSeeder = new DepthSeeder();
             }
             depthSeeder.seed(
                     depthTexture,
-                    client.getWindow().getFramebufferWidth(),
-                    client.getWindow().getFramebufferHeight());
+                    client.getWindow().getWidth(),
+                    client.getWindow().getHeight());
             lastDrawCount = draws.size();
             lastQuadCount = capturedQuadCount;
             renderDeferredDraws(finalColorTexture);
@@ -150,13 +150,13 @@ public final class RemixWeatherRenderer {
         boolean[] colorMask = readColorMask();
         float[] shaderColor = RenderSystem.getShaderColor().clone();
 
-        RenderSystem.setProjectionMatrix(projection, VertexSorter.BY_Z);
+        RenderSystem.setProjectionMatrix(projection, VertexSorting.ORTHOGRAPHIC_Z);
         modelViewStack.pushMatrix();
         modelViewStack.set(modelView);
         RenderSystem.applyModelViewMatrix();
 
         try {
-            lightmap.enable();
+            lightmap.turnOnLightLayer();
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glEnable(GL11.GL_DEPTH_TEST);
             GL11.glDisable(GL11.GL_CULL_FACE);
@@ -174,7 +174,7 @@ public final class RemixWeatherRenderer {
             renderRain(finalColorTexture);
             renderSnow();
         } finally {
-            lightmap.disable();
+            lightmap.turnOffLightLayer();
             closePendingDraws();
             restoreCapability(GL11.GL_DEPTH_TEST, depthTest);
             restoreCapability(GL11.GL_BLEND, blend);
@@ -193,7 +193,7 @@ public final class RemixWeatherRenderer {
             GL20.glBlendEquationSeparate(blendEquationRgb, blendEquationAlpha);
             modelViewStack.popMatrix();
             RenderSystem.applyModelViewMatrix();
-            RenderSystem.setProjectionMatrix(savedProjection, VertexSorter.BY_Z);
+            RenderSystem.setProjectionMatrix(savedProjection, VertexSorting.ORTHOGRAPHIC_Z);
             RenderSystem.setShaderColor(
                     shaderColor[0], shaderColor[1], shaderColor[2], shaderColor[3]);
         }
@@ -217,10 +217,10 @@ public final class RemixWeatherRenderer {
     }
 
     private void renderSnow() {
-        renderDraws(false, GameRenderer.getParticleProgram());
+        renderDraws(false, GameRenderer.getParticleShader());
     }
 
-    private void renderDraws(boolean rain, ShaderProgram shader) {
+    private void renderDraws(boolean rain, ShaderInstance shader) {
         if (shader == null) {
             return;
         }
@@ -232,7 +232,7 @@ public final class RemixWeatherRenderer {
             }
             RenderSystem.setShaderTexture(0, draw.texture());
             try {
-                BufferRenderer.drawWithGlobalProgram(draw.buffer());
+                BufferUploader.drawWithShader(draw.buffer());
             } finally {
                 draws.set(i, null);
             }
@@ -290,7 +290,7 @@ public final class RemixWeatherRenderer {
         }
     }
 
-    private record DeferredDraw(BuiltBuffer buffer, Identifier texture, boolean rain) {
+    private record DeferredDraw(MeshData buffer, ResourceLocation texture, boolean rain) {
     }
 
     private static final class DepthSeeder {

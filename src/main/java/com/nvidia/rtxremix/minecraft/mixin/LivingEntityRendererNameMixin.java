@@ -5,9 +5,9 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.entity.PlayerNameText;
-import net.minecraft.client.render.entity.LivingEntityRenderer;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.text.Text;
+import net.minecraft.client.renderer.entity.LivingEntityRenderer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.LivingEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -16,9 +16,9 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(LivingEntityRenderer.class)
 public abstract class LivingEntityRendererNameMixin {
     @Redirect(
-            method = "shouldFlipUpsideDown",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/LivingEntity;getName()Lnet/minecraft/text/Text;"))
-    private static Text rtxremix$cachedName(LivingEntity entity) {
+            method = "isEntityUpsideDown",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;getName()Lnet/minecraft/network/chat/Component;"))
+    private static Component rtxremix$cachedName(LivingEntity entity) {
         return entity instanceof PlayerNameText cached ? cached.rtxremix$nameText() : entity.getName();
     }
 }

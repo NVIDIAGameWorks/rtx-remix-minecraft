@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
+import com.mojang.math.Transformation;
 import com.nvidia.rtxremix.Float3D;
 import com.nvidia.rtxremix.LightInfo;
 import com.nvidia.rtxremix.LightInfoDistantEXT;
@@ -23,27 +24,6 @@ import com.nvidia.rtxremix.minecraft.entity.CopperBeaconAnimationClock;
 import com.nvidia.rtxremix.minecraft.entity.RemixFirstPersonPass;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.DimensionEffects;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.decoration.DisplayEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.DyeItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.Arm;
-import net.minecraft.util.math.AffineTransformation;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -58,6 +38,26 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.DimensionSpecialEffects;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Display;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Manages entity and sky distant lights for RTX Remix.
@@ -79,7 +79,7 @@ public class LightManager {
     private static final float HELD_LIGHT_FORWARD_OFFSET = 0.35f;
     private static final float HELD_LIGHT_SIDE_OFFSET = 0.38f;
     private static final float HELD_LIGHT_HEIGHT_OFFSET = 0.88f;
-    private static final BlockPos ITEM_LIGHT_RULE_POS = BlockPos.ORIGIN;
+    private static final BlockPos ITEM_LIGHT_RULE_POS = BlockPos.ZERO;
     private static final float[] ITEM_LIGHT_RULE_CENTROID = {0.5f, 0.5f, 0.5f};
     /** Floor for a display beacon's emitter radius, so a tiny scale cannot collapse it to a point. */
     private static final float MIN_DISPLAY_BEACON_RADIUS = 0.01f;
@@ -136,7 +136,7 @@ public class LightManager {
     private RemixLight sunLight;
     private RemixLight moonLight;
     private SkyLightState skyLightState = SkyLightState.empty();
-    private Vec3d firstPersonShadowModelOffset = Vec3d.ZERO;
+    private Vec3 firstPersonShadowModelOffset = Vec3.ZERO;
     private long lastEntityLightUpdateNanos;
 
     public LightManager(RemixRenderer renderer) {
@@ -164,7 +164,7 @@ public class LightManager {
         return skyLightState;
     }
 
-    public Vec3d getFirstPersonShadowModelOffset() {
+    public Vec3 getFirstPersonShadowModelOffset() {
         return firstPersonShadowModelOffset;
     }
 
@@ -175,7 +175,7 @@ public class LightManager {
     /**
      * Updates sky light and draws entity + sky lights.
      */
-    public void updateLights(ClientWorld world) {
+    public void updateLights(ClientLevel world) {
         if (world == null || renderer.getRemixApi() == null) return;
         updateSkyLight(world);
         drawActiveLights();
@@ -199,7 +199,7 @@ public class LightManager {
      *                  interpolated rotation so a spinning beam does not lag its
      *                  own housing
      */
-    public void updateEntityLights(ClientWorld world, Camera camera, float tickDelta) {
+    public void updateEntityLights(ClientLevel world, Camera camera, float tickDelta) {
         RemixAPI api = renderer.getRemixApi();
         if (api == null || world == null || camera == null) return;
 
@@ -209,9 +209,9 @@ public class LightManager {
         float frameDtSeconds = entityLightFrameDtSeconds();
         boolean localFirstPersonRigUpdated = false;
 
-        for (Entity entity : world.getEntities()) {
+        for (Entity entity : world.entitiesForRendering()) {
             if (entity instanceof ItemEntity itemEntity) {
-                EntityLightSpec spec = itemLightSpec(itemEntity.getStack());
+                EntityLightSpec spec = itemLightSpec(itemEntity.getItem());
                 if (spec != null) {
                     ensureEntityLight(
                             entity, spec, null, EntityLightKey.item(entity.getId()));
@@ -227,14 +227,14 @@ public class LightManager {
                     updateHandLight(living, EquipmentSlot.OFFHAND,
                             EntityLightKey.offHand(entity.getId()), tickDelta);
                 }
-            } else if (entity instanceof DisplayEntity.BlockDisplayEntity display) {
+            } else if (entity instanceof Display.BlockDisplay display) {
                 ensureDisplayBeaconLight(display, tickDelta);
             }
         }
 
         double beaconAnimationTick = CopperBeaconAnimationClock.sample(world, tickDelta);
         for (CopperBeaconBlockEntity beacon : CopperBeaconBlockEntity.loaded()) {
-            if (!beacon.isRemoved() && beacon.getWorld() == world) {
+            if (!beacon.isRemoved() && beacon.getLevel() == world) {
                 ensurePlacedBeaconLight(beacon, beaconAnimationTick);
             }
         }
@@ -242,7 +242,7 @@ public class LightManager {
         if (!localFirstPersonRigUpdated) {
             heldLightPlacement.clear();
             shadowModelPlacement.clear();
-            firstPersonShadowModelOffset = Vec3d.ZERO;
+            firstPersonShadowModelOffset = Vec3.ZERO;
         }
 
         // Drop entries for entities that vanished this frame.  Explicit
@@ -286,15 +286,15 @@ public class LightManager {
             return;
         }
 
-        BlockState state = beacon.getCachedState();
-        int luminance = state.getLuminance();
+        BlockState state = beacon.getBlockState();
+        int luminance = state.getLightEmission();
         if (luminance <= 0) {
             return;
         }
 
         CopperBeaconPose.evaluate(
-                state.get(CopperBeaconBlock.MOUNT),
-                state.get(Properties.FACING),
+                state.getValue(CopperBeaconBlock.MOUNT),
+                state.getValue(BlockStateProperties.FACING),
                 beacon.yawAngleAt(animationTick),
                 beacon.pitchAngleAt(animationTick),
                 scratchPlacedBeaconPose);
@@ -302,7 +302,7 @@ public class LightManager {
         Vector3f emitter = scratchPlacedBeaconPose.emitter();
         Vector3f xAxis = scratchPlacedBeaconPose.xAxis();
         Vector3f yAxis = scratchPlacedBeaconPose.yAxis();
-        BlockPos pos = beacon.getPos();
+        BlockPos pos = beacon.getBlockPos();
 
         float red = CopperBeaconBlock.BEAM_COLOR.r();
         float green = CopperBeaconBlock.BEAM_COLOR.g();
@@ -344,7 +344,7 @@ public class LightManager {
         } catch (RemixException e) {
             LOGGER.error(
                     "Failed to update Copper Beacon light at {}: {}",
-                    beacon.getPos(),
+                    beacon.getBlockPos(),
                     e.getMessage());
         }
     }
@@ -377,7 +377,7 @@ public class LightManager {
      */
     private void updateHandLight(LivingEntity holder, EquipmentSlot slot,
                                  EntityLightKey key, float tickDelta) {
-        ItemStack stack = holder.getEquippedStack(slot);
+        ItemStack stack = holder.getItemBySlot(slot);
         // Leaving the key unseen is what puts a light out: the sweep in
         // updateEntityLights destroys anything not claimed this frame.
         if (!HeldLightState.isLit(holder, stack)) return;
@@ -390,7 +390,7 @@ public class LightManager {
     }
 
     private void updateLocalFirstPersonLights(
-            ClientWorld world, Camera camera, LivingEntity player,
+            ClientLevel world, Camera camera, LivingEntity player,
             float tickDelta, float frameDtSeconds) {
         List<PendingAnalyticLight> pending = new ArrayList<>(2);
         collectLocalFirstPersonLight(
@@ -409,7 +409,7 @@ public class LightManager {
 
         firstPersonShadowModelOffset = shadowModelPlacement.resolve(
                 world, camera, player, constraints, frameDtSeconds);
-        Vec3d displacedHeadCenter = camera.getPos().add(firstPersonShadowModelOffset);
+        Vec3 displacedHeadCenter = camera.getPosition().add(firstPersonShadowModelOffset);
 
         // The rig lights surfaces but never the air. A first-person emitter is
         // locked to the camera, and the volumetric grid reuses the previous
@@ -426,11 +426,11 @@ public class LightManager {
     }
 
     private void collectLocalFirstPersonLight(
-            ClientWorld world, Camera camera, LivingEntity player,
+            ClientLevel world, Camera camera, LivingEntity player,
             EquipmentSlot slot, EntityLightKey key,
             float tickDelta, float frameDtSeconds,
             List<PendingAnalyticLight> pending) {
-        ItemStack stack = player.getEquippedStack(slot);
+        ItemStack stack = player.getItemBySlot(slot);
         if (!HeldLightState.isLit(player, stack)) {
             heldLightPlacement.reset(slot);
             return;
@@ -453,7 +453,7 @@ public class LightManager {
         }
 
         float emitterRadius = spec.radius * RemixFirstPersonPass.VIEW_MODEL_SCALE;
-        Vec3d position = heldLightPlacement.resolve(
+        Vec3 position = heldLightPlacement.resolve(
                 world,
                 camera,
                 player,
@@ -474,7 +474,7 @@ public class LightManager {
     }
 
     private void ensureSphereEntityLight(
-            EntityLightKey key, EntityLightSpec spec, Vec3d position,
+            EntityLightKey key, EntityLightSpec spec, Vec3 position,
             float emitterRadius, float radianceScale) {
         submitEntityLight(
                 createPendingSphereLight(key, spec, position, emitterRadius, radianceScale),
@@ -482,7 +482,7 @@ public class LightManager {
     }
 
     private static PendingAnalyticLight createPendingSphereLight(
-            EntityLightKey key, EntityLightSpec spec, Vec3d position,
+            EntityLightKey key, EntityLightSpec spec, Vec3 position,
             float emitterRadius, float radianceScale) {
         return new PendingAnalyticLight(
                 key,
@@ -602,41 +602,41 @@ public class LightManager {
      * swing the model to face the camera; a light that did the same would be lit
      * correctly for one viewer and wrong for every other.
      */
-    private void ensureDisplayBeaconLight(DisplayEntity.BlockDisplayEntity display, float tickDelta) {
-        DisplayEntity.BlockDisplayEntity.Data data = display.getData();
+    private void ensureDisplayBeaconLight(Display.BlockDisplay display, float tickDelta) {
+        Display.BlockDisplay.BlockRenderState data = display.blockRenderState();
         if (data == null) return;
 
         BlockState state = data.blockState();
         if (!(state.getBlock() instanceof SpotLightBlock beacon)) return;
 
-        int luminance = state.getLuminance();
+        int luminance = state.getLightEmission();
         if (luminance <= 0) return;
 
         // Rendering data arrives a tick after the entity spawns; until then there
         // is no transformation to read and the beam would be misplaced.
-        DisplayEntity.RenderState renderState = display.getRenderState();
+        Display.RenderState renderState = display.renderState();
         if (renderState == null) return;
 
         EntityLightKey key = EntityLightKey.blockDisplay(display.getId());
 
-        AffineTransformation transform =
-                renderState.transformation().interpolate(display.getLerpProgress(tickDelta));
+        Transformation transform =
+                renderState.transformation().get(display.calculateInterpolationProgress(tickDelta));
         Matrix4f matrix = transform.getMatrix();
 
         // Matches DisplayEntityRenderer.getBillboardRotation for BillboardMode.FIXED.
-        float yaw = MathHelper.lerpAngleDegrees(tickDelta, display.prevYaw, display.getYaw());
-        float pitch = MathHelper.lerp(tickDelta, display.prevPitch, display.getPitch());
+        float yaw = Mth.rotLerp(tickDelta, display.yRotO, display.getYRot());
+        float pitch = Mth.lerp(tickDelta, display.xRotO, display.getXRot());
         Quaternionf billboard = scratchBillboard.rotationYXZ(
-                -MathHelper.RADIANS_PER_DEGREE * yaw,
-                MathHelper.RADIANS_PER_DEGREE * pitch,
+                -Mth.DEG_TO_RAD * yaw,
+                Mth.DEG_TO_RAD * pitch,
                 0.0f);
 
-        Direction facing = state.get(Properties.FACING);
-        Direction mount = state.get(CopperBeaconBlock.MOUNT);
+        Direction facing = state.getValue(BlockStateProperties.FACING);
+        Direction mount = state.getValue(CopperBeaconBlock.MOUNT);
         CopperBeaconPose.evaluate(
                 mount, facing, 0.0f, 0.0f, scratchDisplayBeaconPose);
 
-        Vector3f beam = scratchBeam.set(facing.getOffsetX(), facing.getOffsetY(), facing.getOffsetZ());
+        Vector3f beam = scratchBeam.set(facing.getStepX(), facing.getStepY(), facing.getStepZ());
         matrix.transformDirection(beam);
         billboard.transform(beam);
         if (beam.lengthSquared() < MIN_BEAM_LENGTH_SQ) return;
@@ -646,12 +646,12 @@ public class LightManager {
         // the entity position, so the lens point is block-local and needs the
         // entity's own position added back after the transform chain.
         Vector3f lens = scratchLens.set(
-                BeaconBeam.lensLocal(mount.getOffsetX(), facing.getOffsetX()),
-                BeaconBeam.lensLocal(mount.getOffsetY(), facing.getOffsetY()),
-                BeaconBeam.lensLocal(mount.getOffsetZ(), facing.getOffsetZ()));
+                BeaconBeam.lensLocal(mount.getStepX(), facing.getStepX()),
+                BeaconBeam.lensLocal(mount.getStepY(), facing.getStepY()),
+                BeaconBeam.lensLocal(mount.getStepZ(), facing.getStepZ()));
         matrix.transformPosition(lens);
         billboard.transform(lens);
-        Vec3d origin = display.getLerpedPos(tickDelta);
+        Vec3 origin = display.getPosition(tickDelta);
 
         Vector3f diskX = scratchDiskX.set(scratchDisplayBeaconPose.xAxis());
         matrix.transformDirection(diskX);
@@ -769,41 +769,41 @@ public class LightManager {
     }
 
     private PendingAnalyticLight createPendingHeldBeaconLight(
-            ClientWorld collisionWorld, Camera collisionCamera, LivingEntity holder,
+            ClientLevel collisionWorld, Camera collisionCamera, LivingEntity holder,
             SpotLightBlock beacon, EquipmentSlot slot,
             EntityLightKey key, float tickDelta) {
-        int luminance = beacon.getDefaultState().getLuminance();
+        int luminance = beacon.defaultBlockState().getLightEmission();
         if (luminance <= 0) return null;
 
         // Unit by construction, but only to the precision of MathHelper's sine
         // table, so it still gets normalized before it becomes a cone axis. No
         // degenerate-length guard here, unlike the display path: a look vector
         // cannot collapse the way a display transform can.
-        Vec3d look = holder.getRotationVec(tickDelta).normalize();
+        Vec3 look = holder.getViewVector(tickDelta).normalize();
 
         boolean localFirstPerson = isLocalFirstPersonPlayer(holder);
-        Vec3d capturedPosition = localFirstPerson
+        Vec3 capturedPosition = localFirstPerson
                 ? renderer.getFirstPersonHeldLightPosition(slot)
                 : null;
         float viewModelScale = capturedPosition != null
                 ? RemixFirstPersonPass.VIEW_MODEL_SCALE
                 : 1.0f;
-        Vec3d handPosition = capturedPosition != null
+        Vec3 handPosition = capturedPosition != null
                 ? capturedPosition
                 : lightPosition(holder, slot);
-        Vec3d lensOffsetDirection = localFirstPerson
-                ? HeldLightPlacement.horizontalForward(holder.getYaw())
+        Vec3 lensOffsetDirection = localFirstPerson
+                ? HeldLightPlacement.horizontalForward(holder.getYRot())
                 : look;
         float emitterRadius = BeaconBeam.RADIUS * viewModelScale;
-        Vec3d pos = handPosition.add(
-                lensOffsetDirection.multiply(BeaconBeam.HELD_LENS_OFFSET));
+        Vec3 pos = handPosition.add(
+                lensOffsetDirection.scale(BeaconBeam.HELD_LENS_OFFSET));
         float coneAngle = BeaconBeam.CONE_ANGLE_DEGREES;
         if (localFirstPerson && collisionWorld != null && collisionCamera != null) {
-            Vec3d collisionOrigin = collisionCamera.getPos();
-            Vec3d preferredOffset = pos.subtract(collisionOrigin);
+            Vec3 collisionOrigin = collisionCamera.getPosition();
+            Vec3 preferredOffset = pos.subtract(collisionOrigin);
             double preferredDistance = preferredOffset.length();
             if (preferredDistance > 1.0e-6) {
-                Vec3d collisionDirection = preferredOffset.multiply(1.0 / preferredDistance);
+                Vec3 collisionDirection = preferredOffset.scale(1.0 / preferredDistance);
                 double collisionLimitedDistance = HeldLightPlacement.collisionLimitedDistance(
                         collisionWorld,
                         holder,
@@ -812,7 +812,7 @@ public class LightManager {
                         preferredDistance,
                         emitterRadius + HeldLightPlacement.WALL_CLEARANCE);
                 pos = collisionOrigin.add(
-                        collisionDirection.multiply(collisionLimitedDistance));
+                        collisionDirection.scale(collisionLimitedDistance));
                 coneAngle = BeaconBeam.heldConeAngle(
                         collisionLimitedDistance / preferredDistance);
             }
@@ -832,12 +832,12 @@ public class LightManager {
         shaping.coneSoftness = BeaconBeam.CONE_SOFTNESS;
         shaping.focusExponent = BeaconBeam.FOCUS_EXPONENT;
 
-        float yawRadians = holder.getYaw() * MathHelper.RADIANS_PER_DEGREE;
-        Vec3d diskX = new Vec3d(
-                MathHelper.cos(yawRadians),
+        float yawRadians = holder.getYRot() * Mth.DEG_TO_RAD;
+        Vec3 diskX = new Vec3(
+                Mth.cos(yawRadians),
                 0.0,
-                MathHelper.sin(yawRadians));
-        Vec3d diskY = look.crossProduct(diskX).normalize();
+                Mth.sin(yawRadians));
+        Vec3 diskY = look.cross(diskX).normalize();
         return new PendingAnalyticLight(
                 key,
                 pos,
@@ -851,28 +851,28 @@ public class LightManager {
                 new DiskBasis(diskX, diskY, look));
     }
 
-    private Vec3d lightPosition(Entity entity, EquipmentSlot lightSlot) {
+    private Vec3 lightPosition(Entity entity, EquipmentSlot lightSlot) {
         if (lightSlot != null && entity instanceof LivingEntity living) {
-            float yawRad = living.getBodyYaw() * MathHelper.RADIANS_PER_DEGREE;
-            double forwardX = -MathHelper.sin(yawRad);
-            double forwardZ = MathHelper.cos(yawRad);
+            float yawRad = living.getVisualRotationYInDegrees() * Mth.DEG_TO_RAD;
+            double forwardX = -Mth.sin(yawRad);
+            double forwardZ = Mth.cos(yawRad);
             double rightX = forwardZ;
             double rightZ = -forwardX;
             double sideSign = handSideSign(living, lightSlot);
-            return entity.getPos().add(
+            return entity.position().add(
                     forwardX * HELD_LIGHT_FORWARD_OFFSET + rightX * sideSign * HELD_LIGHT_SIDE_OFFSET,
                     HELD_LIGHT_HEIGHT_OFFSET,
                     forwardZ * HELD_LIGHT_FORWARD_OFFSET + rightZ * sideSign * HELD_LIGHT_SIDE_OFFSET);
         }
 
-        return entity.getPos().add(0, entity.getHeight() * 0.75, 0);
+        return entity.position().add(0, entity.getBbHeight() * 0.75, 0);
     }
 
     private static boolean isLocalFirstPersonPlayer(LivingEntity holder) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         return client != null
                 && holder == client.player
-                && client.options.getPerspective().isFirstPerson();
+                && client.options.getCameraType().isFirstPerson();
     }
 
     private float entityLightFrameDtSeconds() {
@@ -883,7 +883,7 @@ public class LightManager {
     }
 
     private static double handSideSign(LivingEntity living, EquipmentSlot slot) {
-        boolean mainHandIsRight = living.getMainArm() == Arm.RIGHT;
+        boolean mainHandIsRight = living.getMainArm() == HumanoidArm.RIGHT;
         boolean selectedHandIsMain = slot == EquipmentSlot.MAINHAND;
         return mainHandIsRight == selectedHandIsMain ? -1.0 : 1.0;
     }
@@ -900,8 +900,8 @@ public class LightManager {
             return null;
         }
 
-        BlockState state = block.getDefaultState();
-        int luminance = state.getLuminance();
+        BlockState state = block.defaultBlockState();
+        int luminance = state.getLightEmission();
         if (luminance <= 0) {
             return null;
         }
@@ -952,7 +952,7 @@ public class LightManager {
 
     record PendingAnalyticLight(
             EntityLightKey key,
-            Vec3d position,
+            Vec3 position,
             float emitterRadius,
             double shadowClearance,
             float radianceR,
@@ -964,7 +964,7 @@ public class LightManager {
 
         PendingAnalyticLight(
                 EntityLightKey key,
-                Vec3d position,
+                Vec3 position,
                 float emitterRadius,
                 double shadowClearance,
                 float radianceR,
@@ -993,7 +993,7 @@ public class LightManager {
         }
     }
 
-    record DiskBasis(Vec3d xAxis, Vec3d yAxis, Vec3d direction) {}
+    record DiskBasis(Vec3 xAxis, Vec3 yAxis, Vec3 direction) {}
 
     private record EntityLightSpec(float intensity, float radius, float[] color, float volumetricRadianceScale) {
         private static EntityLightSpec brighter(EntityLightSpec a, EntityLightSpec b) {
@@ -1033,14 +1033,14 @@ public class LightManager {
     //  Sky light
     // ================================================================
 
-    private void updateSkyLight(ClientWorld world) {
+    private void updateSkyLight(ClientLevel world) {
         // Only a NORMAL sky has a sun and a moon. The End and the Nether pin their time, so
         // evaluating them would light a permanent noon or midnight that vanilla never draws.
-        skyLightState = world.getDimensionEffects().getSkyType() == DimensionEffects.SkyType.NORMAL
+        skyLightState = world.effects().skyType() == DimensionSpecialEffects.SkyType.NORMAL
                 ? evaluateSkyLightState(
-                        world.getSkyAngle(0f),
-                        world.getRainGradient(0.0f),
-                        world.getThunderGradient(0.0f))
+                        world.getTimeOfDay(0f),
+                        world.getRainLevel(0.0f),
+                        world.getThunderLevel(0.0f))
                 : SkyLightState.empty();
 
         try {
@@ -1226,7 +1226,7 @@ public class LightManager {
         lightOwnerIds.clear();
         heldLightPlacement.clear();
         shadowModelPlacement.clear();
-        firstPersonShadowModelOffset = Vec3d.ZERO;
+        firstPersonShadowModelOffset = Vec3.ZERO;
         lastEntityLightUpdateNanos = 0L;
 
         if (sunLight != null && !sunLight.isDeleted()) {

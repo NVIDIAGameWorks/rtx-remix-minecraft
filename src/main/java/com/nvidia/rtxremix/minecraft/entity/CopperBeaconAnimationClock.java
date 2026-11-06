@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.world.World;
+import net.minecraft.world.level.Level;
 
 /**
  * Reconstructs a smooth presentation time from synchronized integer world ticks.
@@ -18,18 +18,18 @@ public final class CopperBeaconAnimationClock {
 
     private static final long NANOS_PER_TICK = 50_000_000L;
 
-    private static World world;
+    private static Level world;
     private static long worldTick = Long.MIN_VALUE;
     private static long tickStartNanos;
 
     private CopperBeaconAnimationClock() {}
 
-    public static double sample(World currentWorld, float tickDelta) {
-        return sample(currentWorld, currentWorld.getTime(), tickDelta, System.nanoTime());
+    public static double sample(Level currentWorld, float tickDelta) {
+        return sample(currentWorld, currentWorld.getGameTime(), tickDelta, System.nanoTime());
     }
 
     static double sample(
-            World currentWorld, long currentTick, float tickDelta, long nowNanos) {
+            Level currentWorld, long currentTick, float tickDelta, long nowNanos) {
         double vanillaFraction = Math.clamp(
                 Float.isFinite(tickDelta) ? tickDelta : 0.0f,
                 0.0f,

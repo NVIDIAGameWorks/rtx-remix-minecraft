@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 /** User-controlled intensity multipliers for the built-in block-light rules. */
 public final class BlockLightIntensityControls {
@@ -33,7 +33,7 @@ public final class BlockLightIntensityControls {
             control("light", "block.minecraft.light"),
             control("candles", "rtxremix.setting.blockLights.candles"),
             control("candle_cakes", "rtxremix.setting.blockLights.candleCakes"));
-    private static final Map<Identifier, Control> BY_RULE_ID = indexByRuleId();
+    private static final Map<ResourceLocation, Control> BY_RULE_ID = indexByRuleId();
 
     private BlockLightIntensityControls() {}
 
@@ -47,12 +47,12 @@ public final class BlockLightIntensityControls {
      * <p>Authored tuning belongs to the resolved rule, so a resource-pack rule
      * replacing a built-in identifier retains its own intensity at the default 1x.
      */
-    public static float apply(Identifier ruleId, float baseIntensity) {
+    public static float apply(ResourceLocation ruleId, float baseIntensity) {
         Control control = BY_RULE_ID.get(ruleId);
         return control == null ? baseIntensity : baseIntensity * (float) control.get();
     }
 
-    static void validateBuiltInRules(Set<Identifier> ruleIds) {
+    static void validateBuiltInRules(Set<ResourceLocation> ruleIds) {
         if (!BY_RULE_ID.keySet().equals(ruleIds)) {
             throw new IllegalStateException(
                     "Block-light controls do not match built-in rules: controls="
@@ -68,15 +68,15 @@ public final class BlockLightIntensityControls {
     }
 
     private static Control control(
-            String rulePath, Identifier ruleId, String labelKey) {
+            String rulePath, ResourceLocation ruleId, String labelKey) {
         return new Control(
                 "blockLights." + rulePath,
                 ruleId,
                 labelKey);
     }
 
-    private static Map<Identifier, Control> indexByRuleId() {
-        Map<Identifier, Control> controls = new LinkedHashMap<>();
+    private static Map<ResourceLocation, Control> indexByRuleId() {
+        Map<ResourceLocation, Control> controls = new LinkedHashMap<>();
         for (Control control : CONTROLS) {
             if (controls.put(control.ruleId(), control) != null) {
                 throw new IllegalStateException("Duplicate block-light rule " + control.ruleId());
@@ -87,11 +87,11 @@ public final class BlockLightIntensityControls {
 
     public static final class Control {
         private final String settingId;
-        private final Identifier ruleId;
+        private final ResourceLocation ruleId;
         private final String labelKey;
         private volatile double multiplier = DEFAULT_MULTIPLIER;
 
-        private Control(String settingId, Identifier ruleId, String labelKey) {
+        private Control(String settingId, ResourceLocation ruleId, String labelKey) {
             this.settingId = settingId;
             this.ruleId = ruleId;
             this.labelKey = labelKey;
@@ -101,7 +101,7 @@ public final class BlockLightIntensityControls {
             return settingId;
         }
 
-        public Identifier ruleId() {
+        public ResourceLocation ruleId() {
             return ruleId;
         }
 
