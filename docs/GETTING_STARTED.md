@@ -15,7 +15,8 @@ How to build and run the mod from source. If you only want to play, read
   Adoptium, Microsoft, and Java folders under Program Files.
 - **Visual Studio 2022 Build Tools** with the Desktop development with C++
   workload (MSVC v143). Cross-building the ARM64 bridge additionally needs the
-  toolset pinned in `rtxremix-java/native/build_native.bat` (currently 14.44).
+  MSVC ARM64 build tools for some installed toolset; `build_native.bat` uses
+  the default toolset when it has them, otherwise the newest one that does.
 - **Git.** Everything is in the clone except the native runtime and the two
   large runtime textures, which the build pulls through Packman on first use.
 - **uv 0.13 or newer and Python 3.15 or newer**, for the developer tools that
@@ -491,7 +492,7 @@ removes its stale registration.
 
 | Symptom | Cause |
 |---|---|
-| `vswhere.exe not found` or `vcvarsall.bat failed` | Visual Studio Build Tools missing, or without the Desktop C++ workload. ARM64 also needs toolset 14.44 |
+| `vswhere.exe not found` or `vcvarsall.bat failed` | Visual Studio Build Tools missing, or without the Desktop C++ workload |
 | `JAVA_HOME is not set`, or `jni.h not found` | `JAVA_HOME` unset or pointing at a JRE rather than a JDK 21 |
 | Gradle cannot fetch the SDK | Check network access to the Packman remote, or stage a matching local runtime. See [Get A Runtime](#get-a-runtime) |
 | A launch reports that Prism Launcher is not installed | Install it from [prismlauncher.org](https://prismlauncher.org), or point `prism.executable` in `tools/config.local.json` at its `prismlauncher.exe` |
@@ -509,7 +510,7 @@ removes its stale registration.
 | Empty or partial scene on first launch | Shader compilation. Wait for it to settle before reporting a defect |
 | Frame-time spikes at high render distance | Garbage collection is one possible cause. Every launch gives the Prism instance the tuned JVM arguments and their heap limit; check that `launch.jvmArgs` does not override them |
 | A clone or checkout reports `Filename too long` | Enable `git config --global core.longpaths true` before cloning, or choose a shorter checkout path |
-| `package` cannot find the ARM64 toolset | Install the version pinned by `build_native.bat`, or use `package -Parch=win64` for a single-architecture artifact |
+| `No MSVC toolset ... has the ARM64 C++ libraries` | Add the MSVC ARM64 build tools in the Visual Studio Installer, or use `package -Parch=win64` for a single-architecture artifact |
 | Initialization reports `DRIVER_VERSION_BELOW_MINIMUM` | Update the driver. The minimum is a capability gate; lowering `dxvk.nvidiaMinDriver` can enable unsupported paths and cause GPU faults |
 | `Startup` unexpectedly returns `REMIX_DEVICE_WAS_NOT_REGISTERED` after an API change | Check header, bridge and runtime together for a mismatched `remixapi_Interface` layout before continuing native calls |
 | `/rtx off` is slower than `/rtx on` | The off path renders vanilla GL at full resolution through the Remix swapchain; the on path can use DLSS's lower internal resolution. The toggle is not a standalone vanilla performance baseline |

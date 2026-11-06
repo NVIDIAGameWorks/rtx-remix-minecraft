@@ -19,17 +19,14 @@ REM ── Target architecture ────────────────�
 set "ARCH=%~1"
 if "%ARCH%"=="" set "ARCH=x64"
 
-REM ── Map ARCH to vcvarsall target. Pin toolset only when cross-compiling
-REM    for ARM64: cross-compiling needs the ARM64 CRT libraries, which ship
-REM    with the 14.44 toolset (not the default 14.34). x64 builds use whatever
-REM    default toolset is installed, so dev machines with any recent VS
-REM    install keep working without needing 14.44 specifically.
+REM ── Map ARCH to vcvarsall target. x64 builds use the default toolset. An
+REM    ARM64 build picks its toolset after Visual Studio is found, by where
+REM    the ARM64 C++ libraries are installed (see :pick_arm64_toolset).
+set "VCVARS_EXTRA_ARGS="
 if /I "%ARCH%"=="x64" (
     set "VCARCH=x64"
-    set "VCVARS_EXTRA_ARGS="
 ) else if /I "%ARCH%"=="arm64" (
     set "VCARCH=x64_arm64"
-    set "VCVARS_EXTRA_ARGS=-vcvars_ver=14.44"
 ) else (
     echo ERROR: Unknown architecture: %ARCH%. Use x64 or arm64.
     exit /b 1
@@ -48,11 +45,16 @@ if not defined VS_PATH (
     exit /b 1
 )
 
+if /I "%ARCH%"=="arm64" (
+    call :pick_arm64_toolset
+    if errorlevel 1 exit /b 1
+)
+
 REM ── Set up MSVC environment for target arch ─────────────────────────
 call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" %VCARCH% %VCVARS_EXTRA_ARGS% >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: vcvarsall.bat failed. Ensure MSVC v143 C++ workload is installed.
-    if defined VCVARS_EXTRA_ARGS echo        ARM64 builds additionally require toolset 14.44.
+    echo ERROR: vcvarsall.bat failed. Ensure the MSVC C++ workload is installed.
+    if defined VCVARS_EXTRA_ARGS echo        The ARM64 build asked for: %VCVARS_EXTRA_ARGS%
     exit /b 1
 )
 
@@ -99,3 +101,37 @@ if errorlevel 1 (
 
 echo remixbridge.dll built successfully: %OUT_DIR%\remixbridge.dll
 endlocal
+exit /b 0
+
+REM ── ARM64 toolset ────────────────────────────────────────────────────
+REM  /LD links the static C++ runtime, so an ARM64 build needs a toolset
+REM  with lib\arm64\libcpmt.lib. Visual Studio 2026 installs the ARM64
+REM  libraries only for its default toolset, while a Visual Studio 2022
+REM  default such as 14.34 may lack them where a newer side-by-side
+REM  toolset has them. Use the default when it has them, otherwise the
+REM  newest toolset that does, pinned through -vcvars_ver.
+:pick_arm64_toolset
+set "MSVC_ROOT=%VS_PATH%\VC\Tools\MSVC"
+set "DEFAULT_TOOLSET="
+set "ARM64_TOOLSET="
+set "DEFAULT_TOOLSET_FILE=%VS_PATH%\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt"
+if exist "%DEFAULT_TOOLSET_FILE%" (
+    for /f "usebackq tokens=1" %%t in ("%DEFAULT_TOOLSET_FILE%") do set "DEFAULT_TOOLSET=%%t"
+)
+if defined DEFAULT_TOOLSET (
+    if exist "%MSVC_ROOT%\!DEFAULT_TOOLSET!\lib\arm64\libcpmt.lib" (
+        echo ARM64 toolset: !DEFAULT_TOOLSET! ^(default^)
+        exit /b 0
+    )
+)
+for /f "delims=" %%v in ('dir /b /ad /o-n "%MSVC_ROOT%" 2^>nul') do (
+    if not defined ARM64_TOOLSET if exist "%MSVC_ROOT%\%%v\lib\arm64\libcpmt.lib" set "ARM64_TOOLSET=%%v"
+)
+if not defined ARM64_TOOLSET (
+    echo ERROR: No MSVC toolset under %MSVC_ROOT% has the ARM64 C++ libraries.
+    echo        Add "MSVC ARM64 build tools" in the Visual Studio Installer.
+    exit /b 1
+)
+echo ARM64 toolset: %ARM64_TOOLSET%
+set "VCVARS_EXTRA_ARGS=-vcvars_ver=%ARM64_TOOLSET%"
+exit /b 0
