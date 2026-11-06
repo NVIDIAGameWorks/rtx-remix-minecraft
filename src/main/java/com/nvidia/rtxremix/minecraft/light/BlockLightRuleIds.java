@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
 
 /** Canonical identities for built-in block-light rules. */
 final class BlockLightRuleIds {

@@ -6,8 +6,8 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import net.minecraft.resources.Identifier;
 import com.nvidia.rtxremix.minecraft.entity.RemixEntitySubmitter.PatternCanvasRole;
-import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,9 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class RemixEntitySubmitterBlendTest {
 
     private static final Identifier BANNER_ATLAS =
-            Identifier.of("minecraft", "textures/atlas/banner_patterns.png");
+            Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/banner_patterns.png");
     private static final Identifier CREEPER =
-            Identifier.of("minecraft", "textures/entity/creeper/creeper.png");
+            Identifier.fromNamespaceAndPath("minecraft", "textures/entity/creeper/creeper.png");
     private static final int WHITE = 0xFFFFFFFF;
     private static final int TINT = 0xFF3366CC;
 

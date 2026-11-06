@@ -4,11 +4,12 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import net.minecraft.nbt.NbtCompound;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import net.minecraft.nbt.CompoundTag;
 
 class CopperBeaconAxisStateTest {
 
@@ -105,11 +106,11 @@ class CopperBeaconAxisStateTest {
                 18.5f,
                 7.25f,
                 987_654_321L);
-        NbtCompound nbt = new NbtCompound();
+        CompoundTag nbt = new CompoundTag();
         original.writeNbt(nbt);
 
         assertEquals(original, CopperBeaconAxisState.readNbt(nbt));
-        assertEquals(CopperBeaconAxisState.defaults(), CopperBeaconAxisState.readNbt(new NbtCompound()));
+        assertEquals(CopperBeaconAxisState.defaults(), CopperBeaconAxisState.readNbt(new CompoundTag()));
     }
 
     private static CopperBeaconAxisState axis(

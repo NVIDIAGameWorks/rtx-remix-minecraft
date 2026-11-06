@@ -7,7 +7,6 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.HardcodedVertex;
-import net.minecraft.util.math.ChunkSectionPos;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import net.minecraft.core.SectionPos;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -552,7 +552,7 @@ class BlockDataQueueTest {
         SectionMeshData meshData = new SectionMeshData(List.of(new SectionMeshData.Surface(
                 ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, true)));
         return new SectionBlockData(
-                ChunkSectionPos.from(cx, sy, cz), meshData, List.of(),
+                SectionPos.of(cx, sy, cz), meshData, List.of(),
                 0, 0, 0, 0, 0, 0, null);
     }
 
@@ -567,7 +567,7 @@ class BlockDataQueueTest {
 
     private static SectionBlockData emptyCapture(int cx, int sy, int cz) {
         return new SectionBlockData(
-                ChunkSectionPos.from(cx, sy, cz), null, List.of(),
+                SectionPos.of(cx, sy, cz), null, List.of(),
                 0, 0, 0, 0, 0, 0, null);
     }
 
@@ -578,7 +578,7 @@ class BlockDataQueueTest {
      */
     private static SectionBlockData captureOfBytes(int cx, int sy, int cz, long bytes) {
         return new SectionBlockData(
-                ChunkSectionPos.from(cx, sy, cz), null,
+                SectionPos.of(cx, sy, cz), null,
                 Collections.<LightEntry>nCopies((int) (bytes / 128) - 1, null),
                 0, 0, 0, 0, 0, 0, null);
     }

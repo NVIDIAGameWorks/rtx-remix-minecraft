@@ -313,7 +313,7 @@ patterns, and beds, are re-stitched with their sidecars, so a pattern with an
 `_s` behaves the way the same texture would on a block.
 
 The end portal and end gateway surfaces are baked from
-`textures/entity/end_portal.png` and `textures/environment/end_sky.png`,
+`textures/entity/end_portal/end_portal.png` and `textures/environment/end_sky.png`,
 layered the way vanilla's shader layers them, so repainting either texture
 changes both surfaces. They take no sidecars, reflect no light, and emit at an
 intensity of 4 (`EndPortalSurface`).

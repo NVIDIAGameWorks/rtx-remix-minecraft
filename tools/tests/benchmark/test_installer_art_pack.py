@@ -176,7 +176,7 @@ def test_a_new_instance_gets_the_pack_turned_on_above_fabric(run: Run, mc_dir: P
     assert installed(mc_dir) == [PACK]
     assert (mc_dir / "resourcepacks" / PACK).read_bytes() == PACK_BYTES
     # The game reads a file at its own data version as current, and fills in every other option.
-    assert options(mc_dir) == f"version:3955\r\n{resource_packs('vanilla', 'fabric', f'file/{PACK}')}\r\n"
+    assert options(mc_dir) == f"version:5023\r\n{resource_packs('vanilla', 'fabric', f'file/{PACK}')}\r\n"
 
 
 @pytest.mark.parametrize("newline", ["\r\n", "\n"])

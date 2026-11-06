@@ -5,28 +5,23 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.Transform;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.item.HeldItemRenderer;
-import net.minecraft.client.util.BufferAllocator;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.LinkedHashMap;
 import java.util.List;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Captures Minecraft's real first-person arm/item render and submits it as
@@ -55,7 +50,16 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     public static final float VIEW_MODEL_SCALE = 0.1f;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final CapturingImmediate immediate = new CapturingImmediate(provider);
+    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+
+    /**
+     * Vanilla's first-person hands submit with the collector left open, so the pass
+     * can supply its own. The mixin's {@code Operation} handle stays in the mixin.
+     */
+    @FunctionalInterface
+    public interface HandsRenderCall {
+        void render(SubmitNodeCollector collector);
+    }
     private final Transform cameraToWorld = new Transform();
     private final Transform heldLightTransform = new Transform();
     private final Matrix4f correctedBone = new Matrix4f();
@@ -64,24 +68,21 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     private final Vector3f eye = new Vector3f();
 
     private RemixEntityPass.EntityCaptureResult pendingResult;
-    private Vec3d pendingMainHandLightPosition;
-    private Vec3d pendingOffHandLightPosition;
+    private Vec3 pendingMainHandLightPosition;
+    private Vec3 pendingOffHandLightPosition;
     private float[] reusableBoneData = EMPTY_BONES;
 
     /**
-     * Runs the supplied vanilla held-item renderer against a Remix-only
-     * {@link VertexConsumerProvider.Immediate}.
+     * Runs vanilla's first-person hands submit against the Remix capture collector.
      */
-    public void capture(HeldItemRenderer heldItemRenderer,
+    public void capture(HandsRenderCall call,
                         float tickDelta,
-                        MatrixStack matrices,
-                        ClientPlayerEntity player,
-                        int light) {
+                        LocalPlayer player) {
         pendingResult = null;
         pendingMainHandLightPosition = null;
         pendingOffHandLightPosition = null;
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.gameRenderer == null || player == null) {
             return;
         }
@@ -91,35 +92,36 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         context.begin(true);
 
         try {
-            // Vanilla roots the hand stack at the inverse camera rotation and carries
-            // the camera rotation, tilt and bob in the model-view, so the model-view's
-            // origin is where the eye sits in the capture's space.
-            Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+            // Vanilla roots the hand stack at the inverse camera rotation, with the
+            // hurt tilt and bob on top, and carries the camera rotation in the
+            // model-view, so the model-view's origin is where the eye sits in the
+            // capture's space.
+            Matrix4f modelView = RenderSystem.getModelViewMatrixCopy();
             modelView.invert(inverseModelView).transformPosition(eye.set(0.0f, 0.0f, 0.0f));
             context.setEye(eye.x, eye.y, eye.z);
 
-            heldItemRenderer.renderItem(tickDelta, matrices, immediate, player, light);
+            call.render(collector);
 
             List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
             if (layers.isEmpty()) {
                 return;
             }
 
-            Camera camera = client.gameRenderer.getCamera();
-            float fovScale = calculateFovScale(client, camera, tickDelta);
+            Camera camera = client.gameRenderer.mainCamera();
+            float fovScale = calculateFovScale(client, camera);
             setViewCorrection(viewCorrection, modelView, fovScale);
 
             int boneCount = context.getBoneCount();
             reusableBoneData = snapshotCorrectedBones(context, boneCount, reusableBoneData);
             setCameraToWorld(camera, cameraToWorld);
             pendingMainHandLightPosition = findHeldBlockLightPosition(
-                    layers, context, reusableBoneData, boneCount, Hand.MAIN_HAND);
+                    layers, context, reusableBoneData, boneCount, InteractionHand.MAIN_HAND);
             pendingOffHandLightPosition = findHeldBlockLightPosition(
-                    layers, context, reusableBoneData, boneCount, Hand.OFF_HAND);
+                    layers, context, reusableBoneData, boneCount, InteractionHand.OFF_HAND);
 
             pendingResult = new RemixEntityPass.EntityCaptureResult(
                     player,
-                    Vec3d.ZERO,
+                    Vec3.ZERO,
                     0.0f,
                     layers,
                     reusableBoneData,
@@ -141,7 +143,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     }
 
     /** World-space emitter anchor used by the shaped held-beacon light path. */
-    public Vec3d getPendingHeldLightPosition(EquipmentSlot slot) {
+    public Vec3 getPendingHeldLightPosition(EquipmentSlot slot) {
         if (pendingResult == null) return null;
         return switch (slot) {
             case MAINHAND -> pendingMainHandLightPosition;
@@ -171,12 +173,12 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         pendingOffHandLightPosition = null;
     }
 
-    private Vec3d findHeldBlockLightPosition(
+    private Vec3 findHeldBlockLightPosition(
             List<RemixVertexConsumerProvider.CapturedLayer> layers,
             EntityRenderContext context,
             float[] transformData,
             int transformCount,
-            Hand hand) {
+            InteractionHand hand) {
         RemixCapturingConsumer bestConsumer = null;
         int bestTransform = -1;
         int bestVertexCount = 0;
@@ -222,9 +224,9 @@ public final class RemixFirstPersonPass implements AutoCloseable {
                 (minZ + maxZ) * 0.5f);
     }
 
-    static Vec3d transformPoint(Transform transform, float x, float y, float z) {
+    static Vec3 transformPoint(Transform transform, float x, float y, float z) {
         float[] m = transform.matrix;
-        return new Vec3d(
+        return new Vec3(
                 m[0] * x + m[1] * y + m[2] * z + m[3],
                 m[4] * x + m[5] * y + m[6] * z + m[7],
                 m[8] * x + m[9] * y + m[10] * z + m[11]);
@@ -259,9 +261,10 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         return data;
     }
 
-    private static float calculateFovScale(MinecraftClient client, Camera camera, float tickDelta) {
-        double worldFov = client.gameRenderer.getFov(camera, tickDelta, true);
-        double handFov = client.gameRenderer.getFov(camera, tickDelta, false);
+    private static float calculateFovScale(Minecraft client, Camera camera) {
+        // The world draws at the camera's FOV and the hands at the fixed HUD FOV.
+        double worldFov = camera.getFov();
+        double handFov = client.gameRenderer.gameRenderState().levelRenderState.cameraRenderState.hudFov;
         double worldTangent = Math.tan(Math.toRadians(worldFov) * 0.5);
         double handTangent = Math.tan(Math.toRadians(handFov) * 0.5);
         if (!Double.isFinite(worldTangent) || !Double.isFinite(handTangent)
@@ -285,9 +288,9 @@ public final class RemixFirstPersonPass implements AutoCloseable {
      * camera space: +X right, +Y up, and -Z forward.
      */
     private static void setCameraToWorld(Camera camera, Transform transform) {
-        Vec3d pos = camera.getPos();
-        float yawRad = (float) Math.toRadians(-camera.getYaw());
-        float pitchRad = (float) Math.toRadians(camera.getPitch());
+        Vec3 pos = camera.position();
+        float yawRad = (float) Math.toRadians(-camera.yRot());
+        float pitchRad = (float) Math.toRadians(camera.xRot());
 
         float forwardX = (float) (Math.sin(yawRad) * Math.cos(pitchRad));
         float forwardY = (float) (-Math.sin(pitchRad));
@@ -318,50 +321,5 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     @Override
     public void close() {
         clearPending();
-        immediate.close();
-    }
-
-    /**
-     * HeldItemRenderer requires an Immediate provider because it flushes it at
-     * the end of the hand render. This adapter exposes the Remix capture
-     * provider while making those raster flushes no-ops.
-     */
-    private static final class CapturingImmediate extends VertexConsumerProvider.Immediate
-            implements AutoCloseable {
-        private final BufferAllocator ownedAllocator;
-        private final RemixVertexConsumerProvider captureProvider;
-
-        private CapturingImmediate(RemixVertexConsumerProvider captureProvider) {
-            this(new BufferAllocator(256), captureProvider);
-        }
-
-        private CapturingImmediate(BufferAllocator allocator,
-                                   RemixVertexConsumerProvider captureProvider) {
-            super(allocator, new LinkedHashMap<>());
-            this.ownedAllocator = allocator;
-            this.captureProvider = captureProvider;
-        }
-
-        @Override
-        public VertexConsumer getBuffer(RenderLayer layer) {
-            return captureProvider.getBuffer(layer);
-        }
-
-        @Override
-        public void drawCurrentLayer() {
-        }
-
-        @Override
-        public void draw() {
-        }
-
-        @Override
-        public void draw(RenderLayer layer) {
-        }
-
-        @Override
-        public void close() {
-            ownedAllocator.close();
-        }
     }
 }

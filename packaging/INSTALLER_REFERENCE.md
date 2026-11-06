@@ -48,7 +48,7 @@ Quit closes at once, and a run given `-Mode` never waits.
 | Mode | What it does |
 |---|---|
 | Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Installs the items ticked under Choosing What To Install: the mod with its launcher setup and Fabric API, RTX Remix Materials, and the RTX Remix Showcase World. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
-| Upgrade | Replaces the mod JAR and Fabric API, and, with RTX Remix Materials ticked, an installed pack. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
+| Upgrade | Replaces the mod JAR and Fabric API, and, with RTX Remix Materials ticked, an installed pack. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher. A Prism instance set up for another Minecraft version is moved to the pinned Minecraft and Fabric Loader versions and Java major; its worlds are upgraded when they next open, so back up any you still play in the old version |
 | Repair | Reinstalls the packaged files through the same path as Install and Upgrade. If the `.rtx-remix-version` marker matches, it does not re-extract the runtime or conf payload, but a missing `rtx.conf` is restored on launch. Delete the marker and relaunch to force full extraction |
 | Uninstall | Removes the mod files listed in `README.md`, RTX Remix Materials among them, then offers to remove the installer-managed Java, the Prism portable, and the Prism instance, listing only those that exist. It keeps the RTX Remix Showcase World, as it keeps every world. With both launchers holding the mod it asks Prism, Microsoft, or Both |
 | Export | Prism only. Zips the Prism instance into an archive another machine can drop into its own Prism `instances\` folder, stripping the paths listed under Privacy below |
@@ -298,13 +298,15 @@ one to run. Which it uses depends on the architecture and the launcher.
 - **x64 with Prism.** No Java step at all. Prism downloads Mojang's own Java on
   the first launch of the instance.
 - **x64 with the Microsoft launcher.** `java` on the PATH, then the managed JDK
-  at `%LOCALAPPDATA%\RtxRemixMinecraft\jdk-21`, then a Java bundled with the
-  Microsoft launcher, then a downloaded Adoptium Temurin 21. Any version 8 or
+  at `%LOCALAPPDATA%\RtxRemixMinecraft\jdk-25`, then a Java bundled with the
+  Microsoft launcher, then a downloaded Adoptium Temurin 25. Any version 8 or
   newer runs the Fabric installer, so no architecture match is required. The
   game itself then runs on the launcher's own Java.
 - **ARM64.** `java` on the PATH only when it is version 21 and natively ARM64,
-  then the managed JDK under the same test, then a downloaded Adoptium Temurin
-  21 for ARM64. Mojang publishes no ARM64 Windows Java, and an emulated x64
+  then the managed JDK under the same test, then a downloaded Microsoft Build
+  of OpenJDK 25 for ARM64, since Adoptium builds no Windows ARM64 JDK 25. It is
+  verified against the SHA-256 file Microsoft publishes beside the download.
+  Mojang publishes no ARM64 Windows Java, and an emulated x64
   Java breaks the native bridge, so the managed install is normally used. A new
   Prism instance on ARM64 is pinned to that JDK so Prism cannot substitute an
   x64 one.

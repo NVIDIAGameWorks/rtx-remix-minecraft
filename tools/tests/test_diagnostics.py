@@ -53,20 +53,20 @@ def test_explicit_pid_wins_without_discovering_other_processes(native):
 
 def test_window_title_is_case_sensitive_and_last_matching_window_wins(native):
     native.visible_windows.return_value = [
-        WindowInfo(1, 10, "Minecraft 1.21.1"),
-        WindowInfo(2, 20, "Minecraft* 1.21.1"),
-        WindowInfo(3, 30, "minecraft 1.21.1"),
+        WindowInfo(1, 10, "Minecraft 26.3"),
+        WindowInfo(2, 20, "Minecraft* 26.3"),
+        WindowInfo(3, 30, "minecraft 26.3"),
         WindowInfo(4, 40, "Minecraft Launcher"),
     ]
 
-    assert diagnostics.find_game_window(native) == WindowInfo(2, 20, "Minecraft* 1.21.1")
+    assert diagnostics.find_game_window(native) == WindowInfo(2, 20, "Minecraft* 26.3")
 
 
 def test_focus_window_requires_java_owner(native):
     native.visible_windows.return_value = [
-        WindowInfo(1, 10, "Minecraft 1.21.1"),
-        WindowInfo(2, 20, "Minecraft 1.21.1"),
-        WindowInfo(3, 30, "Minecraft 1.21.1"),
+        WindowInfo(1, 10, "Minecraft 26.3"),
+        WindowInfo(2, 20, "Minecraft 26.3"),
+        WindowInfo(3, 30, "Minecraft 26.3"),
     ]
     native.process.side_effect = [
         ProcessInfo(10, Path("javaw.exe"), 10),
@@ -74,12 +74,12 @@ def test_focus_window_requires_java_owner(native):
         None,
     ]
 
-    assert diagnostics.find_game_window(native, require_java=True) == WindowInfo(1, 10, "Minecraft 1.21.1")
+    assert diagnostics.find_game_window(native, require_java=True) == WindowInfo(1, 10, "Minecraft 26.3")
 
 
 def test_unavailable_explicit_pid_falls_back_to_minecraft_window(native):
     process = ProcessInfo(10, Path("java.exe"), 10)
-    native.visible_windows.return_value = [WindowInfo(1, 10, "Minecraft* 1.21.1")]
+    native.visible_windows.return_value = [WindowInfo(1, 10, "Minecraft* 26.3")]
     native.process.side_effect = [None, process]
 
     assert diagnostics.select_process(native, 99) == process
@@ -213,7 +213,7 @@ def sleep(monkeypatch):
 def focus_client(native, monkeypatch, sleep):
     game = ProcessInfo(42, Path("jdk/bin/java.exe"), 100)
     native.process.return_value = game
-    native.visible_windows.return_value = [WindowInfo(7, 42, "Minecraft* 1.21.1")]
+    native.visible_windows.return_value = [WindowInfo(7, 42, "Minecraft* 26.3")]
     monkeypatch.setattr(diagnostics, "Win32", lambda: native)
     return game
 

@@ -215,13 +215,15 @@ Before distributing a fixture intended for ordinary movement, inspect both
 `level.dat` and the fallback `level.dat_old` with a type-preserving NBT viewer.
 For Minecraft 1.21.1, the ordinary ability values are float `flySpeed: 0.05`
 and `walkSpeed: 0.1`; preserve intentional alternatives as fixture metadata,
-not accidental authoring state.
+not accidental authoring state. A save that Minecraft 26.x has written keeps
+the host player in `players/data/<uuid>.dat` instead, with the same
+`abilities` compound; inspect that file in a fixture saved from 26.x.
 
 ### Zone Coverage
 
 A successful flythrough does not prove zone or world-conf behavior was exercised.
 Check for marker command blocks whose text begins `rtx zone define`,
-`world/data/rtx_remix_zones.dat`, and `world/rtx-remix/confs/`. The sources
+`world/data/rtx-remix-renderer/zones.dat` (`world/data/rtx_remix_zones.dat` in a 1.21.1 save), and `world/rtx-remix/confs/`. The sources
 `MarkerBlockScanner`, `ZonePersistentState`, `ZoneRegistry`, and
 `ConfLayerDriver` define their separate roles. With none of these inputs, a
 fixture can exercise only empty zone/world-layer paths.

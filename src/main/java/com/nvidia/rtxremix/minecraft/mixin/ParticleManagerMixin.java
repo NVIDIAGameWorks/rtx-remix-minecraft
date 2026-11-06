@@ -6,9 +6,9 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.profiling.ParticleTickProfiler;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import net.minecraft.client.particle.Particle;
-import net.minecraft.client.particle.ParticleManager;
-import net.minecraft.client.particle.ParticleTextureSheet;
+import net.minecraft.client.particle.ParticleGroup;
+import net.minecraft.client.particle.ParticleEngine;
+import net.minecraft.client.particle.ParticleRenderType;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -24,9 +24,9 @@ import java.util.Queue;
  * Coarse particle ticking markers. These intentionally avoid per-particle
  * zones because the benchmark scene can tick thousands of particles per frame.
  */
-@Mixin(ParticleManager.class)
+@Mixin(ParticleEngine.class)
 public abstract class ParticleManagerMixin {
-    @Shadow @Final private Map<ParticleTextureSheet, Queue<Particle>> particles;
+    @Shadow @Final private Map<ParticleRenderType, ParticleGroup<?>> particles;
 
     private static final ThreadLocal<ProfileScope> rtxremix$tickScope = new ThreadLocal<>();
     private static final ThreadLocal<ProfileScope> rtxremix$sheetScope = new ThreadLocal<>();
@@ -36,8 +36,8 @@ public abstract class ParticleManagerMixin {
         ParticleTickProfiler.beginTick();
         int activeParticles = 0;
         int activeSheets = 0;
-        for (Queue<Particle> queue : particles.values()) {
-            int size = queue.size();
+        for (ParticleGroup<?> group : particles.values()) {
+            int size = ((ParticleGroupAccessor) group).getParticles().size();
             activeParticles += size;
             if (size > 0) activeSheets++;
         }
@@ -61,18 +61,6 @@ public abstract class ParticleManagerMixin {
         }
         rtxremix$closeScope(rtxremix$sheetScope);
         rtxremix$closeScope(rtxremix$tickScope);
-    }
-
-    @Inject(method = "tickParticles", at = @At("HEAD"), require = 0)
-    private void rtxremix$tickParticlesHead(Collection<Particle> particles, CallbackInfo ci) {
-        rtxremix$openScope(rtxremix$sheetScope, ProfileScope.beginJfrOnly("ParticleManager.tickParticles")
-                .captureCount(particles.size())
-                .plotOnClose("Java.ParticleManager.tickParticles.ms"));
-    }
-
-    @Inject(method = "tickParticles", at = @At("RETURN"), require = 0)
-    private void rtxremix$tickParticlesReturn(Collection<Particle> particles, CallbackInfo ci) {
-        rtxremix$closeScope(rtxremix$sheetScope);
     }
 
     private static void rtxremix$openScope(ThreadLocal<ProfileScope> holder, ProfileScope scope) {

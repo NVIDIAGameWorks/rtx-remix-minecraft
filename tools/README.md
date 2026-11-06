@@ -242,9 +242,9 @@ directory while a different instance is actually running.
   one line is not an event count. The shipped
   [`rtx.conf`](../packaging/rtx.conf) disables opacity micromaps, so confirm the
   effective setting and runtime revision when investigating it.
-- Development launches run `javaw.exe` from a JDK 21 through Prism, which
-  refuses other Java versions for Minecraft 1.21.1: `JAVA_HOME` when it is a
-  JDK 21 for the launch's architecture, else the newest such JDK in Gradle's
+- Development launches run `javaw.exe` from a JDK 25 through Prism, which
+  refuses other Java versions for Minecraft 26.3: `JAVA_HOME` when it is a
+  JDK 25 for the launch's architecture, else the newest such JDK in Gradle's
   toolchains, then the Eclipse Adoptium, Microsoft, and Java folders under
   Program Files. A per-executable driver profile must target that executable,
   not only another Java a player launcher may use. Record the process path

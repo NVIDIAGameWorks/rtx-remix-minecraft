@@ -108,7 +108,9 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
     shutil.copy2(mod_jar, mods / "rtx-remix-renderer.jar")
     if not any(mods.glob("fabric-api-*.jar")):
         print(f"WARNING: no fabric-api jar in {mods}.")
-        print("         The mod requires fabric-api >=0.116.10+1.21.1 (https://modrinth.com/mod/fabric-api).")
+        print(
+            "         The mod requires the fabric-api build for its Minecraft version (https://modrinth.com/mod/fabric-api)."
+        )
 
     _stage_runtime(source, bridge, game_dir / "remix-sdk", selected_arch)
     packaging = project_dir / "packaging"

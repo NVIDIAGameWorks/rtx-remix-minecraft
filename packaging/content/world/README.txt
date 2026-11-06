@@ -5,7 +5,7 @@ NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG
 OR MICROSOFT.
 
 The showcase world for RTX Remix for Minecraft, a Fabric mod that path traces
-Minecraft Java Edition 1.21.1 through NVIDIA RTX Remix. BlockWorks built it
+Minecraft Java Edition 26.3 through NVIDIA RTX Remix. BlockWorks built it
 for the project, and the renderer was tuned against it, so the places it
 visits are where the mod looks and runs best.
 
@@ -15,7 +15,8 @@ RTX Remix for Minecraft: https://github.com/NVIDIAGameWorks/rtx-remix-minecraft
 Requirements
 ------------
 
-- Minecraft Java Edition 1.21.1.
+- Minecraft Java Edition 26.3. The world was saved in 1.21.1, and the game
+  upgrades it the first time it opens.
 - RTX Remix for Minecraft. The world was built to be seen path traced, and
   its Copper Beacons are a block the mod adds.
 - Optional: RTX Remix Materials, the texture resource pack made for the mod.

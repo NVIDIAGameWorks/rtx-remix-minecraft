@@ -5,9 +5,9 @@
 package com.nvidia.rtxremix.minecraft.light;
 
 import com.nvidia.rtxremix.minecraft.entity.HeldItemFlame;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.item.ItemStack;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Whether the lit element of a hand-held item is burning: the beam of a beacon,
@@ -35,7 +35,7 @@ public final class HeldLightState {
     /** Whether the lit element of {@code stack} in {@code holder}'s hand is burning. */
     public static boolean isLit(LivingEntity holder, ItemStack stack) {
         return isLit(isLocalPlayer(holder), localHeldLightsOff,
-                HeldItemFlame.particleFor(stack) != null, holder.isSubmergedInWater(),
+                HeldItemFlame.particleFor(stack) != null, holder.isUnderWater(),
                 flamesAllowedUnderwater);
     }
 
@@ -69,7 +69,7 @@ public final class HeldLightState {
     }
 
     private static boolean isLocalPlayer(LivingEntity holder) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         return client != null && holder == client.player;
     }
 }

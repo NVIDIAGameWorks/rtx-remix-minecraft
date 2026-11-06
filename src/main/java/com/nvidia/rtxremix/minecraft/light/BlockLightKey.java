@@ -4,8 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.light;
 
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
 
 /**
  * Stable identity for one block-attached Remix light.

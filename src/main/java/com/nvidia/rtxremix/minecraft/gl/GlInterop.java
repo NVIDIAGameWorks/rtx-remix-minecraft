@@ -39,6 +39,8 @@ public final class GlInterop {
     private int clientDoneSemaphore;
     private long clientDoneSemaphoreValue;
     private long lastWaitedVkDoneSemaphoreValue = -1;
+    /** Wraps the texture {@link #copyFromTexture} reads, which has no framebuffer of its own. */
+    private int sourceFbo;
     private int[] barrierTextures = new int[0];
     private int[] barrierLayouts = new int[0];
 
@@ -150,19 +152,29 @@ public final class GlInterop {
         glFlush();
     }
 
-    public void copyFromFramebuffer(int sourceFbo) {
+    /**
+     * Copies a colour texture into the shared image. Since 26.x vanilla's main
+     * render target is a texture with no framebuffer of its own, so it is
+     * attached to one this interop owns, by direct state access, which changes
+     * no binding vanilla's GL backend has cached.
+     */
+    public void copyFromTexture(int texture, int width, int height) {
         drainStaleGlErrors();
         if (!colorImage.available()) {
             return;
         }
+        if (sourceFbo == 0) {
+            sourceFbo = glCreateFramebuffers();
+        }
+        glNamedFramebufferTexture(sourceFbo, GL_COLOR_ATTACHMENT0, texture, 0);
         int destinationFbo = colorImage.framebuffer();
         glBlitNamedFramebuffer(
                 sourceFbo,
                 destinationFbo,
                 0,
                 0,
-                colorImage.width,
-                colorImage.height,
+                width,
+                height,
                 0,
                 0,
                 colorImage.width,
@@ -194,6 +206,10 @@ public final class GlInterop {
 
     public void destroy() {
         colorImage.destroy();
+        if (sourceFbo != 0) {
+            glDeleteFramebuffers(sourceFbo);
+            sourceFbo = 0;
+        }
         depthImage.destroy();
         if (vkDoneSemaphore != 0) {
             glDeleteSemaphoresEXT(vkDoneSemaphore);

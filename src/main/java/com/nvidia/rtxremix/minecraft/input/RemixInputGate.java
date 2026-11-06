@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.input;
 
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -18,7 +18,7 @@ import java.util.function.ToIntBiFunction;
  * mod opens and closes menus by writing it, and the menus' own controls and the runtime's hotkey
  * change it too, so {@link #followVisibility} reads it once per frame and opens or closes capture
  * with whatever is shown. Closing releases capture immediately; a key that remains physically held
- * may resume through vanilla's GLFW polling.
+ * may resume through vanilla's SDL event handling.
  *
  * <p>Remix resolves a written option a frame or more later, so after its own write the gate
  * ignores reads until one agrees with it. A stale read would otherwise undo the open or close the
@@ -83,8 +83,8 @@ public final class RemixInputGate {
 
     /** Decides whether Minecraft may handle a key event. */
     public KeyDecision onKey(int key, int action, boolean altDown, boolean controlDown) {
-        boolean altX = action == GLFW.GLFW_PRESS
-                && key == GLFW.GLFW_KEY_X
+        boolean altX = action == InputConstants.PRESS
+                && key == InputConstants.KEY_X
                 && altDown
                 && !controlDown;
         if (captureSessionOpen) {

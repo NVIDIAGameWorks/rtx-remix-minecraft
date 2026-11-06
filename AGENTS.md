@@ -4,7 +4,7 @@ Context for AI coding agents working in this repository.
 
 ## Project Overview
 
-`rtx-remix-minecraft` is a Fabric mod that renders Minecraft 1.21.1 through
+`rtx-remix-minecraft` is a Fabric mod that renders Minecraft 26.3 through
 NVIDIA RTX Remix. It captures terrain, entities, particles, sky, and clouds from
 the client and submits them to the Remix runtime as a path-traced scene. The
 Java facade and JNI bridge are tracked under `rtxremix-java/`; the native
@@ -27,7 +27,7 @@ subdirectory may carry its own `AGENTS.md`; read the nearest one as well.
 
 ## Build, Run, Package, Test
 
-Java 21, Windows, and the C++ toolchain are required. Gradle fetches a missing
+Java 25, Windows, and the C++ toolchain are required. Gradle fetches a missing
 Remix runtime automatically. [Getting Started](docs/GETTING_STARTED.md) covers local overrides.
 
 ```powershell
@@ -110,7 +110,7 @@ for stable frames after a world join, hiding first-sight mesh, pipeline, and
 BLAS costs without holding the screen indefinitely.
 
 **Overlay input.** `RemixInputGate` owns the Minecraft-side capture session for
-the Remix overlays; `KeyboardMixin` and `MouseMixin` route GLFW input through
+the Remix overlays; `KeyboardMixin` and `MouseMixin` route SDL input through
 it. Capture follows whether a native menu is shown, which `rtx.showUI` records:
 `GameRendererMixin` has the gate read it through `GetConfigVariableResolved` at
 the start of every frame. The mod opens and closes menus by writing it, and the
@@ -176,11 +176,10 @@ Each policy has a `rtxremix.*` kill switch listed in `docs/TUNING.md`.
 
 **Allocation.** The collector's concurrent work is what stretches frames at
 high render distance, so the hot vanilla paths that run per section or per
-frame are ported allocation-free and kept that way: the chunk visibility walk
-and its far-section probe (`ChunkRenderingDataPreparerMixin`,
-`terrain/visibility/`), block model variant and part selection
-(`WeightedBakedModelMixin`, `MultipartBakedModelMixin`), biome colour blending,
-and the integrated server's per-tick chunk list. Retained section meshes live
+frame are ported allocation-free and kept that way: block model part
+collection (`ModelSampling`), biome colour blending, and the integrated
+server's per-tick chunk list. 26.x extracts the visible sections itself
+(`LevelExtractor`), so the 1.21.1 visibility-walk port is gone. Retained section meshes live
 in C-allocated direct buffers outside the JDK's direct-memory budget
 (`SectionMeshData`, `DirectBufferPool`) and render-region snapshots in pooled
 heap arrays (`RenderRegionStoragePool`), both under explicit reference counts:
@@ -260,18 +259,18 @@ diluting the sampler's candidate pool.
   camera-locked emitter would smear into distant geometry (`LightManager`).
 - Ordinary classes must not live in the mixin package (`MixinPackageBoundaryTest`).
 - A mixin that cancels vanilla work replays the GL, fog, and framebuffer state
-  its target would have set (`WorldRendererMixin`).
-- Never cancel `WorldRenderer.render()` itself or return early past
-  `setupTerrain`. Remix is hosted inside vanilla's traversal and captures its
+  its target would have set (`LevelRendererMixin`).
+- Never cancel `LevelRenderer.render()` itself or the `LevelExtractor` pass
+  that feeds it. Remix is hosted inside vanilla's traversal and captures its
   sub-passes in place. Cancel only replaced draws and preserve their net state
   changes; see [Cancelling Vanilla Render Work](CONTRIBUTING.md#cancelling-vanilla-render-work).
 - A terrain recapture must clear Remix terrain, reload vanilla terrain, and
   explicitly queue the previous built set. Snapshot `builtSections` before
-  `WorldRenderer.reload()` forgets it, then call `recaptureTerrainForRemix`.
+  `LevelExtractor.allChanged()` forgets it, then call `recaptureTerrainForRemix`.
   `RtxRemixMod.rebuildLoadedTerrain()` owns this sequence. Commit settings once
   per transaction, never once per slider step.
 - Schedule world-transition work through `client.execute`, not a flag drained
-  by a world-render hook: those hooks stop when `client.world` is null, so the
+  by a world-render hook: those hooks stop when `client.level` is null, so the
   clear would land in the next world's initialization. Re-check the session
   after an executor hop.
 - `JOIN` and `DISCONNECT` are not paired across server reconfiguration. A join
@@ -287,9 +286,6 @@ diluting the sampler's candidate pool.
   ignores a buffer that is already idle, and `RenderRegionStoragePool` relies
   on its callers' counts (`SectionMeshData`, `DirectBufferPool`,
   `RenderRegionStoragePool`).
-- The visibility walk port produces vanilla's visible set exactly;
-  `-Drtxremix.vanillaVisibilityWalk` and `-Drtxremix.logVisibleSet` are how to
-  prove it on a live world (`ChunkRenderingDataPreparerMixin`, `FarChunkProbeTest`).
 - A queued chunk unload is cancelled by the column's re-send, and a queued
   column that reaches the client ring's edge is sent at once regardless of
   budget (`PacedUnloadQueue`).
@@ -314,8 +310,8 @@ diluting the sampler's candidate pool.
   `CommandLineRedaction`).
 - Vanilla's shared worker pool and section-builder concurrency stay capped
   (`WorkerPoolCap`, `SectionBuildConcurrency`).
-- Nothing but the render thread reads client light (`World.getLightLevel`,
-  `LightingProvider.get`) while capture is on: the published snapshot is then
+- Nothing but the render thread reads client light (`Level.getBrightness`,
+  `LevelLightEngine`) while capture is on: the published snapshot is then
   the engine's live map (`ClientLightSnapshotPolicy`, `LightStorageMixin`).
 - There is one overlay toggle path. `RemixInputGate` alone owns the capture
   session. Every open request goes through `RtxRemixMod.openRemixMenu`, and
@@ -379,7 +375,7 @@ The wrapper's source of truth, in order, is:
 The root Gradle build compiles the Java sources directly and builds
 `remixbridge.dll` into `build/native/{win64|arm64}/`. There is no separate
 wrapper Java build or example launcher. The native build needs Visual Studio
-C++ tools and `JAVA_HOME` pointing to a 64-bit JDK 21. It uses the
+C++ tools and `JAVA_HOME` pointing to a 64-bit JDK 25. It uses the
 copied header unless `REMIX_INCLUDE` explicitly selects another directory.
 The supported targets are Windows x64 and ARM64; agent shells may be POSIX
 even though the Gradle wrapper and native compiler entry points are batch scripts.

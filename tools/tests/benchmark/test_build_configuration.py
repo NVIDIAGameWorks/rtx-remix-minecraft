@@ -18,7 +18,7 @@ class BuildConfigurationTests(unittest.TestCase):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         wrapper = (REPO_ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text(encoding="utf-8")
 
-        loom = re.search(r"id 'fabric-loom' version '([^']+)'", build)
+        loom = re.search(r"id '(?:net\.fabricmc\.)?fabric-loom' version '([^']+)'", build)
         if loom is None:
             self.fail("Fabric Loom version declaration is missing")
         self.assertNotIn("SNAPSHOT", loom.group(1).upper())

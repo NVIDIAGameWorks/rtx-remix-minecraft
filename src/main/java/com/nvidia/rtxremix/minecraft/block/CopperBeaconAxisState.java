@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
 
 /** Persistent, world-time-driven animation state for one Copper Beacon axis. */
 public record CopperBeaconAxisState(
@@ -101,7 +101,7 @@ public record CopperBeaconAxisState(
                 tick);
     }
 
-    public void writeNbt(NbtCompound nbt) {
+    public void writeNbt(CompoundTag nbt) {
         nbt.putFloat(POSITION_KEY, position);
         nbt.putInt(MODE_KEY, mode.ordinal());
         nbt.putFloat(ROTATION_SPEED_KEY, rotationSpeed);
@@ -112,26 +112,16 @@ public record CopperBeaconAxisState(
         nbt.putLong(ANCHOR_TICK_KEY, anchorTick);
     }
 
-    public static CopperBeaconAxisState readNbt(NbtCompound nbt) {
-        CopperBeaconAxisState defaults = defaults(nbt.getLong(ANCHOR_TICK_KEY));
+    public static CopperBeaconAxisState readNbt(CompoundTag nbt) {
+        CopperBeaconAxisState defaults = defaults(nbt.getLongOr(ANCHOR_TICK_KEY, 0L));
         return new CopperBeaconAxisState(
-                nbt.contains(POSITION_KEY) ? nbt.getFloat(POSITION_KEY) : defaults.position,
-                CopperBeaconAnimationMode.byId(nbt.getInt(MODE_KEY)),
-                nbt.contains(ROTATION_SPEED_KEY)
-                        ? nbt.getFloat(ROTATION_SPEED_KEY)
-                        : defaults.rotationSpeed,
-                nbt.contains(MINIMUM_OFFSET_KEY)
-                        ? nbt.getFloat(MINIMUM_OFFSET_KEY)
-                        : defaults.minimumOffset,
-                nbt.contains(MAXIMUM_OFFSET_KEY)
-                        ? nbt.getFloat(MAXIMUM_OFFSET_KEY)
-                        : defaults.maximumOffset,
-                nbt.contains(CYCLE_SECONDS_KEY)
-                        ? nbt.getFloat(CYCLE_SECONDS_KEY)
-                        : defaults.cycleSeconds,
-                nbt.contains(PATROL_SECONDS_KEY)
-                        ? nbt.getFloat(PATROL_SECONDS_KEY)
-                        : defaults.patrolSeconds,
+                nbt.getFloatOr(POSITION_KEY, defaults.position),
+                CopperBeaconAnimationMode.byId(nbt.getIntOr(MODE_KEY, 0)),
+                nbt.getFloatOr(ROTATION_SPEED_KEY, defaults.rotationSpeed),
+                nbt.getFloatOr(MINIMUM_OFFSET_KEY, defaults.minimumOffset),
+                nbt.getFloatOr(MAXIMUM_OFFSET_KEY, defaults.maximumOffset),
+                nbt.getFloatOr(CYCLE_SECONDS_KEY, defaults.cycleSeconds),
+                nbt.getFloatOr(PATROL_SECONDS_KEY, defaults.patrolSeconds),
                 defaults.anchorTick);
     }
 

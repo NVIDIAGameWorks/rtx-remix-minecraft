@@ -6,26 +6,25 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
-import net.minecraft.client.texture.AbstractTexture;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.client.texture.PlayerSkinTexture;
-import net.minecraft.client.texture.TextureManager;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Intercepts {@link TextureManager#registerTexture} to track dynamic textures
+ * Intercepts {@link TextureManager#register} to track dynamic textures
  * for pixel capture across every upload.
  *
  * <p>Handles three texture types:
  * <ul>
- *   <li>{@link NativeImageBackedTexture}: if the image is already available at
+ *   <li>{@link DynamicTexture}: if the image is already available at
  *       registration time, pixels are captured immediately; the texture remains
  *       tracked for later mutable uploads such as maps.</li>
- *   <li>{@link PlayerSkinTexture}: always async (image downloads from Mojang CDN),
+ *   <li>{@link HttpTexture}: always async (image downloads from Mojang CDN),
  *       so {@code PlayerSkinTextureMixin} can capture the uploaded image.</li>
  *   <li>Font glyph pages, which {@code GlyphAtlasTextureMixin} gives a
  *       {@link GlyphPageMirror}: the mirror is registered under the page's id so the
@@ -36,12 +35,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(TextureManager.class)
 public class TextureManagerMixin {
 
-    @Inject(method = "registerTexture", at = @At("HEAD"))
+    @Inject(method = "register(Lnet/minecraft/resources/Identifier;Lnet/minecraft/client/renderer/texture/AbstractTexture;)V", at = @At("HEAD"))
     private void rtxremix$onRegisterTexture(Identifier id, AbstractTexture texture, CallbackInfo ci) {
-        if (texture instanceof NativeImageBackedTexture nib) {
-            DynamicTextureCache.onRegisterTexture(id, texture, nib.getImage());
-        } else if (texture instanceof PlayerSkinTexture) {
-            DynamicTextureCache.onRegisterTexture(id, texture, null);
+        if (texture instanceof DynamicTexture nib) {
+            DynamicTextureCache.onRegisterTexture(id, texture, nib.getPixels());
         } else if (texture instanceof GlyphPageMirror.Owner page) {
             DynamicTextureCache.onRegisterGlyphPage(id, page.rtxremix$glyphPageMirror());
         }

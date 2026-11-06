@@ -4,10 +4,10 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.resource.Resource;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,14 +47,16 @@ import java.util.concurrent.ExecutionException;
  */
 final class EndPortalSurface {
 
-    static final Identifier PORTAL_TEXTURE_ID = Identifier.of("rtxremix", "end_portal_surface");
-    static final Identifier GATEWAY_TEXTURE_ID = Identifier.of("rtxremix", "end_gateway_surface");
+    static final Identifier PORTAL_TEXTURE_ID =
+            Identifier.fromNamespaceAndPath("rtxremix", "end_portal_surface");
+    static final Identifier GATEWAY_TEXTURE_ID =
+            Identifier.fromNamespaceAndPath("rtxremix", "end_gateway_surface");
     static final Optional<Identifier> PORTAL_TEXTURE = Optional.of(PORTAL_TEXTURE_ID);
     static final Optional<Identifier> GATEWAY_TEXTURE = Optional.of(GATEWAY_TEXTURE_ID);
 
-    /** {@code EndPortalLayers} in {@code rendertype_end_portal.json}. */
+    /** The {@code PORTAL_LAYERS} shader define of {@code RenderPipelines.END_PORTAL}. */
     static final int PORTAL_LAYERS = 15;
-    /** {@code EndPortalLayers} in {@code rendertype_end_gateway.json}. */
+    /** The {@code PORTAL_LAYERS} shader define of {@code RenderPipelines.END_GATEWAY}. */
     static final int GATEWAY_LAYERS = 16;
 
     /**
@@ -105,9 +107,9 @@ final class EndPortalSurface {
     static final float DESATURATION = 0.3f;
 
     private static final Identifier SKY_TEXTURE =
-            Identifier.ofVanilla("textures/environment/end_sky.png");
+            Identifier.withDefaultNamespace("textures/environment/end_sky.png");
     private static final Identifier PORTAL_TEXTURE_SOURCE =
-            Identifier.ofVanilla("textures/entity/end_portal.png");
+            Identifier.withDefaultNamespace("textures/entity/end_portal/end_portal.png");
 
     /** {@code COLORS} in {@code rendertype_end_portal.fsh}, as RGB triples. */
     private static final float[] COLORS = {
@@ -185,14 +187,13 @@ final class EndPortalSurface {
     private static Image read(ResourceManager resources, Identifier id) {
         Resource resource = resources.getResource(id)
                 .orElseThrow(() -> new IllegalStateException("Missing texture " + id));
-        try (InputStream in = resource.getInputStream(); NativeImage image = NativeImage.read(in)) {
+        try (InputStream in = resource.open(); NativeImage image = NativeImage.read(in)) {
             int width = image.getWidth();
             int height = image.getHeight();
             int[] rgb = new int[width * height];
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
-                    int abgr = image.getColor(x, y);
-                    rgb[y * width + x] = ((abgr & 0xFF) << 16) | (abgr & 0xFF00) | ((abgr >> 16) & 0xFF);
+                    rgb[y * width + x] = image.getPixel(x, y) & 0xFFFFFF;
                 }
             }
             return new Image(rgb, width, height);

@@ -5,8 +5,6 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.HardcodedVertex;
-import net.minecraft.util.math.ChunkSectionPos;
-
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -16,6 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import net.minecraft.core.SectionPos;
 
 /**
  * Thread-safe queue that transfers block-gen section data from chunk-build
@@ -375,7 +374,7 @@ public final class BlockDataQueue {
         state.pendingBytes.addAndGet(-head.bytes);
         releaseMeshData(head.capture.data());
 
-        ChunkSectionPos sacrificed = head.capture.data().sectionPos();
+        SectionPos sacrificed = head.capture.data().sectionPos();
         if (isCurrent(head.capture) && !sacrificed.equals(incoming.sectionPos())) {
             BACKPRESSURE_EVICTIONS.incrementAndGet();
             state.evictedSections.add(new EvictedSection(
