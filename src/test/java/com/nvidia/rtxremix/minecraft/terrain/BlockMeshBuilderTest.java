@@ -10,15 +10,19 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
 import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
 import com.nvidia.rtxremix.minecraft.terrain.capture.SectionMeshData;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BlockMeshBuilderTest {
@@ -47,7 +51,7 @@ class BlockMeshBuilderTest {
         BlockMeshBuilder.MeshPage[] pages = builder.buildColumnMesh(
                 0, 0, List.of(snapshot(0, 0, 0, meshData)),
                 BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial());
+                (key, emission) -> testMaterial());
         try {
             assertEquals(3, pages.length);
             assertArrayEquals(new long[]{2L * QUAD_BYTES, 2L * QUAD_BYTES, QUAD_BYTES},
@@ -72,13 +76,40 @@ class BlockMeshBuilderTest {
         BlockMeshBuilder.MeshPage[] pages = builder.buildColumnMesh(
                 0, 0, List.of(snapshot(0, 0, 0, meshData)),
                 BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial());
+                (key, emission) -> testMaterial());
         try {
             assertEquals(2, pages.length);
             assertEquals(ChunkManager.CAT_SOLID, pages[0].category());
             assertEquals(2L * QUAD_BYTES, pages[0].estimatedNativeBytes());
             assertEquals(ChunkManager.CAT_OVERLAY, pages[1].category());
             assertEquals(QUAD_BYTES, pages[1].estimatedNativeBytes());
+        } finally {
+            dispose(pages);
+        }
+    }
+
+    @Test
+    void dustStatesOfOneMaterialKeyResolveAsSeparateSurfaces() throws Exception {
+        BlockMeshBuilder builder = new BlockMeshBuilder(8L * QUAD_BYTES);
+        SectionMeshData lower = meshData(
+                canonicalSurface(ChunkManager.CAT_CUTOUT, "cutout", RedstoneEmission.NONE, 1),
+                canonicalSurface(ChunkManager.CAT_CUTOUT, "cutout", RedstoneEmission.POWERED, 1));
+        SectionMeshData upper = meshData(
+                canonicalSurface(ChunkManager.CAT_CUTOUT, "cutout", RedstoneEmission.POWERED, 1));
+        Map<RedstoneEmission, RemixMaterial> materials = new EnumMap<>(RedstoneEmission.class);
+
+        BlockMeshBuilder.MeshPage[] pages = builder.buildColumnMesh(
+                0, 0, List.of(snapshot(0, 0, 0, lower), snapshot(0, 1, 0, upper)),
+                BlockMeshBuilder.ALL_CATEGORY_MASK,
+                (key, emission) -> materials.computeIfAbsent(emission, unused -> testMaterial()));
+        try {
+            assertEquals(1, pages.length);
+            RemixMeshSurface[] surfaces = meshSurfaces(pages[0].mesh());
+            assertEquals(2, surfaces.length);
+            assertSame(materials.get(RedstoneEmission.NONE), surfaceField(surfaces[0], "material"));
+            assertEquals(4, surfaceField(surfaces[0], "vertexCount"));
+            assertSame(materials.get(RedstoneEmission.POWERED), surfaceField(surfaces[1], "material"));
+            assertEquals(8, surfaceField(surfaces[1], "vertexCount"));
         } finally {
             dispose(pages);
         }
@@ -94,7 +125,7 @@ class BlockMeshBuilderTest {
         BlockMeshBuilder.MeshPage[] pages = builder.buildColumnMesh(
                 0, 0, List.of(snapshot(0, 0, 0, meshData)),
                 1 << ChunkManager.CAT_OVERLAY,
-                key -> testMaterial());
+                (key, emission) -> testMaterial());
         try {
             assertEquals(1, pages.length);
             assertEquals(ChunkManager.CAT_OVERLAY, pages[0].category());
@@ -109,7 +140,7 @@ class BlockMeshBuilderTest {
 
         assertThrows(IllegalArgumentException.class, () -> builder.buildColumnMesh(
                 0, 0, List.of(snapshot(0, 0, 0, meshData())),
-                1 << ChunkManager.CAT_COUNT, key -> testMaterial()));
+                1 << ChunkManager.CAT_COUNT, (key, emission) -> testMaterial()));
     }
 
     @Test
@@ -118,12 +149,12 @@ class BlockMeshBuilderTest {
         ByteBuffer vertices = ByteBuffer.allocate(4 * HardcodedVertex.STRIDE)
                 .order(ByteOrder.LITTLE_ENDIAN);
         SectionMeshData ownIndices = meshData(new SectionMeshData.Surface(
-                ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, false));
+                ChunkManager.CAT_SOLID, "solid", RedstoneEmission.NONE, vertices, 4, 6, false));
 
         assertThrows(IllegalArgumentException.class, () -> builder.buildColumnMesh(
                 0, 0, List.of(snapshot(0, 0, 0, ownIndices)),
                 BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial()));
+                (key, emission) -> testMaterial()));
     }
 
     @Test
@@ -132,12 +163,12 @@ class BlockMeshBuilderTest {
         ByteBuffer vertices = ByteBuffer.allocate(5 * HardcodedVertex.STRIDE)
                 .order(ByteOrder.LITTLE_ENDIAN);
         SectionMeshData partialQuad = meshData(new SectionMeshData.Surface(
-                ChunkManager.CAT_SOLID, "solid", vertices, 5, 6, true));
+                ChunkManager.CAT_SOLID, "solid", RedstoneEmission.NONE, vertices, 5, 6, true));
 
         assertThrows(IllegalArgumentException.class, () -> builder.buildColumnMesh(
                 0, 0, List.of(snapshot(0, 0, 0, partialQuad)),
                 BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial()));
+                (key, emission) -> testMaterial()));
     }
 
     @Test
@@ -154,12 +185,12 @@ class BlockMeshBuilderTest {
             }
         }
         SectionMeshData meshData = meshData(new SectionMeshData.Surface(
-                ChunkManager.CAT_SOLID, "solid", vertices, 12, 18, true));
+                ChunkManager.CAT_SOLID, "solid", RedstoneEmission.NONE, vertices, 12, 18, true));
 
         BlockMeshBuilder.MeshPage[] pages = builder.buildColumnMesh(
                 1, -2, List.of(snapshot(1, 2, -2, meshData)),
                 BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial());
+                (key, emission) -> testMaterial());
         try {
             assertEquals(3, pages.length);
             for (int pageIndex = 0; pageIndex < pages.length; pageIndex++) {
@@ -188,7 +219,7 @@ class BlockMeshBuilderTest {
                 -3, 7,
                 List.of(snapshot(-3, -1, 7, lower), snapshot(-3, 2, 7, upper)),
                 BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial());
+                (key, emission) -> testMaterial());
         try {
             assertEquals(1, pages.length);
             RemixMeshSurface surface = firstSurface(pages[0].mesh());
@@ -208,7 +239,7 @@ class BlockMeshBuilderTest {
 
         assertThrows(IllegalArgumentException.class, () -> builder.buildColumnMesh(
                 1, 3, List.of(foreign), BlockMeshBuilder.ALL_CATEGORY_MASK,
-                key -> testMaterial()));
+                (key, emission) -> testMaterial()));
     }
 
     private static SectionMeshData meshData(SectionMeshData.Surface... surfaces) {
@@ -223,10 +254,16 @@ class BlockMeshBuilderTest {
 
     private static SectionMeshData.Surface canonicalSurface(
             int category, String bucket, int quadCount) {
+        return canonicalSurface(category, bucket, RedstoneEmission.NONE, quadCount);
+    }
+
+    private static SectionMeshData.Surface canonicalSurface(
+            int category, String bucket, RedstoneEmission emission, int quadCount) {
         int vertexCount = quadCount * 4;
         return new SectionMeshData.Surface(
                 category,
                 bucket,
+                emission,
                 ByteBuffer.allocate(vertexCount * HardcodedVertex.STRIDE)
                         .order(ByteOrder.LITTLE_ENDIAN),
                 vertexCount,
@@ -256,6 +293,12 @@ class BlockMeshBuilderTest {
         Field surfaces = RemixMesh.class.getDeclaredField("surfaces");
         surfaces.setAccessible(true);
         return (RemixMeshSurface[]) surfaces.get(mesh);
+    }
+
+    private static Object surfaceField(RemixMeshSurface surface, String name) throws Exception {
+        Field field = RemixMeshSurface.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(surface);
     }
 
     private static ByteBuffer surfaceBuffer(RemixMeshSurface surface, String name) throws Exception {

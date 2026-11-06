@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -13,7 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Pre-categorized interleaved mesh data for a single chunk section.
- * Each {@link Surface} is one (category, bucketKey) pair with vertex
+ * Each {@link Surface} is one (category, bucketKey, redstoneEmission) bucket with vertex
  * data already in HardcodedVertex layout (64-byte stride).
  *
  * <p>Positions are section-local. The column mesh builder adds each section's
@@ -40,6 +41,7 @@ public final class SectionMeshData {
      *
      * @param category     chunk manager category (CAT_SOLID, CAT_CUTOUT, etc.)
      * @param bucketKey    material bucket key (e.g. "solid", "cutout_mipped", "water", "solid_sss")
+     * @param redstoneEmission the dust state that selects the material's emission
      * @param vertexBuffer HardcodedVertex interleaved (64 bytes/vert); a pooled direct
      *                     buffer in production, positioned at 0 with the payload as limit
      * @param vertexCount  number of vertices
@@ -51,6 +53,7 @@ public final class SectionMeshData {
     public record Surface(
         int category,
         String bucketKey,
+        RedstoneEmission redstoneEmission,
         ByteBuffer vertexBuffer,
         int vertexCount,
         int indexCount,
@@ -171,6 +174,7 @@ public final class SectionMeshData {
     private static int surfaceHash(Surface surface) {
         int hash = surface.category;
         hash = hash * 31 + surface.bucketKey.hashCode();
+        hash = hash * 31 + surface.redstoneEmission.ordinal();
         hash = hash * 31 + surface.vertexCount;
         hash = hash * 31 + surface.indexCount;
         hash = hash * 31 + (surface.canonicalQuadIndices ? 1 : 0);

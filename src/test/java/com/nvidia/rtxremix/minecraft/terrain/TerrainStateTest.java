@@ -8,6 +8,7 @@ import com.nvidia.rtxremix.minecraft.terrain.capture.SectionMeshData;
 import com.nvidia.rtxremix.minecraft.light.BlockLightKey;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.HardcodedVertex;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import org.junit.jupiter.api.Test;
@@ -100,7 +101,7 @@ class TerrainStateTest {
         ByteBuffer vertices = ByteBuffer.allocate(4 * HardcodedVertex.STRIDE)
                 .order(ByteOrder.LITTLE_ENDIAN);
         return new SectionMeshData(List.of(new SectionMeshData.Surface(
-                ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, true)));
+                ChunkManager.CAT_SOLID, "solid", RedstoneEmission.NONE, vertices, 4, 6, true)));
     }
 
     @Test

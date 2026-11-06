@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.HardcodedVertex;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import net.minecraft.util.math.ChunkSectionPos;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -550,7 +551,7 @@ class BlockDataQueueTest {
         ByteBuffer vertices = ByteBuffer.allocate(4 * HardcodedVertex.STRIDE)
                 .order(ByteOrder.LITTLE_ENDIAN);
         SectionMeshData meshData = new SectionMeshData(List.of(new SectionMeshData.Surface(
-                ChunkManager.CAT_SOLID, "solid", vertices, 4, 6, true)));
+                ChunkManager.CAT_SOLID, "solid", RedstoneEmission.NONE, vertices, 4, 6, true)));
         return new SectionBlockData(
                 ChunkSectionPos.from(cx, sy, cz), meshData, List.of(),
                 0, 0, 0, 0, 0, 0, null);
