@@ -47,14 +47,17 @@ public record SectionBlockData(
     long[] opacityBitmap
 ) {
     /**
-     * A single quad with all rendering context resolved at generation time.
+     * A captured quad; its block tint is carried as {@code colorIndex} and
+     * applied when the quad is staged.
      *
      * @param positions   12 floats: 4 vertices x (x, y, z), section-local coords [0..16]
      * @param uvs         8 floats: 4 vertices x (u, v), atlas coordinates
      * @param nx          face normal X
      * @param ny          face normal Y
      * @param nz          face normal Z
-     * @param color       pre-resolved ARGB vertex color (tint already applied)
+     * @param color       ARGB vertex color as the model emitted it, before the block tint
+     * @param colorIndex  {@code BlockColors} tint index to multiply into {@code color}, or -1
+     *                    for none, including when the quad's material disables it
      * @param spriteId    exact sprite identifier for O(1) material lookup
      * @param spriteU0    sprite atlas UV bounds min U
      * @param spriteV0    sprite atlas UV bounds min V
@@ -69,6 +72,7 @@ public record SectionBlockData(
         float[] uvs,
         float nx, float ny, float nz,
         int color,
+        int colorIndex,
         ResourceLocation spriteId,
         float spriteU0, float spriteV0,
         float spriteU1, float spriteV1,

@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Builds the four release files and drafts a release. Nothing here publishes:
+# a person writes the notes, smoke-tests the draft, and publishes it, and
+# GitHub creates the tag at that moment.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_draft:
+        description: Draft a release from main. Turn off to build the files without drafting.
+        type: boolean
+        default: true
+
+# Each job asks for what it needs; the build only reads.
+permissions: {}
+
+concurrency: release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Read the release version
+        id: version
+        run: |
+          $line = Select-String '^mod_version=(.+)$' gradle.properties
+          if (-not $line) { throw "mod_version is missing from gradle.properties" }
+          $version = $line.Matches[0].Groups[1].Value
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      # The pinned runtime comes from public Packman; no credentials are used.
+      - name: Stage the release files
+        run: '& "$env:GITHUB_WORKSPACE\gradlew.bat" stageReleaseAssets'
+      # The JAR and the zips are already compressed, so storing them as they
+      # are saves runner time.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: build/release-assets/*
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  # Only from main, so the tag GitHub creates at publish time lands on a
+  # commit main contains. A run from a branch stops after the build.
+  draft:
+    needs: build
+    if: inputs.create_draft && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+      # Reusing a version would attach a second release to a published tag or
+      # leave a duplicate draft, so stop before creating anything.
+      - name: Refuse an existing release
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists. Raise mod_version in gradle.properties, or delete that release and its tag."
+            exit 1
+          fi
+          existing=$(git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/v$VERSION")
+          if [ -n "$existing" ]; then
+            echo "::error::Tag v$VERSION already exists. Raise mod_version in gradle.properties, or delete that tag."
+            exit 1
+          fi
+      - name: Create the draft release
+        run: |
+          files=(release-assets/*)
+          if [ "${#files[@]}" -ne 4 ]; then
+            echo "::error::Expected the four release files, found ${#files[@]} in release-assets."
+            exit 1
+          fi
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft \
+            --target "$GITHUB_SHA" \
+            --title "RTX Remix for Minecraft $VERSION" \
+            --notes "Write the release notes before publishing." \
+            "${files[@]}"

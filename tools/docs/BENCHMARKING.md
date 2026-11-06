@@ -760,8 +760,8 @@ arms and label that experiment. Entity stripping removes that coverage.
 
 ### Benchmark FPS Is Not Play FPS
 
-[`packaging/rtx.conf`](../../packaging/rtx.conf) currently disables frame
-generation with `rtx.dlfg.enable = false`. The benchmark measures rendered
+The benchmark runner forces `rtx.dlfg.enable = false` for
+measured processes (`BENCHMARK_RTX_CONFIG`). The benchmark measures rendered
 `MinecraftClient.render` spans, never generated display frames. A play session
 with frame generation can therefore report a different presented rate.
 

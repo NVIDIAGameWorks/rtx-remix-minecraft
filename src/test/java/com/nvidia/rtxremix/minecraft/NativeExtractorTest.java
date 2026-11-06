@@ -11,8 +11,12 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,6 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NativeExtractorTest {
@@ -318,6 +323,84 @@ class NativeExtractorTest {
 
         assertEquals("shipped water normals", Files.readString(waterNormals));
         assertEquals("existing runtime", Files.readString(gameDir.resolve("remix-sdk/d3d9.dll")));
+    }
+
+    @Test
+    void aRenameBlockedByAnotherProgramSucceedsOnceItLetsGo() throws IOException {
+        // A first launch writes the runtime and renames its staging directory
+        // while an antivirus scanner still has the new DLLs open.
+        AtomicInteger attempts = new AtomicInteger();
+        List<Long> waits = new ArrayList<>();
+
+        NativeExtractor.retrying("Moving staging", () -> {
+            if (attempts.incrementAndGet() <= 2) {
+                throw new AccessDeniedException("remix-sdk.staging", "remix-sdk", null);
+            }
+        }, waits::add, new long[] {5, 10, 20});
+
+        assertEquals(3, attempts.get());
+        assertEquals(List.of(5L, 10L), waits);
+    }
+
+    @Test
+    void aRenameThatStaysBlockedThrowsTheLastFailureAfterEveryDelay() {
+        AtomicInteger attempts = new AtomicInteger();
+        List<Long> waits = new ArrayList<>();
+
+        AccessDeniedException thrown = assertThrows(AccessDeniedException.class, () ->
+                NativeExtractor.retrying("Moving staging", () -> {
+                    throw new AccessDeniedException("attempt " + attempts.incrementAndGet());
+                }, waits::add, new long[] {5, 10}));
+
+        assertEquals(3, attempts.get());
+        assertEquals(List.of(5L, 10L), waits);
+        assertEquals("attempt 3", thrown.getFile());
+    }
+
+    @Test
+    void aMissingSourceOrOccupiedDestinationIsNotRetried() {
+        // Waiting cannot bring back a staging directory or clear a destination.
+        List<Long> waits = new ArrayList<>();
+
+        assertThrows(NoSuchFileException.class, () -> NativeExtractor.retrying("Moving staging", () -> {
+            throw new NoSuchFileException("remix-sdk.staging");
+        }, waits::add, new long[] {5}));
+        assertThrows(FileAlreadyExistsException.class, () -> NativeExtractor.retrying("Moving staging", () -> {
+            throw new FileAlreadyExistsException("remix-sdk");
+        }, waits::add, new long[] {5}));
+
+        assertEquals(List.of(), waits);
+    }
+
+    @Test
+    void anInterruptStopsTheRetriesAndKeepsTheInterruptFlag() {
+        AtomicInteger attempts = new AtomicInteger();
+        try {
+            AccessDeniedException thrown = assertThrows(AccessDeniedException.class, () ->
+                    NativeExtractor.retrying("Moving staging", () -> {
+                        attempts.incrementAndGet();
+                        throw new AccessDeniedException("remix-sdk.staging");
+                    }, millis -> {
+                        throw new InterruptedException();
+                    }, new long[] {5, 10}));
+
+            assertEquals(1, attempts.get());
+            assertEquals(1, thrown.getSuppressed().length);
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void theRenameRetriesWaitAboutTenSecondsInAll() {
+        // Long enough for a scan of a freshly written runtime, short enough
+        // that a first launch does not look hung.
+        long total = 0;
+        for (long delay : NativeExtractor.RENAME_RETRY_DELAYS_MS) {
+            total += delay;
+        }
+        assertTrue(total >= 8_000 && total <= 12_000, "total retry wait was " + total + " ms");
     }
 
     private static Path createNativePayload(Path tmp) throws IOException {

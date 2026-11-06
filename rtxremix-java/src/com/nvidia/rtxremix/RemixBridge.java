@@ -42,13 +42,23 @@ public final class RemixBridge {
      */
     public static native int overwriteProcessCommandLine(String replacement);
 
+    // ─── crash dumps ─────────────────────────────────────────────────────
+
+    /**
+     * Sets whether the minidump the bridge writes after a native crash also
+     * copies the memory that stack values point at. Off by default, because
+     * that memory includes the process's launch arguments.
+     */
+    public static native void setCrashDumpDetail(boolean full);
+
     // ─── lifecycle ───────────────────────────────────────────────────────
 
     public static native int startup(long hwnd, boolean disableSrgb,
                                      boolean forceNoVkSwapchain,
                                      boolean editorMode,
                                      boolean combineGui,
-                                     boolean interopImage);
+                                     boolean interopImage,
+                                     boolean useRemixOwnedChildWindow);
 
     public static native int shutdown();
 
@@ -59,6 +69,24 @@ public final class RemixBridge {
                     int interopFlipY,
                     long clientDoneSemaphore_ValueToWait,
                     int disableCpuWaitForExternalSemaphores);
+
+    /**
+     * Deliberately faults inside a guarded Remix call on the calling thread,
+     * to check where a native crash there is reported: in {@code d3d9.dll},
+     * which reaches the runtime's crash reporter, or with {@code insideJvm}
+     * in {@code jvm.dll}, which HotSpot keeps. Diagnostic only.
+     *
+     * @return an error code only if the runtime rejected the call before faulting
+     */
+    public static native int faultInRemixCall(boolean insideJvm);
+
+    /**
+     * Sets whether a fatal fault inside a Remix call goes to the runtime's
+     * crash reporter first, which is the default on x64. Off, HotSpot reports
+     * it in {@code hs_err_pid*.log} with the Java frames that led to the call.
+     * Callable before {@link #initialize}.
+     */
+    public static native void setRemixFaultForwarding(boolean enabled);
 
     public static native int dxvkGetInteropInfo(InteropInfo outInfo);
 
