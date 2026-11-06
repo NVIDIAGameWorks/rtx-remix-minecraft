@@ -57,7 +57,8 @@ public final class RemixBridge {
                                      boolean forceNoVkSwapchain,
                                      boolean editorMode,
                                      boolean combineGui,
-                                     boolean interopImage);
+                                     boolean interopImage,
+                                     boolean useRemixOwnedChildWindow);
 
     public static native int shutdown();
 

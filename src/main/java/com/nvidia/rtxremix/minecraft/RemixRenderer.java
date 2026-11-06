@@ -89,6 +89,8 @@ import java.util.concurrent.TimeUnit;
  * OpenGL through {@code EXT_memory_object} and {@code EXT_semaphore}. Minecraft
  * composites its own GL output onto that shared image, and {@link
  * #presentFrameVk()} hands the result back to Remix to put on screen.
+ * Remix owns a child HWND for Vulkan presentation, leaving Minecraft's OpenGL
+ * context and input handling on the host window.
  */
 public class RemixRenderer {
 
@@ -325,7 +327,9 @@ public class RemixRenderer {
 
                 StartupInfo startupInfo = StartupInfo.builder()
                     .hwnd(windowHandle)
+                    .forceNoVkSwapchain(false)
                     .interopImage(true)
+                    .useRemixOwnedChildWindow(true)
                     .build();
                 remixApi.startup(startupInfo);
                 LOGGER.info("RTX Remix API started");
@@ -1362,18 +1366,19 @@ public class RemixRenderer {
         }
         boolean failed = false;
         try {
+            GlInterop interop = requireInterop();
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
-                blitGlToRemix();
+                blitGlToRemix(interop);
             } catch (RuntimeException e) {
                 failed = true;
                 logPresentFailureOnce("Error copying GL frame to Remix", e);
             }
             PresentInfo presentInfo = new PresentInfo();
-            presentInfo.hwndOverride = windowHandle;
+            presentInfo.hwndOverride = 0;
             presentInfo.skipVulkanSwapchain = 0;
             presentInfo.interopFlipY = 1;
             presentInfo.clientDoneSemaphore_ValueToWait =
-                    interopGlVk.getClientDoneSemaphoreValue();
+                    interop.getClientDoneSemaphoreValue();
             presentInfo.disableCpuWaitForExternalSemaphores = 0;
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
@@ -1432,7 +1437,14 @@ public class RemixRenderer {
         }
     }
 
-    private void blitGlToRemix() {
+    private GlInterop requireInterop() {
+        if (interopGlVk == null) {
+            throw new IllegalStateException("Initialized renderer has no GL/Vulkan interop");
+        }
+        return interopGlVk;
+    }
+
+    private void blitGlToRemix(GlInterop interop) {
         if (!submitFrameCalled) {
             // if there was no submitFrame, then interop image might not be allocated yet
             // we must have a image to blit into (e.g. UI if there's no world)
@@ -1441,13 +1453,19 @@ public class RemixRenderer {
 
         // must be called after Submit(), which allocates the image
         InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
-        interopGlVk.recreateImagesIf(interopInfo);
+        interop.recreateImagesIf(interopInfo);
 
-        int srcFbo = 0; // 0 is a default framebuffer
-        interopGlVk.copyFromFramebuffer(srcFbo);
+        // Every Submit hands the shared image from Vulkan to GL. The world
+        // overlay path may already have acquired this same timeline value.
+        interop.waitForVk(interopInfo);
+
+        // The child window covers the host window, so the default framebuffer's
+        // covered pixels are undefined. Minecraft's main framebuffer contains
+        // the same completed world, overlays, and HUD without that dependency.
+        interop.copyFromFramebuffer(MinecraftClient.getInstance().getFramebuffer().fbo);
 
         // signal that GL is done copying, so VK can read the image and present
-        interopGlVk.signalDone();
+        interop.signalDone();
     }
 
     public int getInteropDepthTexture() {

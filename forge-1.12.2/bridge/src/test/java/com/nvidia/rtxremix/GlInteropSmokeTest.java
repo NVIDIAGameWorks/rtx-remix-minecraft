@@ -31,7 +31,9 @@ public final class GlInteropSmokeTest {
             long hwnd = LegacyGlInterop.currentWindowHandle();
             check(hwnd != 0, "Test context must have an HWND");
             System.out.println("GPU: starting runtime");
-            api.startup(StartupInfo.builder().hwnd(hwnd).forceNoVkSwapchain(false).interopImage(true).build());
+            api.startup(StartupInfo.builder().hwnd(hwnd)
+                    .forceNoVkSwapchain(false).interopImage(true)
+                    .useRemixOwnedChildWindow(true).build());
             interop = new LegacyGlInterop(api.dxvkGetInteropInfo());
             verifyContextOwnership(interop);
             long material = api.createMaterial(MaterialInfo.builder().hash(0x12340001L)
@@ -116,7 +118,7 @@ public final class GlInteropSmokeTest {
                 expectIllegalState(() -> interop.finishFromFramebuffer(framebuffer, width, height, true));
             }
             PresentInfo present = new PresentInfo();
-            present.hwndOverride = hwnd;
+            present.hwndOverride = 0;
             present.skipVulkanSwapchain = 0;
             present.clientDoneSemaphore_ValueToWait = done;
             api.present(present);

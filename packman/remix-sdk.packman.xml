@@ -1,8 +1,8 @@
 <project toolsVersion="7.6">
   <dependency name="remix-sdk-win64" linkPath="../remix-runtime/win64">
-    <package name="rtx_remix_runtime" version="minecraft-rtx2-71a581da-win64-release" />
+    <package name="rtx_remix_runtime" version="minecraft-rtx2-a00da12a-win64-release" />
   </dependency>
   <dependency name="remix-sdk-arm64" linkPath="../remix-runtime/arm64">
-    <package name="rtx_remix_runtime" version="minecraft-rtx2-71a581da-arm64-release" />
+    <package name="rtx_remix_runtime" version="minecraft-rtx2-a00da12a-arm64-release" />
   </dependency>
 </project>

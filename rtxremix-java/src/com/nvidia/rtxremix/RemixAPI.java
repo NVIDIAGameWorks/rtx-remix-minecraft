@@ -26,7 +26,7 @@ import java.util.Collection;
 public class RemixAPI {
     public static final int VERSION_MAJOR = 0;
     public static final int VERSION_MINOR = 16;
-    public static final int VERSION_PATCH = 0;
+    public static final int VERSION_PATCH = 1;
 
     /**
      * Fits every value except long hash lists, so most reads through
@@ -165,7 +165,8 @@ public class RemixAPI {
                 info.forceNoVkSwapchain,
                 info.editorModeEnabled,
             info.combineGuiInFinalColor,
-            info.interopImage
+            info.interopImage,
+            info.useRemixOwnedChildWindow
         );
         if (result != ErrorCode.SUCCESS) {
             throw new RemixException("Startup failed", result);
