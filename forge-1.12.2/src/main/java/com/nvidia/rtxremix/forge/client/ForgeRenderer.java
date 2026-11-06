@@ -62,7 +62,8 @@ final class ForgeRenderer implements PresentationHooks.Backend {
         FullscreenPresentation.prepare(mc);
         long hwnd = LegacyGlInterop.currentWindowHandle();
         if (hwnd == 0) throw new IllegalStateException("Minecraft has no current OpenGL window");
-        api.startup(StartupInfo.builder().hwnd(hwnd).forceNoVkSwapchain(false).interopImage(true)
+        api.startup(StartupInfo.builder().hwnd(hwnd)
+                .forceNoVkSwapchain(false).interopImage(true).useRemixOwnedChildWindow(true)
                 .combineGuiInFinalColor(true).build());
         interop = new LegacyGlInterop(api.dxvkGetInteropInfo());
         RemixForgeMod.LOG.info("Forge Remix initialized against API {}.{}.{}.",
@@ -94,7 +95,7 @@ final class ForgeRenderer implements PresentationHooks.Backend {
                 // A failed release is fatal; presenting an unsignaled timeline value would deadlock.
                 present.clientDoneSemaphore_ValueToWait = interop.releaseAcquired();
                 present.skipVulkanSwapchain = 0;
-                present.hwndOverride = LegacyGlInterop.currentWindowHandle();
+                present.hwndOverride = 0;
                 try { api.present(present); }
                 finally { pending = false; }
             }

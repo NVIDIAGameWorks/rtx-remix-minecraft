@@ -4,7 +4,9 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
+import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.renderpearl.backend.opengl.GlTexture;
 import com.nvidia.rtxremix.CameraInfo;
 import com.nvidia.rtxremix.CameraInfoParameterizedEXT;
 import com.nvidia.rtxremix.CameraType;
@@ -90,6 +92,8 @@ import java.util.concurrent.TimeUnit;
  * OpenGL through {@code EXT_memory_object} and {@code EXT_semaphore}. Minecraft
  * composites its own GL output onto that shared image, and {@link
  * #presentFrameVk()} hands the result back to Remix to put on screen.
+ * Remix owns a child HWND for Vulkan presentation, leaving Minecraft's OpenGL
+ * context and input handling on the host window.
  */
 public class RemixRenderer {
 
@@ -104,6 +108,23 @@ public class RemixRenderer {
     private static final List<String> ACCOUNT_OPTIONS =
             List.of("--username", "--accessToken", "--uuid", "--xuid", "--clientId");
 
+    /**
+     * Whether a fatal fault inside a Remix call goes to the runtime's crash
+     * reporter. False leaves it to HotSpot, whose {@code hs_err_pid*.log} keeps
+     * the Java frames that led to the call.
+     */
+    private static final boolean FORWARD_REMIX_FAULTS =
+            Boolean.parseBoolean(System.getProperty("rtxremix.forwardRemixFaults", "true"));
+
+    /**
+     * {@code runtime} crashes the game inside a Remix call on the render thread
+     * once {@link #FAULT_IN_REMIX_CALL_FRAME} frames have been presented, and
+     * {@code jvm} faults inside {@code jvm.dll} under the same call instead.
+     * Checks where a native crash on the render thread is reported.
+     */
+    private static final String FAULT_IN_REMIX_CALL = System.getProperty("rtxremix.debug.faultInRemixCall", "");
+    private static final int FAULT_IN_REMIX_CALL_FRAME = 120;
+
     // Remix API instance
     private RemixAPI remixApi;
     private boolean initialized = false;
@@ -113,6 +134,7 @@ public class RemixRenderer {
     
     private boolean submitFrameCalled = false;
     private boolean presentFailureLogged = false;
+    private int presentedFrames = 0;
 
     // Scene managers
     private ChunkManager chunkManager;
@@ -250,6 +272,16 @@ public class RemixRenderer {
 
             remixApi = RemixAPI.load(dllPath);
             LOGGER.info("RTX Remix API loaded successfully");
+            if (!FORWARD_REMIX_FAULTS) {
+                remixApi.setFaultForwarding(false);
+                LOGGER.info("Native crashes in Remix calls go to hs_err_pid*.log, as rtxremix.forwardRemixFaults=false asks");
+            }
+
+            if (Boolean.getBoolean("rtxremix.crashDumpDetail")) {
+                remixApi.setCrashDumpDetail(true);
+                LOGGER.warn("rtxremix.crashDumpDetail is on: a crash dump in crash\\ can include "
+                        + "the launcher's access token, so keep it private");
+            }
 
             // RTXREMIX_EXTRA_RTXCONF="rtx.a=1;rtx.b=true" applies arbitrary rtx.conf
             // overrides for this session. Applied before startup() so options that
@@ -297,7 +329,9 @@ public class RemixRenderer {
 
                 StartupInfo startupInfo = StartupInfo.builder()
                     .hwnd(windowHandle)
+                    .forceNoVkSwapchain(false)
                     .interopImage(true)
+                    .useRemixOwnedChildWindow(true)
                     .build();
                 remixApi.startup(startupInfo);
                 LOGGER.info("RTX Remix API started");
@@ -1318,24 +1352,29 @@ public class RemixRenderer {
      * per run rather than once per frame.
      */
     public void presentFrameVk() {
+        if (!FAULT_IN_REMIX_CALL.isEmpty() && presentedFrames == FAULT_IN_REMIX_CALL_FRAME) {
+            faultInRemixCall();
+        }
         boolean failed = false;
         try {
+            GlInterop interop = requireInterop();
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
-                blitGlToRemix();
+                blitGlToRemix(interop);
             } catch (RuntimeException e) {
                 failed = true;
                 logPresentFailureOnce("Error copying GL frame to Remix", e);
             }
             PresentInfo presentInfo = new PresentInfo();
-            presentInfo.hwndOverride = windowHandle;
+            presentInfo.hwndOverride = 0;
             presentInfo.skipVulkanSwapchain = 0;
             presentInfo.interopFlipY = 1;
             presentInfo.clientDoneSemaphore_ValueToWait =
-                    interopGlVk.getClientDoneSemaphoreValue();
+                    interop.getClientDoneSemaphoreValue();
             presentInfo.disableCpuWaitForExternalSemaphores = 0;
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
             }
+            presentedFrames++;
             submitFrameCalled = false;
         } catch (Exception e) {
             failed = true;
@@ -1343,6 +1382,22 @@ public class RemixRenderer {
         }
         if (!failed) {
             presentFailureLogged = false;
+        }
+    }
+
+    private void faultInRemixCall() {
+        boolean insideJvm = FAULT_IN_REMIX_CALL.equals("jvm");
+        if (!insideJvm && !FAULT_IN_REMIX_CALL.equals("runtime")) {
+            LOGGER.warn("Ignoring rtxremix.debug.faultInRemixCall={}: expected runtime or jvm",
+                    FAULT_IN_REMIX_CALL);
+            return;
+        }
+        LOGGER.warn("Crashing inside a Remix call ({}), as rtxremix.debug.faultInRemixCall asks",
+                FAULT_IN_REMIX_CALL);
+        try {
+            remixApi.faultInRemixCall(insideJvm);
+        } catch (RemixException e) {
+            LOGGER.error("Could not crash inside a Remix call: {} (code: {})", e.getMessage(), e.getErrorCode());
         }
     }
 
@@ -1373,7 +1428,14 @@ public class RemixRenderer {
         }
     }
 
-    private void blitGlToRemix() {
+    private GlInterop requireInterop() {
+        if (interopGlVk == null) {
+            throw new IllegalStateException("Initialized renderer has no GL/Vulkan interop");
+        }
+        return interopGlVk;
+    }
+
+    private void blitGlToRemix(GlInterop interop) {
         if (!submitFrameCalled) {
             // if there was no submitFrame, then interop image might not be allocated yet
             // we must have a image to blit into (e.g. UI if there's no world)
@@ -1382,13 +1444,22 @@ public class RemixRenderer {
 
         // must be called after Submit(), which allocates the image
         InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
-        interopGlVk.recreateImagesIf(interopInfo);
+        interop.recreateImagesIf(interopInfo);
 
-        int srcFbo = 0; // 0 is a default framebuffer
-        interopGlVk.copyFromFramebuffer(srcFbo);
+        // Every Submit hands the shared image from Vulkan to GL. The world
+        // overlay path may already have acquired this same timeline value.
+        interop.waitForVk(interopInfo);
+
+        // The child window covers the host window, so the default framebuffer's
+        // covered pixels are undefined. Minecraft's main framebuffer contains
+        // the same completed world, overlays, and HUD without that dependency.
+        RenderTarget target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
+        if (target != null && target.getColorTexture() instanceof GlTexture color) {
+            interop.copyFromTexture(color.glId(), target.width, target.height);
+        }
 
         // signal that GL is done copying, so VK can read the image and present
-        interopGlVk.signalDone();
+        interop.signalDone();
     }
 
     public int getInteropDepthTexture() {

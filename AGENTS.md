@@ -50,6 +50,12 @@ missing runtime, and stages it, so even `test` needs the C++ toolchain.
 the runtime and payload in `build/distributions/`. It verifies inclusion of
 every `packaging/licenses/` file and excludes Python interpreter and binding
 payloads. Staged and packaged contents must agree with `NativeExtractor`.
+A release carries four files, which `stageReleaseAssets` collects: the JAR;
+the RTX Remix Materials and RTX Remix Showcase World zips, which
+`materialsArchive` and `worldArchive` build from what `fetchReleaseContent`
+pulls for the `resourcePack` and `world` pins in `tools/config.json`; and the
+installer bundle `releaseArchive` makes from those three and the installer.
+`build`, `test`, and `package` never fetch the pack or world.
 See [Getting Started](docs/GETTING_STARTED.md) and
 [`build.gradle`](build.gradle) for the staging inventory.
 
@@ -376,7 +382,9 @@ even though the Gradle wrapper and native compiler entry points are batch script
 
 Runtime payloads live in `remix-runtime/{win64|arm64}/`, outside `build/` so
 Gradle `clean` cannot traverse Packman junctions into the shared package cache.
-The runtime textures' junction, `remix-runtime/textures/`, sits beside them.
+The junctions for the runtime textures, `remix-runtime/textures/`, and for the
+release's Materials pack and showcase world, `remix-runtime/art-pack/` and
+`remix-runtime/world/`, sit beside them.
 Treat these junctions as read-only, and keep every Packman link under
 `remix-runtime/`, which git has never tracked: a checkout of a commit that
 tracks files under a junction writes and deletes them in the shared cache. Staging and packaging combine the selected
@@ -402,6 +410,18 @@ are left alone. Run source-management commands from the repository root:
   `--force` is passed.
 - Bridge-only builds use `gradlew.bat compileNativeWin64 compileNativeArm64`,
   or `rtxremix-java/native/build_native.bat x64` or `arm64`.
+
+Every call from the bridge into the runtime, the Remix C API, its D3D9
+objects, and its Tracy exports, goes through `remixCall`. The exceptions are
+`LoadLibraryW` and `FreeLibrary` of `d3d9.dll`, which run its `DllMain` under
+the loader lock. Remix calls run on Java threads, where on x64 HotSpot catches
+a native fault before any unhandled-exception filter; there the guard hands a
+fatal fault in the runtime to the runtime's crash reporter first and leaves
+faults in `jvm.dll`, stack overflows, and floating-point exceptions to
+HotSpot. Other architectures leave every fault to HotSpot until forwarding is
+checked on them, and `-Drtxremix.forwardRemixFaults=false` does the same on
+x64. Keep the guarded body to the call itself: marshalling, string lengths,
+and vtable loads stay outside it.
 
 The C API is reached only through JNI, never a JNA interface table. Java-side
 handles stay raw `long` values, not JNA `Pointer`s or wrapper objects. Native

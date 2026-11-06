@@ -1,7 +1,8 @@
 # RTX Remix for Minecraft
 
 This archive installs a Fabric mod that renders Minecraft Java Edition 26.3
-through NVIDIA RTX Remix. It sets up a launcher, Java,
+through NVIDIA RTX Remix, with the RTX Remix Materials texture pack and the
+RTX Remix Showcase World it was made with. It sets up a launcher, Java,
 Fabric, the mod, and the RTX Remix runtime for you.
 
 ## What You Need
@@ -19,11 +20,13 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 2. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Prism Launcher' (this will set up the mod automatically)
+    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then press Enter on 'Continue'
 
 3. **Sign in** to your Microsoft account in Prism Launcher
 
 4. Play
     * In Prism Launcher, double-click the 'NVIDIA RTX Remix for Minecraft' instance
+    * In Minecraft, open 'Singleplayer' and **choose** 'NVIDIA RTX Demo'
     * *Note: if the instance is missing, press F5 to refresh*
     * *Note: on the very first launch, RTX Remix compiles its shaders before showing the world (one time only). See First Launch.*
 
@@ -37,9 +40,12 @@ Fabric, the mod, and the RTX Remix runtime for you.
 
 4. Unzip the archive and **run** `install.bat`
     * Choose 'Install' -> 'Microsoft Launcher' (this will set up the mod automatically)
+    * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then press Enter on 'Continue'
+    * *Note: this launcher shares one game folder with your normal Minecraft, so 'RTX Remix Materials' also changes how your normal game looks. Untick it to keep your normal look.*
 
 5. Play
     * In Minecraft Launcher, on the 'Minecraft: Java Edition' tab: **choose** 'NVIDIA RTX Remix for Minecraft' from the installation list, and hit 'Play'
+    * In Minecraft, open 'Singleplayer' and **choose** 'NVIDIA RTX Demo'
     * *Note: on the very first launch, RTX Remix compiles its shaders before showing the world (one time only). See First Launch.*
 
 ---
@@ -64,7 +70,9 @@ breaks, report it (see below); that is how it gets fixed.
 | `installer.ps1` | The installer itself. `install.bat` is a thin wrapper around it |
 | `README.md` | This file |
 | `INSTALLER_REFERENCE.md` | The installer modes, every flag, headless and CI use, and what the installer verifies before it downloads anything. |
-| `mods\` | The mod, one JAR |
+| `mods\` | The mod, RTX Remix Renderer, one JAR |
+| `resourcepacks\` | RTX Remix Materials, the texture pack, one ZIP. The installer copies it as it is, and Minecraft loads it without unpacking |
+| `saves\` | RTX Remix Showcase World, one ZIP. The installer unpacks it into the game's `saves\NVIDIA RTX Demo\` |
 | `migrate_resource_packs.ps1` | Migrates legacy baseline packs and resource-pack ordering |
 | `LICENSE`, `NOTICE` | The project's Apache License 2.0 and its attribution notices |
 | `THIRD_PARTY_NOTICES.md`, `packaging\licenses\` | The third-party components the mod JAR carries, chiefly the RTX Remix runtime, and their license texts |
@@ -96,18 +104,31 @@ launch.
    `prismlauncher.exe`; later runs remember it. The **Microsoft launcher** is
    the official one you already use, and the mod then shares the same game
    folder and the same worlds as your normal play.
-5. The installer opens the launcher when it finishes. If it cannot, open it
+5. Keep all three items ticked in the list that follows: RTX Remix Renderer,
+   the mod; RTX Remix Materials, the texture pack the renderer was made with;
+   and RTX Remix Showcase World, the world it was tuned against. The highlight
+   starts on Continue: press Enter on it to install the ticked items. Enter on
+   an item ticks or unticks it instead. The pack goes in turned on, and you
+   can turn it off later in Options, Resource Packs. With the Microsoft
+   launcher it is also on when you play without the mod, because both share
+   one game folder, and the list says so beside it; untick it to leave your
+   normal game's look alone. The world goes into `saves\NVIDIA RTX Demo`. A
+   world already there under that name is kept as it is, and the installer
+   says so.
+6. The installer opens the launcher when it finishes. If it cannot, open it
    yourself. A Prism the installer downloaded has no Start menu entry: run
    `prismlauncher.exe` in `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\`,
    the path the installer prints when it finishes. Sign in to your Microsoft
    account if you have not already. In Prism this is Accounts, then Manage
    Accounts, then Add Microsoft.
-6. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
+7. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
    Prism, or the profile of the same name in the Microsoft launcher.
+8. Open Singleplayer and choose **NVIDIA RTX Demo**, the showcase world.
 
 `INSTALLER_REFERENCE.md` covers the rest: the modes, every flag, headless and
 CI use, and what the installer verifies before it downloads anything. To add
-the mod to a Fabric instance you already have instead, see
+the mod, the pack, or the world to a Fabric instance you already have instead,
+see
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/blob/main/docs/PLAYING.md#installing-without-the-installer>.
 
 ## First Launch
@@ -133,8 +154,10 @@ Once you are in a world, the renderer compiles shaders and draws nothing until
 it finishes. A dark, flat, or half-built scene right after is expected. Let it
 settle before judging the picture.
 
-The baseline PBR textures ship inside the mod JAR, so no separate resource
-pack needs enabling. User packs override the built-in baseline.
+RTX Remix Materials is the look the renderer was made for. Without it, the
+baseline PBR textures inside the mod JAR give vanilla's textures simpler
+materials. Packs you turn on above RTX Remix Materials override it, and every
+pack overrides the built-in baseline.
 
 ## Check It Worked
 
@@ -151,18 +174,30 @@ enabled. For a direct comparison, type `/rtx off`, look around, then `/rtx on`.
 
 ## Updating
 
-Download the new archive from
+Download the new installer bundle,
+`rtx-remix-renderer-<version>-installer.zip`, from
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest>,
 extract it, and run `install.bat` again. It
 preselects Upgrade and replaces the mod and its supporting files in the
 launcher that already has them. Launcher, Minecraft, Fabric, and other options
 are preserved. To install into the other launcher instead, choose Install.
 
-Install, Upgrade, and Repair remove an old generated `RtxRemix-LabPBR` pack
+Installing the mod also removes an old generated `RtxRemix-LabPBR` pack
 identified by its metadata and texture inventory, leaving other packs alone.
-In an existing `options.txt`, they change only `resourcePacks`: vanilla first,
+In an existing `options.txt`, it changes only `resourcePacks`: vanilla first,
 Fabric next, then user packs in their existing order, without the retired
-baseline entry. Missing options files are not created.
+baseline entry. Missing options files are not created for that.
+
+With RTX Remix Materials ticked, an installed copy,
+`resourcepacks\RTX-Remix-Materials-<version>.zip`, is replaced with the
+archive's, and its `resourcePacks` entry is renamed in place, so it stays on or
+off as you left it. A new pack is turned on just above Fabric's pack, below
+your own packs. That is the one case where the installer creates a missing
+`options.txt`, holding only the game version and the pack list.
+
+The installer never replaces or changes `saves\NVIDIA RTX Demo`, since it may
+hold your progress. For a fresh copy of the showcase world, rename or delete
+that folder and run the installer again with the world ticked.
 
 The runtime under `remix-sdk\` and the baseline `rtx.conf` belong to the mod
 and are replaced on the first launch after an upgrade, so edits to either do
@@ -204,11 +239,15 @@ The automated uninstall removes these:
 - `.rtx-remix-version`
 - `textures\water_normals_flipbook.dds` and
   `textures\overcast_thunderstorm_bc6u.dds`
+- `resourcepacks\RTX-Remix-Materials-<version>.zip`, RTX Remix Materials, and
+  its entry in the `resourcePacks:` line of `options.txt`
 - `resourcepacks\RtxRemix-LabPBR\`, if left by an earlier version
 
 Basic uninstall leaves these behind, because they are yours or they are part
 of a world. Delete them by hand if you want the folder clean:
 
+- `saves\NVIDIA RTX Demo\`, the showcase world, which may hold your progress.
+  The uninstall says where it is
 - `rtx-remix\`, which holds the lighting profiles and anything you edited
 - `config\rtxremix.json`, the settings you changed in the mod's settings screen
 - `camera-paths\`, your camera recordings
@@ -231,6 +270,7 @@ if you are wiping it anyway.
 |---|---|
 | The installer says it is running as another account, not as the one signed in to this desktop | It was started with another account's rights, such as an administrator's through Run as administrator, and would install into that account's folders. Close that window and start `install.bat` by double-clicking it |
 | `The installer is running as administrator and cannot tell which account is signed in to this desktop.` | Start `install.bat` by double-clicking it. If Windows starts every program as administrator, run the `runas /trustlevel:0x20000` command the installer prints, in Command Prompt |
+| `More than one mod JAR is in` the `mods` folder, and Install is greyed out | A newer download was extracted over an older one. Extract the download into an empty folder and run `install.bat` from there |
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start it once, then re-run `install.bat`, which detects it |
 | The installer does not find your Prism Launcher, such as a portable copy | At the launcher question, choose Use a Prism I already have and enter the folder holding `prismlauncher.exe`. Later runs remember that Prism. A headless run takes `-PrismDataDir` instead |
 | The Prism download fails | Check the firewall and retry. The installer asks GitHub for the newest Prism release, and a shared network address can hit GitHub's anonymous rate limit. If GitHub reports a rate limit, wait before retrying |
@@ -238,6 +278,10 @@ if you are wiping it anyway.
 | `Failed to extract JDK 25 archive:` followed by the error details | Check free disk space and the permissions on your temporary folder, then re-run the installer to download and extract a fresh archive |
 | The Fabric API download fails | `maven.fabricmc.net` has to be reachable. Check the firewall and re-run |
 | The installer refuses to choose a launcher | Both Prism and the Microsoft launcher are installed and the run was headless. Pass `-Launcher Prism` or `-Launcher Microsoft` |
+| `Install RTX Remix Renderer first` | RTX Remix Renderer was unticked, and the launcher has no RTX Remix game folder for the pack and the world to go into. Run the installer again with the mod ticked |
+| The RTX Remix Materials step says `Could not place` or `Could not remove the older` | Minecraft holds its resource packs open while it runs. Close it and run the installer again |
+| `Could not unpack the RTX Remix Showcase World` | Nothing of the world was left in `saves\`. Check the free space on that drive, or download the installer bundle again if the zip is damaged |
+| `Could not move the RTX Remix Showcase World` | Windows or antivirus software was still scanning the unpacked files. Nothing of the world was left in `saves\`. Run the installer again |
 
 Problems inside the game rather than inside the installer, such as a black
 screen or a flat-looking world, are covered by the player guide at
@@ -275,8 +319,10 @@ the following:
 7. The output of `/rtx status`.
 8. `logs\latest.log` and `rtx-remix\logs\remix-dxvk.log` from the game
    folder, attached rather than pasted.
-9. For a crash, a zip of whatever the game folder has of `crash\`,
-   `crash-reports\`, and `hs_err_pid*.log`.
+9. For a crash, a zip of whatever the game folder has of `crash-reports\`,
+   `crash\crash_report_*.txt`, and `hs_err_pid*.log`. Leave out the `.dmp`
+   files in `crash\`. Those from version 0.1.0 can contain your Minecraft
+   sign-in token, and so can full-detail dumps, which are opt-in for testing.
 10. A screenshot of the problem. `F2` saves one to the `screenshots\` folder.
 11. For a visual bug, a matching pair: take the shot, type `/rtx off`, take a
     second shot from the same spot, then `/rtx on`.

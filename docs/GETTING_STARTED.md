@@ -16,7 +16,8 @@ How to build and run the mod from source. If you only want to play, read
   Adoptium, Microsoft, and Java folders under Program Files.
 - **Visual Studio 2022 Build Tools** with the Desktop development with C++
   workload (MSVC v143). Cross-building the ARM64 bridge additionally needs the
-  toolset pinned in `rtxremix-java/native/build_native.bat` (currently 14.44).
+  MSVC ARM64 build tools for some installed toolset; `build_native.bat` uses
+  the default toolset when it has them, otherwise the newest one that does.
 - **Git.** Everything is in the clone except the native runtime and the two
   large runtime textures, which the build pulls through Packman on first use.
 - **uv 0.13 or newer and Python 3.15 or newer**, for the developer tools that
@@ -234,8 +235,9 @@ In game, run `/rtx status`. It should report `Renderer Initialized: true` and
 `SDK Available: true`.
 In `logs/latest.log` in the game directory, the exact success message is
 `RTX Remix renderer initialized successfully!`; there must be no
-`Failed to initialize RTX Remix` message. The similarly worded mod-entrypoint
-startup message with a capital `Renderer` is not proof of native initialization.
+`Failed to initialize RTX Remix` message. The earlier
+`RTX Remix Renderer mod setup complete` line only closes mod setup and is not
+proof of native initialization.
 
 The baseline PBR textures are built into the mod JAR and load through Fabric's
 `fabric` resource pack, below user packs. No separate baseline pack needs
@@ -252,7 +254,8 @@ interactive readiness from the settled image.
 .\gradlew.bat build                         # development JAR in build/libs/
 .\gradlew.bat test                          # JUnit suites
 .\gradlew.bat package -Parch=win64           # installable JAR in build/distributions/
-.\gradlew.bat releaseArchive -Parch=win64    # installable release ZIP in build/distributions/
+.\gradlew.bat releaseArchive -Parch=win64    # installer bundle ZIP in build/distributions/
+.\gradlew.bat stageReleaseAssets             # the four release files in build/release-assets/
 ```
 
 `.\gradlew.bat compileJava` checks Java compilation without fetching or staging
@@ -262,9 +265,10 @@ validation of native integration.
 The JAR from `package` is the one players get: it embeds the runtime, gameplay
 conf payload, runtime textures, and baseline PBR textures. To try it in a
 normal installation of Minecraft 26.3 that already has Fabric Loader and
-Fabric API, drop it into the instance's `mods` folder; nothing else is needed.
-The release archive's installer also migrates old generated baseline packs and
-preserves user-pack ordering.
+Fabric API, drop it into the instance's `mods` folder; the mod needs nothing
+else to run. The release's installer also adds the RTX Remix Materials pack
+and the showcase world, migrates old generated baseline packs, and preserves
+user-pack ordering.
 
 Every task that reaches `classes` runs `setupRuntime` first, which compiles the
 bridge and stages the runtime. `test` and `build` therefore need a staged
@@ -289,12 +293,28 @@ The task also requires every `packaging/licenses/` file in the JAR.
 | `package -Parch=win64` | win64 only, skips the arm64 bridge compile |
 | `package -Parch=arm64` | arm64 only, useful for cross-building for device testing |
 
-`releaseArchive` runs `package` and its `verifyPackageJar` check, then stages
-the verified JAR under `build/release/mods/` and the installer scripts,
-documentation, and license notices beside it. It writes that layout as a ZIP
-in `build/distributions/`. The same `-Parch` selection applies; omitting it
-includes both architectures. No separate baseline resource-pack directory is
-needed.
+`releaseArchive` builds the installer bundle. It runs `package` and its
+`verifyPackageJar` check, then stages the verified JAR under
+`build/release/mods/`, the RTX Remix Materials zip under
+`build/release/resourcepacks/`, the RTX Remix Showcase World zip under
+`build/release/saves/`, and the installer scripts, documentation, and license
+notices beside them. It writes that layout as
+`rtx-remix-renderer-<version>-installer.zip` in `build/distributions/`. The
+same `-Parch` selection applies; omitting it includes both architectures. The
+baseline resource pack is built into the mod.
+
+`fetchReleaseContent` pulls the pack and the world through Packman into
+`remix-runtime/art-pack/` and `remix-runtime/world/` from the pins in
+`tools/config.json`: `resourcePack.package` and `resourcePack.version` for the
+pack, `world.name` and `world.version` for the world. Development launches and
+benchmarks stage the same pins, so players and developers see the same
+content. Because the installer finds the zips by name, `fetchReleaseContent`
+refuses a pack version that does not read `1.2.3` or a world version that does
+not read `v1.2.3`, its `v` optional. `materialsArchive` and `worldArchive` zip
+the two with the files in `packaging/content/`, and `stageReleaseAssets`
+collects the four files a release carries, the JAR, both zips, and the bundle,
+in `build/release-assets/`. Only these release tasks fetch the pack and world;
+`build`, `test`, and `package` never do.
 
 ## Tooling And CI
 
@@ -332,7 +352,9 @@ They run `tools\rtx.bat check --tests` and `gradlew.bat build test`,
 respectively, with read-only repository permissions and no secrets. Pull
 request checks also scan the added commit messages. These workflows do not
 launch a GPU client, run benchmarks, or produce a release archive; run those
-locally when they are relevant. Runtime fetching has the publication
+locally when they are relevant. The [`release`](../.github/workflows/release.yml)
+workflow builds the release files and runs only when a maintainer starts it;
+see [Releases](../CONTRIBUTING.md#releases). Runtime fetching has the publication
 prerequisite described in [Get A Runtime](#get-a-runtime).
 
 ## Choosing A Launch Workflow
@@ -471,7 +493,7 @@ removes its stale registration.
 
 | Symptom | Cause |
 |---|---|
-| `vswhere.exe not found` or `vcvarsall.bat failed` | Visual Studio Build Tools missing, or without the Desktop C++ workload. ARM64 also needs toolset 14.44 |
+| `vswhere.exe not found` or `vcvarsall.bat failed` | Visual Studio Build Tools missing, or without the Desktop C++ workload |
 | `JAVA_HOME is not set`, or `jni.h not found` | `JAVA_HOME` unset or pointing at a JRE rather than a JDK 25 |
 | Gradle cannot fetch the SDK | Check network access to the Packman remote, or stage a matching local runtime. See [Get A Runtime](#get-a-runtime) |
 | A launch reports that Prism Launcher is not installed | Install it from [prismlauncher.org](https://prismlauncher.org), or point `prism.executable` in `tools/config.local.json` at its `prismlauncher.exe` |
@@ -483,12 +505,13 @@ removes its stale registration.
 | `UnsatisfiedLinkError` naming `remixbridge` | The bridge did not compile, or it was compiled for the other architecture. Re-run the build and check that `-Parch` matches the staged runtime |
 | Minecraft still uses an old local runtime build | The staged runtime is a copy; run `tools\rtx.bat sdk restage` |
 | The build fails at `fetchRuntimeTextures` | Packman could not pull the runtime textures pinned in `packman/textures.packman.xml`. Check access to Packman's download host |
+| `releaseArchive` fails at `fetchReleaseContent` | Packman could not pull the pack or world pinned in `tools/config.json`, or the cached copy has no `pack.mcmeta` or `world/level.dat`. Check access to Packman's download host, or delete the folder the message names and build again. A message quoting both pins means a version the installer would not find by name; see [Other Commands](#other-commands) |
 | The build reports that the runtime textures are missing files | The shared Packman cache holds the package without its textures. Delete the folder the message names and build again; Packman downloads the package afresh |
 | `package` reports mixed sources | Stage both architectures from one kind of source, or package one with `-Parch=` |
 | Empty or partial scene on first launch | Shader compilation. Wait for it to settle before reporting a defect |
 | Frame-time spikes at high render distance | Garbage collection is one possible cause. Every launch gives the Prism instance the tuned JVM arguments and their heap limit; check that `launch.jvmArgs` does not override them |
 | A clone or checkout reports `Filename too long` | Enable `git config --global core.longpaths true` before cloning, or choose a shorter checkout path |
-| `package` cannot find the ARM64 toolset | Install the version pinned by `build_native.bat`, or use `package -Parch=win64` for a single-architecture artifact |
+| `No MSVC toolset ... has the ARM64 C++ libraries` | Add the MSVC ARM64 build tools in the Visual Studio Installer, or use `package -Parch=win64` for a single-architecture artifact |
 | Initialization reports `DRIVER_VERSION_BELOW_MINIMUM` | Update the driver. The minimum is a capability gate; lowering `dxvk.nvidiaMinDriver` can enable unsupported paths and cause GPU faults |
 | `Startup` unexpectedly returns `REMIX_DEVICE_WAS_NOT_REGISTERED` after an API change | Check header, bridge and runtime together for a mismatched `remixapi_Interface` layout before continuing native calls |
 | `/rtx off` is slower than `/rtx on` | The off path renders vanilla GL at full resolution through the Remix swapchain; the on path can use DLSS's lower internal resolution. The toggle is not a standalone vanilla performance baseline |

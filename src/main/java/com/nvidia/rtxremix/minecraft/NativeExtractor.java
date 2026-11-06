@@ -11,8 +11,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
@@ -123,15 +125,18 @@ public final class NativeExtractor {
      * next launch retries extraction. Auxiliary directories may already be
      * partially updated, and a failed SDK swap can leave the live SDK path
      * absent; callers must not rely on rollback to the prior payload.
+     *
+     * @return false when extraction failed with an error this launch, so the
+     *         caller can say why the runtime is missing
      */
-    public static void extractIfNeeded() {
+    public static boolean extractIfNeeded() {
         try {
             ModContainer container = FabricLoader.getInstance()
                     .getModContainer(RtxRemixCommonMod.MOD_ID)
                     .orElse(null);
             if (container == null) {
                 LOGGER.warn("Cannot find own mod container, skipping native extraction");
-                return;
+                return true;
             }
             extractIfNeeded(
                     container.getRootPaths().get(0).resolve(JAR_NATIVE_ROOT),
@@ -140,9 +145,11 @@ public final class NativeExtractor {
                     detectPlatformSdkDir(System.getProperty("os.arch")),
                     ShippedPayloadHistory.loadBundled(),
                     RETIRED_SDK_CLEANUP);
+            return true;
         } catch (Exception e) {
             LOGGER.error("Native extraction failed; the mod may not function correctly. "
                     + "Relaunch to retry the staged payload update.", e);
+            return false;
         }
     }
 
@@ -248,7 +255,9 @@ public final class NativeExtractor {
         if (Files.exists(rtxConfStaging)) {
             // This single-file replacement is the closest to atomic we get
             // on Windows (ReplaceFileW underneath).
-            Files.move(rtxConfStaging, rtxConfFile, StandardCopyOption.REPLACE_EXISTING);
+            retrying("Moving " + rtxConfStaging + " to " + rtxConfFile,
+                    () -> Files.move(rtxConfStaging, rtxConfFile, StandardCopyOption.REPLACE_EXISTING),
+                    Thread::sleep, RENAME_RETRY_DELAYS_MS);
         }
 
         Files.writeString(versionFile, expectedMarker);
@@ -438,24 +447,96 @@ public final class NativeExtractor {
 
     /**
      * Replaces the live {@code remix-sdk/} with {@code remix-sdk.staging/}.
-     * The live dir is retired by atomic rename to {@code remix-sdk.old-<nanoTime>/}
-     * before the staging is moved in: Windows allows renaming a directory
-     * containing locked files (where deleting it would fail with
-     * SHARING_VIOLATION), so this lets extraction proceed even under a
-     * partially-released LoadLibrary handle or an open shell handle. The
-     * retired copy is then deleted through {@code cleanup}; any failure there
-     * is picked up by {@link #cleanupRetiredSdkDirs} on a later launch. This
-     * helper does not provide rollback: cleanup starts before the staged move,
-     * so a move failure can leave no live SDK directory.
+     * The live dir is retired by rename to {@code remix-sdk.old-<nanoTime>/}
+     * before the staging is moved in, because deleting a directory that holds
+     * a file another process still has open fails outright, while a rename
+     * can succeed once that process lets go. The retired copy is then deleted
+     * through {@code cleanup}; any failure there is picked up by
+     * {@link #cleanupRetiredSdkDirs} on a later launch. This helper does not
+     * provide rollback: cleanup starts before the staged move, so a move
+     * failure can leave no live SDK directory.
+     *
+     * <p>Both renames retry through {@link #retrying}. Windows refuses to
+     * rename a directory while any file inside it is open without delete
+     * sharing, and an antivirus scanner opens every DLL the extraction has
+     * just written, so on a first launch the swap often fails for a few
+     * seconds and then succeeds.
      */
     private static void retireAndSwap(Path remixSdkDir, Path sdkStaging, Executor cleanup) throws IOException {
         if (Files.exists(remixSdkDir)) {
             Path retired = remixSdkDir.resolveSibling(
                     remixSdkDir.getFileName() + ".old-" + System.nanoTime());
-            Files.move(remixSdkDir, retired);
+            retrying("Retiring " + remixSdkDir, () -> Files.move(remixSdkDir, retired),
+                    Thread::sleep, RENAME_RETRY_DELAYS_MS);
             cleanup.execute(() -> deleteQuietly(retired));
         }
-        Files.move(sdkStaging, remixSdkDir);
+        retrying("Moving " + sdkStaging + " to " + remixSdkDir, () -> Files.move(sdkStaging, remixSdkDir),
+                Thread::sleep, RENAME_RETRY_DELAYS_MS);
+    }
+
+    /**
+     * Waits before each retry of a rename the extraction commits with, about
+     * ten seconds in all. Antivirus scans of a freshly written runtime finish
+     * well inside that, and a mod init that waits longer looks hung.
+     */
+    static final long[] RENAME_RETRY_DELAYS_MS = {50, 100, 200, 400, 800, 1000, 1500, 2000, 2000, 2000};
+
+    /** A file-system step that {@link #retrying} can repeat. */
+    @FunctionalInterface
+    interface FileOperation {
+        void run() throws IOException;
+    }
+
+    /** The wait between attempts; tests substitute one that records instead of sleeping. */
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
+    }
+
+    /**
+     * Runs {@code operation}, retrying after each delay in {@code delaysMs}
+     * while it fails with an error another process's open handle can cause.
+     * A missing source or an occupied destination will not clear by waiting,
+     * so those are thrown at once, as is the last failure once the delays run
+     * out. An interrupt stops the retries and rethrows the failure.
+     */
+    static void retrying(String description, FileOperation operation, Sleeper sleeper, long[] delaysMs)
+            throws IOException {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                operation.run();
+                if (attempt > 0) {
+                    LOGGER.info("{} succeeded after {} retr{}", description, attempt, attempt == 1 ? "y" : "ies");
+                }
+                return;
+            } catch (NoSuchFileException | FileAlreadyExistsException e) {
+                throw e;
+            } catch (IOException e) {
+                if (attempt >= delaysMs.length) {
+                    throw e;
+                }
+                if (attempt == 0) {
+                    LOGGER.warn("{} failed ({}); retrying for up to {} s, since another program, "
+                                    + "usually an antivirus scan, may still have the new files open",
+                            description, e, (totalMillis(delaysMs) + 999) / 1000);
+                }
+                try {
+                    sleeper.sleep(delaysMs[attempt]);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    e.addSuppressed(interrupted);
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private static long totalMillis(long[] delaysMs) {
+        long total = 0;
+        for (long delay : delaysMs) {
+            total += delay;
+        }
+        return total;
     }
 
     /**

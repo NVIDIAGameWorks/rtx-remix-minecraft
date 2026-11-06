@@ -70,7 +70,7 @@
 
 #define REMIXAPI_VERSION_MAJOR 0
 #define REMIXAPI_VERSION_MINOR 16
-#define REMIXAPI_VERSION_PATCH 0
+#define REMIXAPI_VERSION_PATCH 1
 
 
 // External
@@ -233,9 +233,6 @@ extern "C" {
     void*               pNext;
     remixapi_HWND       hwnd;
     remixapi_Bool       disableSrgbConversionForOutput;
-    // If true, 'dxvk_GetExternalSwapchain' can be used to retrieve a raw VkImage,
-    // so the application can present it, for example by using OpenGL interop:
-    // converting VkImage to OpenGL, and presenting it via OpenGL.
     // Default: false. Use VkSwapchainKHR to present frame into HWND.
     remixapi_Bool       forceNoVkSwapchain;
     remixapi_Bool       editorModeEnabled;
@@ -247,6 +244,8 @@ extern "C" {
     // If true, Remix allocates an interop image (along with semaphores) that can be used with non-Vulkan API.
     // See comments on 'remixapi_dxvk_InteropInfo' on the interop flow.
     remixapi_Bool       interopImage;
+    // If true, Remix presents through a child HWND while hwnd remains the input host.
+    remixapi_Bool       useRemixOwnedChildWindow;
   } remixapi_StartupInfo;
 
   typedef remixapi_ErrorCode(REMIXAPI_PTR* PFN_remixapi_Startup)(const remixapi_StartupInfo* info);
