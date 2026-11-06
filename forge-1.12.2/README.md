@@ -1,9 +1,10 @@
-# Experimental Forge 1.12.2 bootstrap
+# Experimental Forge 1.12.2 renderer
 
 This standalone Java 8 module hosts the shared Remix facade in Forge
-14.23.5.2860 on Windows x64. It is an integration prerequisite: the production
-JAR initializes Remix and copies its output into Minecraft, but does not yet
-capture terrain, entities, particles, or sky.
+14.23.5.2860 on Windows x64. It captures baked terrain models, cutout foliage,
+vanilla water and lava, and glass. Terrain updates follow block edits, loaded
+chunks, and resource reloads. Entities, particles, sky, and mod-specific renderers
+remain outside this experimental renderer.
 
 Vanilla owns the OpenGL window, input, and HUD; Remix owns the final buffer swap.
 Fullscreen uses a borderless window while Remix is active. The native
@@ -48,7 +49,7 @@ staged SDK containing the Forge `remixbridge.dll`.
 
 Create a separate Prism instance with Minecraft 1.12.2, Forge 14.23.5.2860,
 and Java 8. Sign in with a Microsoft account that owns Minecraft: Java Edition.
-Use a new test world; this bootstrap does not provide a complete game renderer.
+Use a new test world; this module does not yet provide a complete game renderer.
 
 Close the instance before installing or rebuilding its native files:
 
@@ -73,3 +74,32 @@ and quit. Remove the diagnostic JAR and arguments after testing.
 The diagnostic classes never enter the production or packaged JAR.
 Unit tests cover the actual pinned Minecraft shutdown bytecode and verified
 runtime extraction; they do not replace the live rendering check.
+
+## Terrain
+
+Capture and native submission run on the render thread. Section replacements
+publish together after all pages are uploaded; revisions discard work invalidated
+by block edits or chunk replacement. Discovery, capture, upload, and retirement
+have separate limits under a cooperative 2 ms frame budget. One model callback
+or native call can exceed that budget.
+
+Native meshes default to a 512 MiB ownership limit, including unpublished and
+retiring pages. `-Drtxremix.terrainMeshMiB=8` reduces it for pressure tests;
+accepted values are 8 through 512. At capacity, nearer sections replace farther
+ones, and edits keep priority. A replacement that cannot coexist with its old
+mesh can temporarily leave a hole until retirement frees space.
+
+Lighting is fixed daylight. The atlas is a snapshot refreshed on resource reload;
+animated texture uploads, PBR maps, world sky/time-of-day lighting, and custom
+non-baked block renderers require subsequent integrations. Vanilla's world
+traversal remains intact.
+
+The diagnostic JAR also has a terrain mode. Add
+`-Drtxremix.forge.diagnostic.terrain=true` alongside the diagnostic arguments
+above. In its own disposable world it places and removes a wall, moves beyond
+the captured chunk window, reloads resources, and disables Remix. Each phase
+waits for actual section publication; a timeout fails the check. Screenshots
+are saved as `screenshots/remix-terrain-{placed,removed,streamed,reloaded}.png`.
+A successful run logs `TERRAIN_DIAGNOSTIC: PASS`. This check requires render
+distance 8 and `-Drtxremix.terrainMeshMiB=8`: it waits for the mesh budget to fill
+before testing edits. The default 512 MiB limit will time out in this flat world.
