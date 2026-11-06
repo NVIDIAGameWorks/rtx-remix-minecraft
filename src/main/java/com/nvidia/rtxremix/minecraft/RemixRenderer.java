@@ -1366,8 +1366,9 @@ public class RemixRenderer {
         }
         boolean failed = false;
         try {
+            GlInterop interop = requireInterop();
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
-                blitGlToRemix();
+                blitGlToRemix(interop);
             } catch (RuntimeException e) {
                 failed = true;
                 logPresentFailureOnce("Error copying GL frame to Remix", e);
@@ -1377,7 +1378,7 @@ public class RemixRenderer {
             presentInfo.skipVulkanSwapchain = 0;
             presentInfo.interopFlipY = 1;
             presentInfo.clientDoneSemaphore_ValueToWait =
-                    interopGlVk.getClientDoneSemaphoreValue();
+                    interop.getClientDoneSemaphoreValue();
             presentInfo.disableCpuWaitForExternalSemaphores = 0;
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
@@ -1436,36 +1437,35 @@ public class RemixRenderer {
         }
     }
 
-    private void blitGlToRemix() {
-        try {
-            if (interopGlVk == null) {
-                LOGGER.debug("blitGlToRemix: No VK draw support, cannot blit");
-                return;
-            }
-
-            if (!submitFrameCalled) {
-                // if there was no submitFrame, then interop image might not be allocated yet
-                // we must have a image to blit into (e.g. UI if there's no world)
-                submitFrame();
-            }
-
-            // must be called after Submit(), which allocates the image
-            InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
-            interopGlVk.recreateImagesIf(interopInfo);
-
-            // Every Submit hands the shared image from Vulkan to GL. The world
-            // overlay path may already have acquired this same timeline value.
-            interopGlVk.waitForVk(interopInfo);
-
-            int srcFbo = 0; // 0 is a default framebuffer
-            interopGlVk.copyFromFramebuffer(srcFbo);
-
-            // signal that GL is done copying, so VK can read the image and present
-            interopGlVk.signalDone();
-
-        } catch (Exception e) {
-            LOGGER.error("Error copying GL frame to Remix: {}", e.getMessage());
+    private GlInterop requireInterop() {
+        if (interopGlVk == null) {
+            throw new IllegalStateException("Initialized renderer has no GL/Vulkan interop");
         }
+        return interopGlVk;
+    }
+
+    private void blitGlToRemix(GlInterop interop) {
+        if (!submitFrameCalled) {
+            // if there was no submitFrame, then interop image might not be allocated yet
+            // we must have a image to blit into (e.g. UI if there's no world)
+            submitFrame();
+        }
+
+        // must be called after Submit(), which allocates the image
+        InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
+        interop.recreateImagesIf(interopInfo);
+
+        // Every Submit hands the shared image from Vulkan to GL. The world
+        // overlay path may already have acquired this same timeline value.
+        interop.waitForVk(interopInfo);
+
+        // The child window covers the host window, so the default framebuffer's
+        // covered pixels are undefined. Minecraft's main framebuffer contains
+        // the same completed world, overlays, and HUD without that dependency.
+        interop.copyFromFramebuffer(MinecraftClient.getInstance().getFramebuffer().fbo);
+
+        // signal that GL is done copying, so VK can read the image and present
+        interop.signalDone();
     }
 
     public int getInteropDepthTexture() {

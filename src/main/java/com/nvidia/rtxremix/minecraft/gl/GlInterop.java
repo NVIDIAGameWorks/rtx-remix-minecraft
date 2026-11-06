@@ -33,6 +33,8 @@ public final class GlInterop {
 
     private final InteropImage colorImage = new InteropImage(true);
     private final InteropImage depthImage = new InteropImage(false);
+    private final long dxvkDoneSemaphoreHandle;
+    private final long clientDoneSemaphoreHandle;
     private int vkDoneSemaphore;
     private int clientDoneSemaphore;
     private long clientDoneSemaphoreValue;
@@ -45,10 +47,12 @@ public final class GlInterop {
                 || interopInfo.clientDoneSemaphore_Handle == 0) {
             throw new IllegalArgumentException("Remix interop semaphore handles must be nonzero");
         }
+        dxvkDoneSemaphoreHandle = interopInfo.dxvkDoneSemaphore_Handle;
+        clientDoneSemaphoreHandle = interopInfo.clientDoneSemaphore_Handle;
         vkDoneSemaphore = importVulkanSemaphore(
-                interopInfo.dxvkDoneSemaphore_Handle, "dxvkDoneSemaphore_Handle");
+                dxvkDoneSemaphoreHandle, "dxvkDoneSemaphore_Handle");
         clientDoneSemaphore = importVulkanSemaphore(
-                interopInfo.clientDoneSemaphore_Handle, "clientDoneSemaphore_Handle");
+                clientDoneSemaphoreHandle, "clientDoneSemaphore_Handle");
     }
 
     private int importVulkanSemaphore(long win32Handle, String debugName) {
@@ -72,6 +76,7 @@ public final class GlInterop {
     }
 
     public boolean recreateImagesIf(InteropInfo info) {
+        validateSemaphoreHandles(info);
         boolean recreated = colorImage.recreate(
                 info.imageMemory_Handle,
                 info.allocationSize,
@@ -96,11 +101,15 @@ public final class GlInterop {
     }
 
     public void waitForVk(InteropInfo info) {
+        validateSemaphoreHandles(info);
         if (info.dxvkDoneSemaphore_ValueToWait == lastWaitedVkDoneSemaphoreValue) {
             return;
         }
         if (info.dxvkDoneSemaphore_ValueToWait < lastWaitedVkDoneSemaphoreValue) {
-            throw new IllegalStateException("Vulkan-done semaphore value moved backwards");
+            throw new IllegalStateException(
+                    "Vulkan-done semaphore value moved backwards on the same semaphore: "
+                            + info.dxvkDoneSemaphore_ValueToWait + " after "
+                            + lastWaitedVkDoneSemaphoreValue);
         }
         drainStaleGlErrors();
         int result = RemixBridge.openglSemaphoreParameterui64vEXT(
@@ -115,6 +124,14 @@ public final class GlInterop {
                 vkDoneSemaphore, NO_BUFFERS, barrierTextures, barrierLayouts);
         checkGlError("glWaitSemaphoreEXT");
         lastWaitedVkDoneSemaphoreValue = info.dxvkDoneSemaphore_ValueToWait;
+    }
+
+    private void validateSemaphoreHandles(InteropInfo info) {
+        if (info.dxvkDoneSemaphore_Handle != dxvkDoneSemaphoreHandle
+                || info.clientDoneSemaphore_Handle != clientDoneSemaphoreHandle) {
+            throw new IllegalStateException(
+                    "Remix replaced an interop semaphore during an active session");
+        }
     }
 
     public void signalDone() {

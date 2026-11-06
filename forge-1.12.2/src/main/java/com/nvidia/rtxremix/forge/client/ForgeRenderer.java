@@ -95,7 +95,7 @@ final class ForgeRenderer implements PresentationHooks.Backend {
                 // A failed release is fatal; presenting an unsignaled timeline value would deadlock.
                 present.clientDoneSemaphore_ValueToWait = interop.releaseAcquired();
                 present.skipVulkanSwapchain = 0;
-                present.hwndOverride = LegacyGlInterop.currentWindowHandle();
+                present.hwndOverride = 0;
                 try { api.present(present); }
                 finally { pending = false; }
             }

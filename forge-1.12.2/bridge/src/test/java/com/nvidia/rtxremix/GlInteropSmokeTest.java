@@ -118,7 +118,7 @@ public final class GlInteropSmokeTest {
                 expectIllegalState(() -> interop.finishFromFramebuffer(framebuffer, width, height, true));
             }
             PresentInfo present = new PresentInfo();
-            present.hwndOverride = hwnd;
+            present.hwndOverride = 0;
             present.skipVulkanSwapchain = 0;
             present.clientDoneSemaphore_ValueToWait = done;
             api.present(present);
