@@ -9,7 +9,11 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileAlreadyExistsException;
@@ -39,6 +43,8 @@ class DirectoryRuntimePayloadTest {
     private static final ShippedPayloadHistory NO_HISTORY = history();
 
     private static final String WATER_CONF = "rtx-remix/mods/minecraft-logic/confs/water.conf";
+
+    private static final String READ_FAILURE = "bundled file became unreadable";
 
     @ParameterizedTest
     @CsvSource({
@@ -104,7 +110,7 @@ class DirectoryRuntimePayloadTest {
         AtomicLong bytes = new AtomicLong();
         AtomicInteger kept = new AtomicInteger();
         DirectoryRuntimePayload.extractAuthorTree(tmp.resolve("src"), tmp.resolve("dst"), "rtx-remix", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE,
-                files, bytes, kept);
+                Files::newInputStream, files, bytes, kept);
 
         assertEquals("author's hand-tuned values", Files.readString(dst.resolve("cave.conf")));
         assertEquals("newly shipped profile", Files.readString(dst.resolve("swamp.conf")));
@@ -123,10 +129,120 @@ class DirectoryRuntimePayloadTest {
         AtomicInteger files = new AtomicInteger();
         AtomicLong bytes = new AtomicLong();
         AtomicInteger kept = new AtomicInteger();
-        DirectoryRuntimePayload.extractAuthorTree(src, dst, "rtx-remix", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, files, bytes, kept);
+        DirectoryRuntimePayload.extractAuthorTree(src, dst, "rtx-remix", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE,
+                Files::newInputStream, files, bytes, kept);
 
         assertEquals("shipped default", Files.readString(dst.resolve("water.conf")));
         assertEquals(0, kept.get());
+    }
+
+    @Test
+    void anInterruptedUpdateLeavesTheUneditedDefaultForARetryToReplace(@TempDir Path tmp) throws IOException {
+        // A partial live file would match no shipped version, so every later
+        // launch would keep it as an author's edit and never finish the update.
+        Path src = Files.createDirectories(tmp.resolve("src"));
+        Path dst = Files.createDirectories(tmp.resolve("dst"));
+        Files.writeString(src.resolve("cave.conf"), "current cave");
+        Files.writeString(src.resolve("water.conf"), "current water");
+        Files.writeString(dst.resolve("cave.conf"), "author's cave");
+        Files.writeString(dst.resolve("water.conf"), "previous water");
+        ShippedPayloadHistory history = history(line(tmp, "previous water", "rtx-remix/water.conf"));
+        AtomicInteger files = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+        AtomicInteger kept = new AtomicInteger();
+
+        IOException failure = assertThrows(IOException.class, () -> DirectoryRuntimePayload.extractAuthorTree(
+                src, dst, "rtx-remix", history, DirectoryRuntimePayload.Reporter.NONE,
+                DirectoryRuntimePayloadTest::openFailingPartway, files, bytes, kept));
+
+        assertEquals(READ_FAILURE, failure.getMessage());
+        assertEquals("previous water", Files.readString(dst.resolve("water.conf")));
+        assertEquals("author's cave", Files.readString(dst.resolve("cave.conf")));
+        assertEquals(List.of("cave.conf", "water.conf"), fileNames(dst),
+                "the staging file must not outlive the failure");
+        assertEquals(0, files.get());
+
+        DirectoryRuntimePayload.extractAuthorTree(src, dst, "rtx-remix", history,
+                DirectoryRuntimePayload.Reporter.NONE, Files::newInputStream, files, bytes, kept);
+
+        assertEquals("current water", Files.readString(dst.resolve("water.conf")));
+        assertEquals("author's cave", Files.readString(dst.resolve("cave.conf")));
+        assertEquals(List.of("cave.conf", "water.conf"), fileNames(dst));
+        assertEquals(1, files.get());
+    }
+
+    @Test
+    void anInterruptedFirstWriteLeavesNoFileForLaterLaunchesToKeep(@TempDir Path tmp) throws IOException {
+        // A file that is missing is written the same way, and its partial copy
+        // would be kept as an edit just as a partial update would.
+        Path src = Files.createDirectories(tmp.resolve("src"));
+        Path dst = Files.createDirectories(tmp.resolve("dst"));
+        Files.writeString(src.resolve("swamp.conf"), "newly shipped profile");
+        AtomicInteger files = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+        AtomicInteger kept = new AtomicInteger();
+
+        IOException failure = assertThrows(IOException.class, () -> DirectoryRuntimePayload.extractAuthorTree(
+                src, dst, "rtx-remix", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE,
+                DirectoryRuntimePayloadTest::openFailingPartway, files, bytes, kept));
+
+        assertEquals(READ_FAILURE, failure.getMessage());
+        assertEquals(List.of(), fileNames(dst));
+
+        DirectoryRuntimePayload.extractAuthorTree(src, dst, "rtx-remix", NO_HISTORY,
+                DirectoryRuntimePayload.Reporter.NONE, Files::newInputStream, files, bytes, kept);
+
+        assertEquals("newly shipped profile", Files.readString(dst.resolve("swamp.conf")));
+        assertEquals(List.of("swamp.conf"), fileNames(dst));
+        assertEquals(0, kept.get());
+    }
+
+    @Test
+    void aMoveBlockedForEveryRetryLeavesTheLiveFileAndNoStagingFile(@TempDir Path tmp) throws IOException {
+        // The copy can succeed and the move still fail, when another program
+        // keeps the live file open for longer than the retries wait.
+        Path src = Files.createDirectories(tmp.resolve("src"));
+        Path dst = Files.createDirectories(tmp.resolve("dst"));
+        Files.writeString(src.resolve("water.conf"), "current water");
+        Files.writeString(dst.resolve("water.conf"), "previous water");
+        List<Long> waits = new ArrayList<>();
+
+        // java.io opens a file without delete sharing, so Windows refuses to
+        // replace it while the stream is open.
+        try (InputStream holder = new FileInputStream(dst.resolve("water.conf").toFile())) {
+            assertThrows(IOException.class, () -> DirectoryRuntimePayload.writeThroughStaging(
+                    src.resolve("water.conf"), dst.resolve("water.conf"), Files::newInputStream, waits::add,
+                    DirectoryRuntimePayload.Reporter.NONE));
+        }
+
+        assertEquals(DirectoryRuntimePayload.RENAME_RETRY_DELAYS_MS.length, waits.size());
+        assertEquals("previous water", Files.readString(dst.resolve("water.conf")));
+        assertEquals(List.of("water.conf"), fileNames(dst), "the staging file must not outlive the failure");
+
+        DirectoryRuntimePayload.writeThroughStaging(
+                src.resolve("water.conf"), dst.resolve("water.conf"), Files::newInputStream, waits::add,
+                DirectoryRuntimePayload.Reporter.NONE);
+
+        assertEquals("current water", Files.readString(dst.resolve("water.conf")));
+        assertEquals(List.of("water.conf"), fileNames(dst));
+    }
+
+    @Test
+    void aFailedWriteDeletesNothingInsideAFolderHoldingTheStagingName(@TempDir Path tmp) throws IOException {
+        // The staging path is the one thing a failed write may remove. The
+        // tree is author-owned, so a folder there keeps whatever it holds.
+        Path src = Files.createDirectories(tmp.resolve("src"));
+        Path dst = Files.createDirectories(tmp.resolve("dst"));
+        Files.writeString(src.resolve("water.conf"), "current water");
+        Path folder = Files.createDirectories(dst.resolve("water.conf.staging"));
+        Files.writeString(folder.resolve("notes.txt"), "author's notes");
+
+        assertThrows(IOException.class, () -> DirectoryRuntimePayload.writeThroughStaging(
+                src.resolve("water.conf"), dst.resolve("water.conf"), Files::newInputStream, millis -> { },
+                DirectoryRuntimePayload.Reporter.NONE));
+
+        assertEquals("author's notes", Files.readString(folder.resolve("notes.txt")));
+        assertFalse(Files.exists(dst.resolve("water.conf")));
     }
 
     @Test
@@ -454,6 +570,24 @@ class DirectoryRuntimePayloadTest {
             return ShippedPayloadHistory.parse(List.of(lines));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Opens {@code file} as a stream that yields the first half of its bytes and then fails. */
+    private static InputStream openFailingPartway(Path file) throws IOException {
+        byte[] content = Files.readAllBytes(file);
+        InputStream failing = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException(READ_FAILURE);
+            }
+        };
+        return new SequenceInputStream(new ByteArrayInputStream(content, 0, content.length / 2), failing);
+    }
+
+    private static List<String> fileNames(Path dir) throws IOException {
+        try (var listing = Files.list(dir)) {
+            return listing.map(file -> file.getFileName().toString()).sorted().toList();
         }
     }
 

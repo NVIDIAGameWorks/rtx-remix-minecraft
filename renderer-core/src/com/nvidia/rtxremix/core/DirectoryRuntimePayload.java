@@ -6,6 +6,10 @@ package com.nvidia.rtxremix.core;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -13,6 +17,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -129,8 +134,9 @@ public final class DirectoryRuntimePayload {
      * <p>The version marker is written only after the copy and both staged
      * moves succeed. A failure before that point leaves the marker stale so the
      * next launch retries extraction. Auxiliary directories may already be
-     * partially updated, and a failed SDK swap can leave the live SDK path
-     * absent; callers must not rely on rollback to the prior payload.
+     * partially updated, each file in them whole, and a failed SDK swap can
+     * leave the live SDK path absent; callers must not rely on rollback to the
+     * prior payload.
      */
     public static void install(Path nativeRoot, Path gameDir, String modVersion, String archDir,
                                ShippedPayloadHistory history, Reporter reporter)
@@ -215,7 +221,8 @@ public final class DirectoryRuntimePayload {
         Files.deleteIfExists(rtxConfStaging);
 
         // Mod-owned files stage first and replace their live copies only once
-        // every copy succeeds. Author-owned directories are repaired in place.
+        // every copy succeeds. Author-owned directories are repaired in place,
+        // one whole file at a time.
         try (Stream<Path> topStream = Files.list(nativeRoot)) {
             for (Path entry : (Iterable<Path>) topStream::iterator) {
                 String name = entry.getFileName().toString();
@@ -273,7 +280,7 @@ public final class DirectoryRuntimePayload {
                 String name = entry.getFileName().toString();
                 if (Files.isDirectory(entry) && !name.startsWith("remix-sdk-") && !TEXTURES_DIR.equals(name)) {
                     extractAuthorTree(entry, gameDir.resolve(name), name, history, reporter,
-                            fileCount, totalBytes, keptCount);
+                            Files::newInputStream, fileCount, totalBytes, keptCount);
                 }
             }
         }
@@ -382,6 +389,7 @@ public final class DirectoryRuntimePayload {
             String historyRoot,
             ShippedPayloadHistory history,
             Reporter reporter,
+            FileOpener opener,
             AtomicInteger fileCount,
             AtomicLong totalBytes,
             AtomicInteger keptCount) throws IOException {
@@ -408,10 +416,63 @@ public final class DirectoryRuntimePayload {
                     }
                     reporter.info("Updating unedited " + target + " to its current shipped default");
                 }
-                copyFile(file, target, attrs, fileCount, totalBytes);
+                writeThroughStaging(file, target, opener, Thread::sleep, reporter);
+                fileCount.incrementAndGet();
+                totalBytes.addAndGet(attrs.size());
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    /** Opens a bundled file for copying; tests substitute one whose stream fails partway. */
+    @FunctionalInterface
+    interface FileOpener {
+        InputStream open(Path file) throws IOException;
+    }
+
+    /**
+     * Writes the bundled {@code file} to {@code target} through a staging file
+     * beside it, so the live path keeps its previous content until the whole
+     * copy exists. A partial author-owned file matches no shipped version, so
+     * each later launch would keep it as an edit and the update could never
+     * finish. The copy is flushed to disk before the move for the same reason:
+     * after a power loss the move can otherwise be on disk without the bytes
+     * it moved. A failed write removes the staging file and nothing else.
+     */
+    static void writeThroughStaging(
+            Path file, Path target, FileOpener opener, Sleeper sleeper, Reporter reporter) throws IOException {
+        Path staging = target.resolveSibling(target.getFileName() + ".staging");
+        try {
+            try (InputStream in = opener.open(file);
+                 FileChannel out = FileChannel.open(staging, StandardOpenOption.CREATE,
+                         StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                OutputStream bytes = Channels.newOutputStream(out);
+                byte[] chunk = new byte[8192];
+                for (int read = in.read(chunk); read != -1; read = in.read(chunk)) {
+                    bytes.write(chunk, 0, read);
+                }
+                out.force(true);
+            }
+            retrying("Moving " + staging + " to " + target, () -> moveReplacing(staging, target),
+                    sleeper, RENAME_RETRY_DELAYS_MS, reporter);
+        } catch (IOException e) {
+            try {
+                // One entry, never a tree: a folder holding this name is the author's.
+                Files.deleteIfExists(staging);
+            } catch (IOException cleanupFailure) {
+                e.addSuppressed(cleanupFailure);
+            }
+            throw e;
+        }
+    }
+
+    /** Replaces {@code target} with {@code source}, in one step where the file system can. */
+    private static void moveReplacing(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private static void createTargetDirectory(Path src, Path dst, Path dir) throws IOException {
@@ -421,6 +482,11 @@ public final class DirectoryRuntimePayload {
         }
     }
 
+    /**
+     * Streams {@code file} straight onto {@code target}, so a failure leaves a
+     * partial file there. Only for a target inside a staging directory that is
+     * discarded unless every copy succeeds.
+     */
     private static void copyFile(
             Path file,
             Path target,
