@@ -85,7 +85,9 @@ any missing shipped files under `rtx-remix/` without replacing existing files. T
 is author-owned: an existing file is replaced only when its content is a
 version of that file that has shipped, so an untouched old default takes the
 current one and edited confs are never overwritten, even during full
-extraction. `src/main/resources/rtx-remix-shipped-payload.sha256` records
+extraction. Each file is written to a staging file beside it and moved into
+place, because a partial file matches no shipped version and would be kept as
+an edit. `src/main/resources/rtx-remix-shipped-payload.sha256` records
 every shipped version; a payload change appends its line and never removes
 one, and `ShippedPayloadHistoryTest` fails with the missing line. Deleting a
 shipped conf restores its default on the next launch. A present conf that fails to acquire still prevents renderer

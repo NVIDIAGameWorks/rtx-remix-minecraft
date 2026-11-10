@@ -9,7 +9,10 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.FileAlreadyExistsException;
@@ -39,6 +42,8 @@ class NativeExtractorTest {
     private static final ShippedPayloadHistory NO_HISTORY = history();
 
     private static final String WATER_CONF = "rtx-remix/mods/minecraft-logic/confs/water.conf";
+
+    private static final String READ_FAILURE = "bundled file became unreadable";
 
     @ParameterizedTest
     @CsvSource({
@@ -104,7 +109,7 @@ class NativeExtractorTest {
         AtomicLong bytes = new AtomicLong();
         AtomicInteger kept = new AtomicInteger();
         NativeExtractor.extractAuthorTree(tmp.resolve("src"), tmp.resolve("dst"), "rtx-remix", NO_HISTORY,
-                files, bytes, kept);
+                Files::newInputStream, files, bytes, kept);
 
         assertEquals("author's hand-tuned values", Files.readString(dst.resolve("cave.conf")));
         assertEquals("newly shipped profile", Files.readString(dst.resolve("swamp.conf")));
@@ -123,9 +128,69 @@ class NativeExtractorTest {
         AtomicInteger files = new AtomicInteger();
         AtomicLong bytes = new AtomicLong();
         AtomicInteger kept = new AtomicInteger();
-        NativeExtractor.extractAuthorTree(src, dst, "rtx-remix", NO_HISTORY, files, bytes, kept);
+        NativeExtractor.extractAuthorTree(src, dst, "rtx-remix", NO_HISTORY, Files::newInputStream,
+                files, bytes, kept);
 
         assertEquals("shipped default", Files.readString(dst.resolve("water.conf")));
+        assertEquals(0, kept.get());
+    }
+
+    @Test
+    void anInterruptedUpdateLeavesTheUneditedDefaultForARetryToReplace(@TempDir Path tmp) throws IOException {
+        // A partial live file would match no shipped version, so every later
+        // launch would keep it as an author's edit and never finish the update.
+        Path src = Files.createDirectories(tmp.resolve("src"));
+        Path dst = Files.createDirectories(tmp.resolve("dst"));
+        Files.writeString(src.resolve("cave.conf"), "current cave");
+        Files.writeString(src.resolve("water.conf"), "current water");
+        Files.writeString(dst.resolve("cave.conf"), "author's cave");
+        Files.writeString(dst.resolve("water.conf"), "previous water");
+        ShippedPayloadHistory history = history(line(tmp, "previous water", "rtx-remix/water.conf"));
+        AtomicInteger files = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+        AtomicInteger kept = new AtomicInteger();
+
+        IOException failure = assertThrows(IOException.class, () -> NativeExtractor.extractAuthorTree(
+                src, dst, "rtx-remix", history, NativeExtractorTest::openFailingPartway, files, bytes, kept));
+
+        assertEquals(READ_FAILURE, failure.getMessage());
+        assertEquals("previous water", Files.readString(dst.resolve("water.conf")));
+        assertEquals("author's cave", Files.readString(dst.resolve("cave.conf")));
+        assertEquals(List.of("cave.conf", "water.conf"), fileNames(dst),
+                "the staging file must not outlive the failure");
+        assertEquals(0, files.get());
+
+        NativeExtractor.extractAuthorTree(src, dst, "rtx-remix", history, Files::newInputStream,
+                files, bytes, kept);
+
+        assertEquals("current water", Files.readString(dst.resolve("water.conf")));
+        assertEquals("author's cave", Files.readString(dst.resolve("cave.conf")));
+        assertEquals(List.of("cave.conf", "water.conf"), fileNames(dst));
+        assertEquals(1, files.get());
+    }
+
+    @Test
+    void anInterruptedFirstWriteLeavesNoFileForLaterLaunchesToKeep(@TempDir Path tmp) throws IOException {
+        // A file that is missing is written the same way, and its partial copy
+        // would be kept as an edit just as a partial update would.
+        Path src = Files.createDirectories(tmp.resolve("src"));
+        Path dst = Files.createDirectories(tmp.resolve("dst"));
+        Files.writeString(src.resolve("swamp.conf"), "newly shipped profile");
+        AtomicInteger files = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+        AtomicInteger kept = new AtomicInteger();
+
+        IOException failure = assertThrows(IOException.class, () -> NativeExtractor.extractAuthorTree(
+                src, dst, "rtx-remix", NO_HISTORY, NativeExtractorTest::openFailingPartway, files, bytes, kept));
+
+        assertEquals(READ_FAILURE, failure.getMessage());
+        assertEquals(List.of(), fileNames(dst));
+
+        NativeExtractor.extractAuthorTree(src, dst, "rtx-remix", NO_HISTORY, Files::newInputStream,
+                files, bytes, kept);
+
+        assertEquals("newly shipped profile", Files.readString(dst.resolve("swamp.conf")));
+        assertEquals(List.of("swamp.conf"), fileNames(dst));
         assertEquals(0, kept.get());
     }
 
@@ -421,6 +486,24 @@ class NativeExtractorTest {
             return ShippedPayloadHistory.parse(List.of(lines));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Opens {@code file} as a stream that yields the first half of its bytes and then fails. */
+    private static InputStream openFailingPartway(Path file) throws IOException {
+        byte[] content = Files.readAllBytes(file);
+        InputStream failing = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException(READ_FAILURE);
+            }
+        };
+        return new SequenceInputStream(new ByteArrayInputStream(content, 0, content.length / 2), failing);
+    }
+
+    private static List<String> fileNames(Path dir) throws IOException {
+        try (var listing = Files.list(dir)) {
+            return listing.map(file -> file.getFileName().toString()).sorted().toList();
         }
     }
 
