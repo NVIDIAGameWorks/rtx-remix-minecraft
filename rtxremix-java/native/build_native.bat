@@ -109,7 +109,10 @@ REM  with lib\arm64\libcpmt.lib. Visual Studio 2026 installs the ARM64
 REM  libraries only for its default toolset, while a Visual Studio 2022
 REM  default such as 14.34 may lack them where a newer side-by-side
 REM  toolset has them. Use the default when it has them, otherwise the
-REM  newest toolset that does, pinned through -vcvars_ver.
+REM  newest toolset that does. Pin the choice through -vcvars_ver even when
+REM  it is the default: without it, vcvarsall takes its toolset from
+REM  Microsoft.VCToolsVersion.v143.default.txt when that file exists, which
+REM  on Visual Studio 2022 can name an older toolset than default.txt.
 :pick_arm64_toolset
 set "MSVC_ROOT=%VS_PATH%\VC\Tools\MSVC"
 set "DEFAULT_TOOLSET="
@@ -121,6 +124,7 @@ if exist "%DEFAULT_TOOLSET_FILE%" (
 if defined DEFAULT_TOOLSET (
     if exist "%MSVC_ROOT%\!DEFAULT_TOOLSET!\lib\arm64\libcpmt.lib" (
         echo ARM64 toolset: !DEFAULT_TOOLSET! ^(default^)
+        set "VCVARS_EXTRA_ARGS=-vcvars_ver=!DEFAULT_TOOLSET!"
         exit /b 0
     )
 )
