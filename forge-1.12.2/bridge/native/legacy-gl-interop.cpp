@@ -24,6 +24,7 @@ constexpr GLenum COLOR_ATTACHMENT0 = 0x8CE0;
 constexpr GLenum FRAMEBUFFER_COMPLETE = 0x8CD5;
 constexpr GLenum FRAMEBUFFER_SRGB = 0x8DB9;
 constexpr GLenum HANDLE_OPAQUE_WIN32 = 0x9587;
+constexpr GLenum DEDICATED_MEMORY_OBJECT = 0x9581;
 constexpr GLenum LAYOUT_GENERAL = 0x958D;
 constexpr GLenum SEMAPHORE_TYPE = 0x95B3;
 constexpr GLint SEMAPHORE_TIMELINE = 0x95B5;
@@ -54,6 +55,7 @@ void checkGl(const char* operation) {
 struct GlFunctions {
     void (APIENTRY* createMemory)(GLsizei, GLuint*) = loadProc<decltype(createMemory)>("glCreateMemoryObjectsEXT");
     void (APIENTRY* deleteMemory)(GLsizei, const GLuint*) = loadProc<decltype(deleteMemory)>("glDeleteMemoryObjectsEXT");
+    void (APIENTRY* memoryParameter)(GLuint, GLenum, const GLint*) = loadProc<decltype(memoryParameter)>("glMemoryObjectParameterivEXT");
     void (APIENTRY* importMemory)(GLuint, UInt64, GLenum, void*) = loadProc<decltype(importMemory)>("glImportMemoryWin32HandleEXT");
     void (APIENTRY* textureStorage)(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLuint, UInt64) = loadProc<decltype(textureStorage)>("glTexStorageMem2DEXT");
     void (APIENTRY* createSemaphores)(GLsizei, GLuint*) = loadProc<decltype(createSemaphores)>("glCreateSemaphoresNV");
@@ -136,6 +138,15 @@ struct InteropState {
         gl.importSemaphore(semaphore, HANDLE_OPAQUE_WIN32, reinterpret_cast<void*>(handle));
         checkGl("timeline semaphore import");
     }
+    // The runtime's shared images are dedicated allocations, and
+    // EXT_external_objects requires an importer of one to set this flag. It
+    // must precede the import, which fixes the memory object's parameters.
+    void importDedicatedMemory(GLuint& target, UInt64 size, UInt64 handle) {
+        static const GLint dedicated = GL_TRUE;
+        gl.createMemory(1, &target);
+        gl.memoryParameter(target, DEDICATED_MEMORY_OBJECT, &dedicated);
+        gl.importMemory(target, size, HANDLE_OPAQUE_WIN32, reinterpret_cast<void*>(handle));
+    }
     void ensureImage(UInt64 handle, UInt64 size, int w, int h, int imageFormat) {
         if (imageHandle == handle && allocationSize == size && width == w && height == h && format == imageFormat) return;
         GLenum internalFormat;
@@ -147,8 +158,7 @@ struct InteropState {
         // Resize may retire an image read by previously queued GL work.
         if (imageHandle) glFinish();
         deleteImage();
-        gl.createMemory(1, &memory);
-        gl.importMemory(memory, size, HANDLE_OPAQUE_WIN32, reinterpret_cast<void*>(handle));
+        importDedicatedMemory(memory, size, handle);
         checkGl("color memory import");
         glGenTextures(1, &texture);
         glBindTexture(GL_TEXTURE_2D, texture);
@@ -182,8 +192,7 @@ struct InteropState {
         if (depthHandle == handle && depthAllocationSize == size && depthWidth == w && depthHeight == h) return;
         if (depthTexture) glFinish();
         deleteDepth();
-        gl.createMemory(1, &depthMemory);
-        gl.importMemory(depthMemory, size, HANDLE_OPAQUE_WIN32, reinterpret_cast<void*>(handle));
+        importDedicatedMemory(depthMemory, size, handle);
         checkGl("depth memory import");
         glGenTextures(1, &depthTexture);
         glBindTexture(GL_TEXTURE_2D, depthTexture);
