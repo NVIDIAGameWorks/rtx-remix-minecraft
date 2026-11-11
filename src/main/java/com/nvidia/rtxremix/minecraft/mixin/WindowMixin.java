@@ -4,8 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.mojang.blaze3d.platform.Window;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.minecraft.client.util.Window;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -26,7 +26,7 @@ import static org.lwjgl.glfw.GLFW.glfwWindowHint;
 public abstract class WindowMixin {
     
     @Shadow
-    private long handle;
+    private long window;
 
     @Inject(
         method = "<init>",
@@ -50,6 +50,6 @@ public abstract class WindowMixin {
         at = @At("TAIL")
     )
     private void rtxremix$onWindowCreated(CallbackInfo ci) {
-        RtxRemixMod.LOGGER.info("Window created with GLFW handle: {}", handle);
+        RtxRemixMod.LOGGER.info("Window created with GLFW handle: {}", window);
     }
 }

@@ -8,10 +8,10 @@ import net.fabricmc.fabric.api.renderer.v1.mesh.Mesh;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.impl.client.indigo.renderer.IndigoRenderer;
 import net.fabricmc.fabric.impl.client.indigo.renderer.mesh.MeshBuilderImpl;
-import net.minecraft.Bootstrap;
 import net.minecraft.SharedConstants;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.server.Bootstrap;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,8 +31,8 @@ class RemixRenderContextTest {
 
     @BeforeAll
     static void bootstrapMinecraft() {
-        SharedConstants.createGameVersion();
-        Bootstrap.initialize();
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
     }
 
     @ParameterizedTest
@@ -90,7 +90,7 @@ class RemixRenderContextTest {
         }
         Mesh mesh = builder.build();
         RemixRenderContext context = context();
-        context.prepare(null, null, BlockPos.ORIGIN, face -> face == Direction.NORTH);
+        context.prepare(null, null, BlockPos.ZERO, face -> face == Direction.NORTH);
         context.pushTransform(quad -> {
             // Transforms run in reverse push order: tag 0 has already been rejected.
             assertTrue(quad.tag() > 0);
@@ -131,7 +131,7 @@ class RemixRenderContextTest {
         output.accept(mesh, context);
 
         assertEquals(2, context.harvest().size());
-        context.prepare(null, null, BlockPos.ORIGIN, null);
+        context.prepare(null, null, BlockPos.ZERO, null);
         output.accept(mesh, context);
         assertEquals(1, context.harvest().size());
         assertFalse(context.hasTransform());
@@ -245,7 +245,7 @@ class RemixRenderContextTest {
 
     private static RemixRenderContext context() {
         RemixRenderContext context = new RemixRenderContext();
-        context.prepare(null, null, BlockPos.ORIGIN, null);
+        context.prepare(null, null, BlockPos.ZERO, null);
         return context;
     }
 

@@ -17,21 +17,6 @@ import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.google.common.collect.Queues;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import net.minecraft.client.render.BuiltChunkStorage;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.ChunkRenderingDataPreparer;
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfo;
-import net.minecraft.client.render.ChunkRenderingDataPreparer.ChunkInfoList;
-import net.minecraft.client.render.ChunkRenderingDataPreparer.RenderableChunks;
-import net.minecraft.client.render.Frustum;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.Util;
-import net.minecraft.world.HeightLimitView;
 import org.joml.FrustumIntersection;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -52,6 +37,21 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import net.minecraft.Util;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.SectionOcclusionGraph;
+import net.minecraft.client.renderer.SectionOcclusionGraph.GraphStorage;
+import net.minecraft.client.renderer.SectionOcclusionGraph.Node;
+import net.minecraft.client.renderer.SectionOcclusionGraph.SectionToNodeMap;
+import net.minecraft.client.renderer.ViewArea;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Takes over vanilla's chunk visibility preparation on three fronts: it runs
@@ -64,33 +64,33 @@ import java.util.function.Consumer;
  *
  * <p>It also labels each phase for the profiler.
  */
-@Mixin(ChunkRenderingDataPreparer.class)
+@Mixin(SectionOcclusionGraph.class)
 public abstract class ChunkRenderingDataPreparerMixin {
     @Shadow
     @Final
-    private AtomicReference<?> field_45624;
+    private AtomicReference<?> currentGraph;
 
     /** Vanilla's neighbour order; the walk must visit directions in this order. */
     @Shadow
     @Final
-    private static Direction[] field_45618;
+    private static Direction[] DIRECTIONS;
 
     /** Ray-march step of vanilla's far-chunk probe, {@code ceil(sqrt(3) * 16)} blocks. */
     @Shadow
     @Final
-    private static double field_45620;
+    private static double CEILED_SECTION_DIAGONAL;
 
     @Shadow
-    private BuiltChunkStorage field_45623;
+    private ViewArea viewArea;
 
     /** Vanilla's neighbour lookup: null beyond the view distance or the world's height. */
     @Shadow
-    protected abstract ChunkBuilder.BuiltChunk method_52831(
-            BlockPos cameraSectionOrigin, ChunkBuilder.BuiltChunk chunk, Direction direction);
+    protected abstract SectionRenderDispatcher.RenderSection getRelativeFrom(
+            BlockPos cameraSectionOrigin, SectionRenderDispatcher.RenderSection chunk, Direction direction);
 
     /** Vanilla's horizontal view-distance test between two section origins. */
     @Shadow
-    protected abstract boolean method_52832(BlockPos cameraSectionOrigin, BlockPos origin);
+    protected abstract boolean isInViewDistance(BlockPos cameraSectionOrigin, BlockPos origin);
 
     /**
      * {@code -Drtxremix.vanillaVisibilityWalk=true} leaves the visibility walk to vanilla with
@@ -120,7 +120,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
      * behind the published index, one being filled. Offered by whichever side wins the retire
      * (see {@link BuiltChunkFrustumIndex#tryRetire}), polled by the visibility thread.
      */
-    private final ConcurrentLinkedQueue<HierarchicalFrustumCuller<ChunkBuilder.BuiltChunk>> rtxremix$cullerPool =
+    private final ConcurrentLinkedQueue<HierarchicalFrustumCuller<SectionRenderDispatcher.RenderSection>> rtxremix$cullerPool =
             new ConcurrentLinkedQueue<>();
 
     /**
@@ -148,16 +148,16 @@ public abstract class ChunkRenderingDataPreparerMixin {
     private static final ThreadLocal<ArrayDeque<ProfileScope>> rtxremix$seedScope = new ThreadLocal<>();
     private static final ThreadLocal<ArrayDeque<ProfileScope>> rtxremix$walkScope = new ThreadLocal<>();
 
-    @Inject(method = "method_52826", at = @At("HEAD"))
-    private void rtxremix$storageHead(BuiltChunkStorage storage, CallbackInfo ci) {
+    @Inject(method = "waitAndReset", at = @At("HEAD"))
+    private void rtxremix$storageHead(ViewArea storage, CallbackInfo ci) {
         rtxremix$open(rtxremix$storageScope, "ChunkVisibility.setStorage");
         // The initial empty state vanilla builds below takes the current buffers; size them
         // for the new storage first.
-        VisibilityGraphBuffers.configure(storage != null ? storage.chunks.length : 0);
+        VisibilityGraphBuffers.configure(storage != null ? storage.sections.length : 0);
     }
 
-    @Inject(method = "method_52826", at = @At("RETURN"))
-    private void rtxremix$storageReturn(BuiltChunkStorage storage, CallbackInfo ci) {
+    @Inject(method = "waitAndReset", at = @At("RETURN"))
+    private void rtxremix$storageReturn(ViewArea storage, CallbackInfo ci) {
         BuiltChunkFrustumIndex retired = rtxremix$frustumIndex;
         rtxremix$frustumIndex = null;
         if (retired != null) {
@@ -171,8 +171,8 @@ public abstract class ChunkRenderingDataPreparerMixin {
         rtxremix$close(rtxremix$storageScope);
     }
 
-    @Inject(method = "method_52828", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$frustumHead(Frustum frustum, List<ChunkBuilder.BuiltChunk> builtChunks, CallbackInfo ci) {
+    @Inject(method = "addSectionsInFrustum", at = @At("HEAD"), cancellable = true)
+    private void rtxremix$frustumHead(Frustum frustum, List<SectionRenderDispatcher.RenderSection> builtChunks, CallbackInfo ci) {
         rtxremix$open(rtxremix$frustumScope, "ChunkVisibility.applyFrustum", rtxremix$sizeOf(builtChunks));
         if (RtxRemixMod.isRtxEnabled() && rtxremix$applyFrustumIndex(frustum, builtChunks)) {
             rtxremix$captureCount(rtxremix$frustumScope, rtxremix$sizeOf(builtChunks));
@@ -181,42 +181,42 @@ public abstract class ChunkRenderingDataPreparerMixin {
         }
     }
 
-    @Inject(method = "method_52828", at = @At("RETURN"))
-    private void rtxremix$frustumReturn(Frustum frustum, List<ChunkBuilder.BuiltChunk> builtChunks, CallbackInfo ci) {
+    @Inject(method = "addSectionsInFrustum", at = @At("RETURN"))
+    private void rtxremix$frustumReturn(Frustum frustum, List<SectionRenderDispatcher.RenderSection> builtChunks, CallbackInfo ci) {
         rtxremix$captureCount(rtxremix$frustumScope, rtxremix$sizeOf(builtChunks));
         rtxremix$close(rtxremix$frustumScope);
     }
 
-    @Inject(method = "method_52834", at = @At("HEAD"))
+    @Inject(method = "update", at = @At("HEAD"))
     private void rtxremix$prepareHead(
             boolean spectator,
             Camera camera,
             Frustum frustum,
-            List<ChunkBuilder.BuiltChunk> builtChunks,
+            List<SectionRenderDispatcher.RenderSection> builtChunks,
             CallbackInfo ci) {
         rtxremix$open(rtxremix$prepareScope, "ChunkVisibility.prepare", rtxremix$sizeOf(builtChunks));
     }
 
-    @Inject(method = "method_52834", at = @At("RETURN"))
+    @Inject(method = "update", at = @At("RETURN"))
     private void rtxremix$prepareReturn(
             boolean spectator,
             Camera camera,
             Frustum frustum,
-            List<ChunkBuilder.BuiltChunk> builtChunks,
+            List<SectionRenderDispatcher.RenderSection> builtChunks,
             CallbackInfo ci) {
         rtxremix$close(rtxremix$prepareScope);
     }
 
     @Redirect(
-            method = "method_52833",
+            method = "scheduleFullUpdate",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/util/Util;getMainWorkerExecutor()Ljava/util/concurrent/ExecutorService;"
+                    target = "Lnet/minecraft/Util;backgroundExecutor()Ljava/util/concurrent/ExecutorService;"
             ))
     private ExecutorService rtxremix$visibilityExecutor() {
         return RtxRemixMod.isRtxEnabled()
                 ? rtxremix$visibilityExecutor
-                : Util.getMainWorkerExecutor();
+                : Util.backgroundExecutor();
     }
 
     /**
@@ -226,7 +226,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
     @Inject(method = "method_52820", at = @At("HEAD"))
     private void rtxremix$beginFrustumIndex(
             Camera camera,
-            Vec3d cameraPos,
+            Vec3 cameraPos,
             boolean spectator,
             CallbackInfo ci) {
         VisibilityGraphBuffers.rotate();
@@ -275,7 +275,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
         if (superseded == null) {
             return;
         }
-        HierarchicalFrustumCuller<ChunkBuilder.BuiltChunk> culler = superseded.tryRetire();
+        HierarchicalFrustumCuller<SectionRenderDispatcher.RenderSection> culler = superseded.tryRetire();
         if (culler != null && rtxremix$cullerPool.size() < 2) {
             rtxremix$cullerPool.offer(culler);
         }
@@ -290,21 +290,21 @@ public abstract class ChunkRenderingDataPreparerMixin {
     }
 
     @Redirect(
-            method = "method_52825",
+            method = "runUpdates",
             at = @At(
                     value = "INVOKE",
                     target = "Ljava/util/LinkedHashSet;add(Ljava/lang/Object;)Z"
             ))
-    private boolean rtxremix$indexVisibleChunk(LinkedHashSet<ChunkInfo> chunks, Object chunkInfo) {
-        return rtxremix$visit(chunks, (ChunkInfo) chunkInfo);
+    private boolean rtxremix$indexVisibleChunk(LinkedHashSet<Node> chunks, Object chunkInfo) {
+        return rtxremix$visit(chunks, (Node) chunkInfo);
     }
 
-    private boolean rtxremix$visit(LinkedHashSet<ChunkInfo> chunks, ChunkInfo chunkInfo) {
+    private boolean rtxremix$visit(LinkedHashSet<Node> chunks, Node chunkInfo) {
         if (!chunks.add(chunkInfo)) {
             return false;
         }
 
-        ChunkBuilder.BuiltChunk chunk = chunkInfo.chunk;
+        SectionRenderDispatcher.RenderSection chunk = chunkInfo.section;
         BuiltChunkFrustumIndexBuild build = rtxremix$frustumIndexBuild.get();
         if (build != null) {
             build.add(chunks, chunk);
@@ -326,22 +326,22 @@ public abstract class ChunkRenderingDataPreparerMixin {
         return true;
     }
 
-    @Inject(method = "method_52835", at = @At("HEAD"))
+    @Inject(method = "runPartialUpdate", at = @At("HEAD"))
     private void rtxremix$graphHead(
             boolean spectator,
             Frustum frustum,
-            List<ChunkBuilder.BuiltChunk> builtChunks,
-            Vec3d cameraPos,
+            List<SectionRenderDispatcher.RenderSection> builtChunks,
+            Vec3 cameraPos,
             CallbackInfo ci) {
         rtxremix$open(rtxremix$graphScope, "ChunkVisibility.rebuildGraph", rtxremix$sizeOf(builtChunks));
     }
 
-    @Inject(method = "method_52835", at = @At("RETURN"))
+    @Inject(method = "runPartialUpdate", at = @At("RETURN"))
     private void rtxremix$graphReturn(
             boolean spectator,
             Frustum frustum,
-            List<ChunkBuilder.BuiltChunk> builtChunks,
-            Vec3d cameraPos,
+            List<SectionRenderDispatcher.RenderSection> builtChunks,
+            Vec3 cameraPos,
             CallbackInfo ci) {
         rtxremix$budgetHit(rtxremix$graphScope, rtxremix$propagationQueue.budgetHit());
         rtxremix$close(rtxremix$graphScope);
@@ -350,7 +350,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
     // Vanilla only propagates when new seeds arrived. Sections left over from a budgeted
     // slice must keep draining even on frames with no new seeds.
     @Redirect(
-            method = "method_52835",
+            method = "runPartialUpdate",
             at = @At(
                     value = "INVOKE",
                     target = "Ljava/util/concurrent/BlockingQueue;isEmpty()Z",
@@ -368,7 +368,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
     // persistent sliced queue instead bounds the walk to this frame's budget and resumes it
     // from the same entries next frame.
     @Redirect(
-            method = "method_52835",
+            method = "runPartialUpdate",
             at = @At(
                     value = "INVOKE",
                     target = "Lcom/google/common/collect/Queues;newArrayDeque()Ljava/util/ArrayDeque;"
@@ -395,7 +395,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
         }
     }
 
-    @Inject(method = "method_52821", at = @At("HEAD"))
+    @Inject(method = "initializeQueueForFullUpdate", at = @At("HEAD"))
     private void rtxremix$seedHead(
             Camera camera,
             Queue<?> queue,
@@ -403,7 +403,7 @@ public abstract class ChunkRenderingDataPreparerMixin {
         rtxremix$open(rtxremix$seedScope, "ChunkVisibility.seedQueue", rtxremix$sizeOf(queue));
     }
 
-    @Inject(method = "method_52821", at = @At("RETURN"))
+    @Inject(method = "initializeQueueForFullUpdate", at = @At("RETURN"))
     private void rtxremix$seedReturn(
             Camera camera,
             Queue<?> queue,
@@ -414,20 +414,20 @@ public abstract class ChunkRenderingDataPreparerMixin {
     /**
      * Vanilla's walk allocates on every step of its far-chunk probe: for each neighbour more
      * than 60 blocks from the camera it ray-marches from the neighbour's near corner back
-     * toward the camera in {@link #field_45620}-block steps, creating a Vec3d for the remaining
+     * toward the camera in {@link #CEILED_SECTION_DIAGONAL}-block steps, creating a Vec3d for the remaining
      * offset, a Vec3d for the advanced point and a BlockPos for the lookup each time. At render
      * distance 32 that is most of the garbage the collector cleans up while the game runs, and
      * the collector's concurrent work is what stretches frames. This port keeps vanilla's
      * traversal, arithmetic and evaluation order and holds the ray in doubles and one mutable
      * position, so the visible set is identical and the walk allocates only graph nodes.
      */
-    @Inject(method = "method_52825", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "runUpdates", at = @At("HEAD"), cancellable = true)
     private void rtxremix$walkVisibleGraph(
-            RenderableChunks renderableChunks,
-            Vec3d cameraPos,
-            Queue<ChunkInfo> queue,
+            GraphStorage renderableChunks,
+            Vec3 cameraPos,
+            Queue<Node> queue,
             boolean culling,
-            Consumer<ChunkBuilder.BuiltChunk> chunkConsumer,
+            Consumer<SectionRenderDispatcher.RenderSection> chunkConsumer,
             CallbackInfo ci) {
         rtxremix$open(rtxremix$walkScope, "ChunkVisibility.walkVisibleGraph", rtxremix$sizeOf(queue));
         if (!RtxRemixMod.isRtxEnabled() || rtxremix$VANILLA_WALK) {
@@ -442,49 +442,49 @@ public abstract class ChunkRenderingDataPreparerMixin {
         ci.cancel();
     }
 
-    @Inject(method = "method_52825", at = @At("RETURN"))
+    @Inject(method = "runUpdates", at = @At("RETURN"))
     private void rtxremix$walkReturn(
-            RenderableChunks renderableChunks,
-            Vec3d cameraPos,
-            Queue<ChunkInfo> queue,
+            GraphStorage renderableChunks,
+            Vec3 cameraPos,
+            Queue<Node> queue,
             boolean culling,
-            Consumer<ChunkBuilder.BuiltChunk> chunkConsumer,
+            Consumer<SectionRenderDispatcher.RenderSection> chunkConsumer,
             CallbackInfo ci) {
         rtxremix$close(rtxremix$walkScope);
         if (rtxremix$LOG_VISIBLE_SET) rtxremix$logVisibleSet("vanilla", renderableChunks);
     }
 
     /** Order-independent signature of the visible set: size and a hash of every section origin. */
-    private static void rtxremix$logVisibleSet(String walk, RenderableChunks renderableChunks) {
+    private static void rtxremix$logVisibleSet(String walk, GraphStorage renderableChunks) {
         long hash = 0;
-        for (ChunkInfo info : renderableChunks.chunks) {
-            hash += (info.chunk.getOrigin().asLong() * 0x9E3779B97F4A7C15L) ^ 0x632BE59BD9B4E019L;
+        for (Node info : renderableChunks.renderSections) {
+            hash += (info.section.getOrigin().asLong() * 0x9E3779B97F4A7C15L) ^ 0x632BE59BD9B4E019L;
         }
-        long signature = hash ^ ((long) renderableChunks.chunks.size() << 48);
+        long signature = hash ^ ((long) renderableChunks.renderSections.size() << 48);
         if (signature != rtxremix$lastVisibleSetSignature) {
             rtxremix$lastVisibleSetSignature = signature;
             RtxRemixMod.LOGGER.info("Visible set ({} walk): {} sections, hash {}",
-                    walk, renderableChunks.chunks.size(), Long.toHexString(hash));
+                    walk, renderableChunks.renderSections.size(), Long.toHexString(hash));
         }
     }
 
     private void rtxremix$walk(
-            RenderableChunks renderableChunks,
-            Vec3d cameraPos,
-            Queue<ChunkInfo> queue,
+            GraphStorage renderableChunks,
+            Vec3 cameraPos,
+            Queue<Node> queue,
             boolean culling,
-            Consumer<ChunkBuilder.BuiltChunk> chunkConsumer) {
-        BuiltChunkStorage storage = field_45623;
-        ChunkInfoList infos = renderableChunks.field_45627;
-        LinkedHashSet<ChunkInfo> chunks = renderableChunks.chunks;
-        Long2ObjectMap<List<ChunkBuilder.BuiltChunk>> unbuiltByChunk = renderableChunks.field_45628;
+            Consumer<SectionRenderDispatcher.RenderSection> chunkConsumer) {
+        ViewArea storage = viewArea;
+        SectionToNodeMap infos = renderableChunks.sectionToNodeMap;
+        LinkedHashSet<Node> chunks = renderableChunks.renderSections;
+        Long2ObjectMap<List<SectionRenderDispatcher.RenderSection>> unbuiltByChunk = renderableChunks.chunksWaitingForNeighbors;
         ChunkInfoPool infoPool = ((RenderableChunksBuffers) renderableChunks).rtxremix$infoPool();
-        Direction[] directions = field_45618;
-        HeightLimitView world = storage.getWorld();
+        Direction[] directions = DIRECTIONS;
+        LevelHeightAccessor world = storage.getLevelHeightAccessor();
         BlockPos cameraSectionOrigin = new BlockPos(
-                MathHelper.floor(cameraPos.x / 16.0) * 16,
-                MathHelper.floor(cameraPos.y / 16.0) * 16,
-                MathHelper.floor(cameraPos.z / 16.0) * 16);
+                Mth.floor(cameraPos.x / 16.0) * 16,
+                Mth.floor(cameraPos.y / 16.0) * 16,
+                Mth.floor(cameraPos.z / 16.0) * 16);
         int cameraSectionCenterX = cameraSectionOrigin.getX() + 8;
         int cameraSectionCenterY = cameraSectionOrigin.getY() + 8;
         int cameraSectionCenterZ = cameraSectionOrigin.getZ() + 8;
@@ -492,15 +492,15 @@ public abstract class ChunkRenderingDataPreparerMixin {
         // allocated a fresh BlockPos per step. Sound while getRenderedChunk only derives
         // array indices from the position it is handed; a lookup that kept or keyed by it
         // would alias every probe to the last step.
-        BlockPos.Mutable probe = new BlockPos.Mutable();
+        BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
         FarChunkProbe.GraphLookup graph = (x, y, z) -> {
-            ChunkBuilder.BuiltChunk passed = storage.getRenderedChunk(probe.set(x, y, z));
-            return passed != null && infos.getInfo(passed) != null;
+            SectionRenderDispatcher.RenderSection passed = storage.getRenderSectionAt(probe.set(x, y, z));
+            return passed != null && infos.get(passed) != null;
         };
 
         while (!queue.isEmpty()) {
-            ChunkInfo chunkInfo = queue.poll();
-            ChunkBuilder.BuiltChunk chunk = chunkInfo.chunk;
+            Node chunkInfo = queue.poll();
+            SectionRenderDispatcher.RenderSection chunk = chunkInfo.section;
             if (rtxremix$visit(chunks, chunkInfo)) {
                 chunkConsumer.accept(chunk);
             }
@@ -510,19 +510,19 @@ public abstract class ChunkRenderingDataPreparerMixin {
                     || Math.abs(origin.getZ() - cameraSectionOrigin.getZ()) > 60;
 
             for (Direction direction : directions) {
-                ChunkBuilder.BuiltChunk neighbour = method_52831(cameraSectionOrigin, chunk, direction);
+                SectionRenderDispatcher.RenderSection neighbour = getRelativeFrom(cameraSectionOrigin, chunk, direction);
                 if (neighbour == null) {
                     continue;
                 }
-                if (culling && chunkInfo.canCull(direction.getOpposite())) {
+                if (culling && chunkInfo.hasDirection(direction.getOpposite())) {
                     continue;
                 }
-                if (culling && chunkInfo.hasAnyDirection()) {
-                    ChunkBuilder.ChunkData data = chunk.getData();
+                if (culling && chunkInfo.hasSourceDirections()) {
+                    SectionRenderDispatcher.CompiledSection data = chunk.getCompiled();
                     boolean visibleThrough = false;
                     for (int i = 0; i < directions.length; i++) {
-                        if (chunkInfo.hasDirection(i)
-                                && data.isVisibleThrough(directions[i].getOpposite(), direction)) {
+                        if (chunkInfo.hasSourceDirection(i)
+                                && data.facesCanSeeEachother(directions[i].getOpposite(), direction)) {
                             visibleThrough = true;
                             break;
                         }
@@ -538,28 +538,28 @@ public abstract class ChunkRenderingDataPreparerMixin {
                             direction.getAxis(),
                             cameraSectionCenterX, cameraSectionCenterY, cameraSectionCenterZ,
                             cameraPos.x, cameraPos.y, cameraPos.z,
-                            field_45620,
-                            world.getTopY(), world.getBottomY(),
+                            CEILED_SECTION_DIAGONAL,
+                            world.getMaxBuildHeight(), world.getMinBuildHeight(),
                             graph);
                     if (!reaches) {
                         continue;
                     }
                 }
 
-                ChunkInfo neighbourInfo = infos.getInfo(neighbour);
+                Node neighbourInfo = infos.get(neighbour);
                 if (neighbourInfo != null) {
-                    neighbourInfo.addDirection(direction);
+                    neighbourInfo.addSourceDirection(direction);
                     continue;
                 }
-                ChunkInfo discovered = infoPool.acquire(neighbour, direction, chunkInfo.propagationLevel + 1);
-                discovered.updateCullingState(chunkInfo.cullingState, direction);
-                if (neighbour.shouldBuild()) {
+                Node discovered = infoPool.acquire(neighbour, direction, chunkInfo.step + 1);
+                discovered.setDirections(chunkInfo.directions, direction);
+                if (neighbour.hasAllNeighbors()) {
                     queue.add(discovered);
-                    infos.setInfo(neighbour, discovered);
-                } else if (method_52832(cameraSectionOrigin, neighbour.getOrigin())) {
-                    infos.setInfo(neighbour, discovered);
-                    long chunkKey = ChunkPos.toLong(neighbour.getOrigin());
-                    List<ChunkBuilder.BuiltChunk> unbuilt = unbuiltByChunk.get(chunkKey);
+                    infos.put(neighbour, discovered);
+                } else if (isInViewDistance(cameraSectionOrigin, neighbour.getOrigin())) {
+                    infos.put(neighbour, discovered);
+                    long chunkKey = ChunkPos.asLong(neighbour.getOrigin());
+                    List<SectionRenderDispatcher.RenderSection> unbuilt = unbuiltByChunk.get(chunkKey);
                     if (unbuilt == null) {
                         unbuilt = new ArrayList<>();
                         unbuiltByChunk.put(chunkKey, unbuilt);
@@ -646,9 +646,9 @@ public abstract class ChunkRenderingDataPreparerMixin {
 
     private boolean rtxremix$applyFrustumIndex(
             Frustum frustum,
-            List<ChunkBuilder.BuiltChunk> builtChunks) {
+            List<SectionRenderDispatcher.RenderSection> builtChunks) {
         BuiltChunkFrustumIndex index = rtxremix$frustumIndex;
-        if (index == null || index.state() != field_45624.get() || !index.tryAcquire()) {
+        if (index == null || index.state() != currentGraph.get() || !index.tryAcquire()) {
             return false;
         }
         try {

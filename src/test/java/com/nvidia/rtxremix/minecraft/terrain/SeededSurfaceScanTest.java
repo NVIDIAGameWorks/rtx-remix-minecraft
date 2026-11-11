@@ -4,14 +4,14 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain;
 
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.world.HeightLimitView;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.LevelHeightAccessor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -34,25 +34,25 @@ class SeededSurfaceScanTest {
 
     /** A synthetic chunk: {@code blocks[x][z][y - bottomY]}. */
     private static final class Column {
-        final HeightLimitView world;
+        final LevelHeightAccessor world;
         final int[][][] blocks;
 
         Column(int bottomY, int height) {
-            world = HeightLimitView.create(bottomY, height);
+            world = LevelHeightAccessor.create(bottomY, height);
             blocks = new int[16][16][height];
         }
 
         int state(int x, int y, int z) {
-            int i = y - world.getBottomY();
+            int i = y - world.getMinBuildHeight();
             return i < 0 || i >= world.getHeight() ? AIR : blocks[x][z][i];
         }
 
         void set(int x, int y, int z, int state) {
-            blocks[x][z][y - world.getBottomY()] = state;
+            blocks[x][z][y - world.getMinBuildHeight()] = state;
         }
 
         boolean sectionEmpty(int index) {
-            int bottom = ChunkSectionPos.getBlockCoord(world.sectionIndexToCoord(index));
+            int bottom = SectionPos.sectionToBlockCoord(world.getSectionYFromSectionIndex(index));
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
                     for (int y = bottom; y < bottom + 16; y++) {
@@ -66,7 +66,7 @@ class SeededSurfaceScanTest {
         }
 
         int highestNonEmptySection() {
-            for (int i = world.countVerticalSections() - 1; i >= 0; i--) {
+            for (int i = world.getSectionsCount() - 1; i >= 0; i--) {
                 if (!sectionEmpty(i)) {
                     return i;
                 }
@@ -76,12 +76,12 @@ class SeededSurfaceScanTest {
 
         /** {@code WORLD_SURFACE}: one above the highest non-air block, the bottom if there is none. */
         int worldSurface(int x, int z) {
-            for (int y = world.getTopY() - 1; y >= world.getBottomY(); y--) {
+            for (int y = world.getMaxBuildHeight() - 1; y >= world.getMinBuildHeight(); y--) {
                 if (state(x, y, z) != AIR) {
                     return y + 1;
                 }
             }
-            return world.getBottomY();
+            return world.getMinBuildHeight();
         }
 
         /** Sections as the walk sees them; an index outside the array throws, as {@code Chunk.getSection} does. */
@@ -89,13 +89,13 @@ class SeededSurfaceScanTest {
             return new SeededSurfaceScan.Sections<>() {
                 @Override
                 public boolean isEmpty(int index) {
-                    return sectionEmpty(Objects.checkIndex(index, world.countVerticalSections()));
+                    return sectionEmpty(Objects.checkIndex(index, world.getSectionsCount()));
                 }
 
                 @Override
                 public Integer state(int index, int localX, int localY, int localZ) {
-                    Objects.checkIndex(index, world.countVerticalSections());
-                    return Column.this.state(localX, ChunkSectionPos.getBlockCoord(world.sectionIndexToCoord(index)) + localY, localZ);
+                    Objects.checkIndex(index, world.getSectionsCount());
+                    return Column.this.state(localX, SectionPos.sectionToBlockCoord(world.getSectionYFromSectionIndex(index)) + localY, localZ);
                 }
             };
         }
@@ -107,13 +107,13 @@ class SeededSurfaceScanTest {
 
     /** Vanilla's walk from the world top, written plainly: every pair whose lower block is in a non-empty section. */
     private static int oracle(Column c, int x, int z, List<Pair> visited) {
-        HeightLimitView w = c.world;
-        for (int lowerY = w.getTopY() - 1; lowerY >= w.getBottomY(); lowerY--) {
+        LevelHeightAccessor w = c.world;
+        for (int lowerY = w.getMaxBuildHeight() - 1; lowerY >= w.getMinBuildHeight(); lowerY--) {
             if (c.sectionEmpty(w.getSectionIndex(lowerY))) {
                 continue;
             }
             int upperY = lowerY + 1;
-            boolean upperInEmptySection = upperY >= w.getTopY() || c.sectionEmpty(w.getSectionIndex(upperY));
+            boolean upperInEmptySection = upperY >= w.getMaxBuildHeight() || c.sectionEmpty(w.getSectionIndex(upperY));
             int upperState = upperInEmptySection ? AIR : c.state(x, upperY, z);
             int lowerState = c.state(x, lowerY, z);
             visited.add(new Pair(upperY, upperState, lowerY, lowerState));
@@ -121,7 +121,7 @@ class SeededSurfaceScanTest {
                 return upperY;
             }
         }
-        return w.getBottomY() - 1;
+        return w.getMinBuildHeight() - 1;
     }
 
     private static int[][] seeded(Column c, SeededSurfaceScan.SurfaceHeight surface, List<Pair>[][] visited) {
@@ -163,10 +163,10 @@ class SeededSurfaceScanTest {
     private static void assertMatchesOracle(Column c, SeededSurfaceScan.SurfaceHeight surface) {
         List<Pair>[][] visited = pairLists();
         int[][] surfaces = seeded(c, surface, visited);
-        int minY = c.world.getBottomY() - 1;
+        int minY = c.world.getMinBuildHeight() - 1;
         int vanillaStart = c.highestNonEmptySection() == -1
                 ? minY
-                : ChunkSectionPos.getBlockCoord(c.world.sectionIndexToCoord(c.highestNonEmptySection()) + 1);
+                : SectionPos.sectionToBlockCoord(c.world.getSectionYFromSectionIndex(c.highestNonEmptySection()) + 1);
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
                 List<Pair> expectedAll = new ArrayList<>();
@@ -275,8 +275,8 @@ class SeededSurfaceScanTest {
         // the seed is at most vanilla's own start, the bottom of the section above the
         // highest non-empty one, where the walk is vanilla's exactly.
         Column c = flat(-64, 384, 70, SOLID);
-        assertMatchesOracle(c, (x, z) -> c.world.getTopY() + 200);
-        assertMatchesOracle(c, (x, z) -> c.world.getTopY());
+        assertMatchesOracle(c, (x, z) -> c.world.getMaxBuildHeight() + 200);
+        assertMatchesOracle(c, (x, z) -> c.world.getMaxBuildHeight());
     }
 
     @Test
@@ -285,7 +285,7 @@ class SeededSurfaceScanTest {
         for (int trial = 0; trial < 40; trial++) {
             int bottomY = random.nextBoolean() ? -64 : 0;
             Column c = new Column(bottomY, random.nextBoolean() ? 384 : 256);
-            int sections = c.world.countVerticalSections();
+            int sections = c.world.getSectionsCount();
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
                     int ground = bottomY + random.nextInt(c.world.getHeight() / 2);
@@ -301,7 +301,7 @@ class SeededSurfaceScanTest {
             // Blank out a few whole sections so empty-section skips occur below seeds.
             for (int i = random.nextInt(3); i > 0; i--) {
                 int index = random.nextInt(sections);
-                int bottom = ChunkSectionPos.getBlockCoord(c.world.sectionIndexToCoord(index));
+                int bottom = SectionPos.sectionToBlockCoord(c.world.getSectionYFromSectionIndex(index));
                 for (int x = 0; x < 16; x++) {
                     for (int z = 0; z < 16; z++) {
                         for (int y = bottom; y < bottom + 16; y++) {

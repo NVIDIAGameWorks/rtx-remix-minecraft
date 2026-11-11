@@ -4,14 +4,14 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.util.Hand;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.LivingEntity;
 
 /**
  * Thread-local context tracking whether a Remix capture is open and which rigid
@@ -46,7 +46,7 @@ public final class EntityRenderContext {
     private boolean remixPass;
 
     /** First-person hand currently being rendered, or null outside that path. */
-    private Hand activeHand;
+    private InteractionHand activeHand;
     /** Entity whose hand-held item is being rendered, or null outside a held-item render. */
     private LivingEntity heldItemHolder;
     private int blockItemLayer = NO_BLOCK_ITEM;
@@ -62,7 +62,7 @@ public final class EntityRenderContext {
      *  Pre-allocated Matrix4f objects are reused across captures to avoid GC pressure. */
     private final List<Matrix4f> boneTransforms = new ArrayList<>();
     /** Hand ownership parallel to {@link #boneTransforms}; enum values are allocation-free. */
-    private final List<Hand> transformHands = new ArrayList<>();
+    private final List<InteractionHand> transformHands = new ArrayList<>();
     private int bonePoolHighWater = 0;
 
     // ---- Static access ----
@@ -199,7 +199,7 @@ public final class EntityRenderContext {
     }
 
     /** Marks subsequent first-person transforms as belonging to {@code hand}. */
-    public void setActiveHand(Hand hand) {
+    public void setActiveHand(InteractionHand hand) {
         activeHand = hand;
     }
 
@@ -232,7 +232,7 @@ public final class EntityRenderContext {
     }
 
     /** Returns first-person hand ownership for a captured transform, if any. */
-    public Hand handForTransform(int transformIndex) {
+    public InteractionHand handForTransform(int transformIndex) {
         return transformIndex >= 0 && transformIndex < boneCounter
                 ? transformHands.get(transformIndex)
                 : null;

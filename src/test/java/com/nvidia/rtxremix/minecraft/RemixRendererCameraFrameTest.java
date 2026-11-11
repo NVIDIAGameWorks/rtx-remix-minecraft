@@ -5,13 +5,12 @@
 package com.nvidia.rtxremix.minecraft;
 
 import com.nvidia.rtxremix.RemixException;
-import net.minecraft.block.enums.CameraSubmersionType;
-import net.minecraft.client.render.Camera;
-import net.minecraft.util.math.Vec3d;
-
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import net.minecraft.client.Camera;
+import net.minecraft.world.level.material.FogType;
+import net.minecraft.world.phys.Vec3;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -37,7 +36,7 @@ class RemixRendererCameraFrameTest {
                 new RemixException("camera failed"), new IllegalStateException("camera failed")}) {
             Camera camera = new Camera() {
                 @Override
-                public Vec3d getPos() {
+                public Vec3 getPosition() {
                     throw error;
                 }
             };
@@ -50,18 +49,18 @@ class RemixRendererCameraFrameTest {
     void mediumErrorsStayLocalToTheMediumUpdate() throws Exception {
         RemixRenderer renderer = new RemixRenderer();
         Method update = RemixRenderer.class.getDeclaredMethod(
-                "updateCameraMedium", Camera.class, Vec3d.class, float.class, float.class);
+                "updateCameraMedium", Camera.class, Vec3.class, float.class, float.class);
         update.setAccessible(true);
         for (RuntimeException error : new RuntimeException[] {
                 new RemixException("medium failed"), new IllegalStateException("medium failed")}) {
             Camera camera = new Camera() {
                 @Override
-                public CameraSubmersionType getSubmersionType() {
+                public FogType getFluidInCamera() {
                     throw error;
                 }
             };
 
-            assertDoesNotThrow(() -> update.invoke(renderer, camera, Vec3d.ZERO, 0.0f, 0.0f));
+            assertDoesNotThrow(() -> update.invoke(renderer, camera, Vec3.ZERO, 0.0f, 0.0f));
         }
     }
 }

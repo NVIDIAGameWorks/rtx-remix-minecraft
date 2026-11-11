@@ -37,14 +37,6 @@ import com.nvidia.rtxremix.LightInfoRectEXT;
 import com.nvidia.rtxremix.LightInfoSphereEXT;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.Transform;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.WorldChunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +57,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Coordinates the terrain pipeline from worker captures to stable retained
@@ -95,7 +95,7 @@ public class ChunkManager {
     private final TerrainAssetRetirementQueue retirementQueue = new TerrainAssetRetirementQueue(nativeCallStats);
     private final ArrayList<ColumnRenderState> dirtyBuildScratch = new ArrayList<>();
 
-    private ClientWorld currentWorld;
+    private ClientLevel currentWorld;
     /**
      * Live count of pages across every render column, maintained where activePages changes.
      * Published through {@link TerrainDiagnostics#retainedPages()} as Chunk.RetainedPages,
@@ -570,14 +570,14 @@ public class ChunkManager {
     }
 
     /** Per-rule light population, for {@code /rtx lights}. */
-    public record LightRuleStats(Identifier ruleId, int total, int drawn) {}
+    public record LightRuleStats(ResourceLocation ruleId, int total, int drawn) {}
 
     /**
      * Counts every terrain light by rule, and how many of them were drawn in
      * the last completed frame, most populous rule first. Render thread only.
      */
     public List<LightRuleStats> lightStatsByRule() {
-        Map<Identifier, int[]> counts = new LinkedHashMap<>();
+        Map<ResourceLocation, int[]> counts = new LinkedHashMap<>();
         for (TerrainState.ChunkColumn column : terrain.columns()) {
             for (TerrainState.SectionEntry entry : column.sectionEntries()) {
                 for (Map.Entry<BlockLightKey, TerrainLight> light : entry.lights().entrySet()) {
@@ -588,7 +588,7 @@ public class ChunkManager {
             }
         }
         List<LightRuleStats> stats = new ArrayList<>(counts.size());
-        for (Map.Entry<Identifier, int[]> tally : counts.entrySet()) {
+        for (Map.Entry<ResourceLocation, int[]> tally : counts.entrySet()) {
             stats.add(new LightRuleStats(tally.getKey(), tally.getValue()[0], tally.getValue()[1]));
         }
         stats.sort(Comparator.comparingInt(LightRuleStats::total).reversed());
@@ -604,7 +604,7 @@ public class ChunkManager {
         return ((long) cx << 32) | (cz & 0xFFFFFFFFL);
     }
 
-    public void updateVisibleChunks(ClientWorld world, Vec3d cam,
+    public void updateVisibleChunks(ClientLevel world, Vec3 cam,
                                      PerformanceTimer timer, int perfGen, int perfDraw) {
         if (world == null || renderer.getRemixApi() == null) return;
         try (ProfileScope updateScope = ProfileScope.begin("updateVisibleChunks")) {
@@ -785,9 +785,9 @@ public class ChunkManager {
 
             int cx = (int) (chunkKey >> 32);
             int cz = (int) chunkKey;
-            WorldChunk liveChunk = currentWorld == null
+            LevelChunk liveChunk = currentWorld == null
                     ? null
-                    : currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
+                    : currentWorld.getChunkSource().getChunk(cx, cz, false);
             if (liveChunk != null) {
                 iterator.remove();
                 continue;
@@ -825,7 +825,7 @@ public class ChunkManager {
         if (evictedSectionScratch.isEmpty()) return;
 
         WorldRendererTerrainAccess worldRenderer =
-                (WorldRendererTerrainAccess) MinecraftClient.getInstance().worldRenderer;
+                (WorldRendererTerrainAccess) Minecraft.getInstance().levelRenderer;
         for (BlockDataQueue.EvictedSection section : evictedSectionScratch) {
             worldRenderer.rtxremix$scheduleResidentSectionRebuild(
                     section.x(), section.y(), section.z());
@@ -868,7 +868,7 @@ public class ChunkManager {
             return false;
         }
 
-        WorldChunk wc = currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
+        LevelChunk wc = currentWorld.getChunkSource().getChunk(cx, cz, false);
         return wc != null && wc.isSectionEmpty(sy);
     }
 
@@ -896,13 +896,13 @@ public class ChunkManager {
                 releaseMeshData(cap);
                 continue;
             }
-            ChunkSectionPos sp = cap.sectionPos();
+            SectionPos sp = cap.sectionPos();
             int cx = sp.getX(), sy = sp.getY(), cz = sp.getZ();
 
             long chunkKey = packChunkKey(cx, cz);
-            WorldChunk liveChunk = null;
+            LevelChunk liveChunk = null;
             if (currentWorld != null) {
-                liveChunk = currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
+                liveChunk = currentWorld.getChunkSource().getChunk(cx, cz, false);
             }
             if (liveChunk == null) {
                 skipped++;
@@ -1025,8 +1025,8 @@ public class ChunkManager {
      * border-sized burst of them.
      */
     private void cancelLightTasksForColumn(int cx, int cz) {
-        int topSection = currentWorld.getTopSectionCoord();
-        for (int sy = currentWorld.getBottomSectionCoord(); sy < topSection; sy++) {
+        int topSection = currentWorld.getMaxSection();
+        for (int sy = currentWorld.getMinSection(); sy < topSection; sy++) {
             cancelLightTask(new LightSectionKey(cx, sy, cz));
         }
     }
@@ -1161,7 +1161,7 @@ public class ChunkManager {
      */
     private static int lightFingerprint(LightEntry le) {
         return Objects.hash(
-                Registries.BLOCK.getRawId(le.block()),
+                BuiltInRegistries.BLOCK.getId(le.block()),
                 le.key().ruleId(),
                 le.key().lightIndex(),
                 le.lightLevel(),
@@ -1726,7 +1726,7 @@ public class ChunkManager {
     }
 
     /** @return the number of native instance submits this pass made */
-    private int draw(RemixAPI api, PerformanceTimer t, Vec3d cam) {
+    private int draw(RemixAPI api, PerformanceTimer t, Vec3 cam) {
         t.begin(perfBfs);
         try (ProfileScope bfsScope = ProfileScope.begin("BFS reachability")) {
             terrain.ensureReachabilityOnce();
@@ -1834,7 +1834,7 @@ public class ChunkManager {
             examined++;
             int cx = (int) (key >> 32);
             int cz = (int) key;
-            WorldChunk chunk = currentWorld.getChunkManager().getWorldChunk(cx, cz, false);
+            LevelChunk chunk = currentWorld.getChunkSource().getChunk(cx, cz, false);
             if (chunk == null && terrain.findColumn(cx, cz) != null) {
                 // The column left without an unload event, so nothing has
                 // cancelled its light tasks yet.

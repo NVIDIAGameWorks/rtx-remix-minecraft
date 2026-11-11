@@ -10,8 +10,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import net.minecraft.client.renderer.ShaderInstance;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import net.minecraft.client.gl.ShaderProgram;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
@@ -211,7 +211,7 @@ final class AtmosphericSkyGenerator {
             }
         }
 
-        ShaderProgram previousProgram;
+        ShaderInstance previousProgram;
         try (ProfileScope ignored =
                 ProfileScope.begin("Sky.ProceduralGeneration.StateSave")) {
             previousProgram = RenderSystem.isOnRenderThread()
@@ -261,7 +261,7 @@ final class AtmosphericSkyGenerator {
                     0);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             if (previousProgram != null) {
-                previousProgram.bind();
+                previousProgram.apply();
             } else {
                 GL20.glUseProgram(0);
             }

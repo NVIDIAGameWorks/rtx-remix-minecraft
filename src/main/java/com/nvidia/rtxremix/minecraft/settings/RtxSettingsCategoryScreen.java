@@ -8,21 +8,21 @@ import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ConfirmScreen;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.option.GameOptionsScreen;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.DirectionalLayoutWidget;
-import net.minecraft.client.gui.widget.TextWidget;
-import net.minecraft.client.option.SimpleOption;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.OptionInstance;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.layouts.LinearLayout;
+import net.minecraft.client.gui.screens.ConfirmScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.options.OptionsSubScreen;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 /** Native options list for one RTX settings category. */
-final class RtxSettingsCategoryScreen extends GameOptionsScreen {
+final class RtxSettingsCategoryScreen extends OptionsSubScreen {
 
     private final RtxSettings settings;
     private final Runnable saveSettings;
@@ -33,7 +33,7 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
             RtxSettings settings,
             Runnable saveSettings,
             SettingCategory category) {
-        super(parent, MinecraftClient.getInstance().options, Text.translatable(category.labelKey()));
+        super(parent, Minecraft.getInstance().options, Component.translatable(category.labelKey()));
         this.settings = settings;
         this.saveSettings = saveSettings;
         this.category = category;
@@ -50,15 +50,15 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
                 continue;
             }
             if (opensSubscreen(group)) {
-                this.body.addWidgetEntry(
-                        new TextWidget(
+                this.list.addSmall(
+                        new StringWidget(
                                 150,
                                 20,
-                                Text.translatable(group.labelKey()).formatted(Formatting.BOLD),
-                                this.textRenderer),
-                        ButtonWidget.builder(
-                                        Text.translatable("rtxremix.settings.configure"),
-                                        button -> this.client.setScreen(
+                                Component.translatable(group.labelKey()).withStyle(ChatFormatting.BOLD),
+                                this.font),
+                        Button.builder(
+                                        Component.translatable("rtxremix.settings.configure"),
+                                        button -> this.minecraft.setScreen(
                                                 new RtxBlockLightsScreen(
                                                         this, settings, saveSettings)))
                                 .width(150)
@@ -66,39 +66,39 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
                 continue;
             }
 
-            TextWidget header = new TextWidget(
+            StringWidget header = new StringWidget(
                     310,
                     20,
-                    Text.translatable(group.labelKey()).formatted(Formatting.BOLD),
-                    this.textRenderer);
-            this.body.addWidgetEntry(header, null);
+                    Component.translatable(group.labelKey()).withStyle(ChatFormatting.BOLD),
+                    this.font);
+            this.list.addSmall(header, null);
 
-            List<SimpleOption<?>> options = new ArrayList<>();
+            List<OptionInstance<?>> options = new ArrayList<>();
             for (RtxSetting<?> setting : groupSettings) {
                 options.add(RtxOptionFactory.toOption(setting));
             }
             if (fullWidthRows(group)) {
-                options.forEach(this.body::addSingleOptionEntry);
+                options.forEach(this.list::addBig);
             } else {
-                this.body.addAll(options.toArray(new SimpleOption<?>[0]));
+                this.list.addSmall(options.toArray(new OptionInstance<?>[0]));
             }
         }
     }
 
     @Override
-    protected void initFooter() {
-        DirectionalLayoutWidget footer = DirectionalLayoutWidget.horizontal().spacing(8);
-        footer.add(ButtonWidget.builder(
-                        Text.translatable("rtxremix.settings.reset"), button -> confirmReset())
-                .tooltip(Tooltip.of(Text.translatable("rtxremix.settings.reset.tip")))
+    protected void addFooter() {
+        LinearLayout footer = LinearLayout.horizontal().spacing(8);
+        footer.addChild(Button.builder(
+                        Component.translatable("rtxremix.settings.reset"), button -> confirmReset())
+                .tooltip(Tooltip.create(Component.translatable("rtxremix.settings.reset.tip")))
                 .width(98)
                 .build());
-        footer.add(ButtonWidget.builder(ScreenTexts.DONE, button -> close()).width(98).build());
-        this.layout.addFooter(footer);
+        footer.addChild(Button.builder(CommonComponents.GUI_DONE, button -> onClose()).width(98).build());
+        this.layout.addToFooter(footer);
     }
 
     private void confirmReset() {
-        this.client.setScreen(new ConfirmScreen(confirmed -> {
+        this.minecraft.setScreen(new ConfirmScreen(confirmed -> {
             if (confirmed) {
                 resetCurrentScreen();
                 if (saveSettings != null) {
@@ -107,16 +107,16 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
                 if (commitTerrainEmission()) {
                     RtxRemixMod.rebuildTerrainForMaterialSettings();
                 }
-                this.client.setScreen(
+                this.minecraft.setScreen(
                         new RtxSettingsCategoryScreen(
-                                this.parent, settings, saveSettings, category));
+                                this.lastScreen, settings, saveSettings, category));
             } else {
-                this.client.setScreen(this);
+                this.minecraft.setScreen(this);
             }
-        }, Text.translatable("rtxremix.settings.reset.confirm.title",
-                        Text.translatable(category.labelKey())),
-                Text.translatable("rtxremix.settings.reset.confirm.message",
-                        Text.translatable(category.labelKey()))));
+        }, Component.translatable("rtxremix.settings.reset.confirm.title",
+                        Component.translatable(category.labelKey())),
+                Component.translatable("rtxremix.settings.reset.confirm.message",
+                        Component.translatable(category.labelKey()))));
     }
 
     private void resetCurrentScreen() {
@@ -151,9 +151,9 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
     }
 
     @Override
-    public void close() {
-        if (this.body != null) {
-            this.body.applyAllPendingValues();
+    public void onClose() {
+        if (this.list != null) {
+            this.list.applyUnsavedChanges();
         }
         if (saveSettings != null) {
             saveSettings.run();
@@ -161,6 +161,6 @@ final class RtxSettingsCategoryScreen extends GameOptionsScreen {
         if (commitTerrainEmission()) {
             RtxRemixMod.rebuildTerrainForMaterialSettings();
         }
-        this.client.setScreen(this.parent);
+        this.minecraft.setScreen(this.lastScreen);
     }
 }

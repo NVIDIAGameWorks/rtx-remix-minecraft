@@ -4,13 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.model.BakedModel;
-import net.minecraft.client.render.model.BakedQuad;
-import net.minecraft.client.render.model.MultipartBakedModel;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.random.CheckedRandom;
-import net.minecraft.util.math.random.Random;
 import org.apache.commons.lang3.tuple.Pair;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -25,6 +18,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.MultiPartBakedModel;
+import net.minecraft.core.Direction;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.LegacyRandomSource;
 
 /**
  * Selects a multipart model's parts without the per-call garbage vanilla makes. Fences,
@@ -36,51 +36,51 @@ import java.util.function.Predicate;
  * <p>The part selection and the seed handed to each part are vanilla's: the same
  * {@code random.nextLong()} draw seeds a reused {@code CheckedRandom} per part, which yields
  * the sequence {@code Random.create(seed)} would. A single matching part returns that part's
- * own quad list, as {@link net.minecraft.client.render.model.WeightedBakedModel} already does
+ * own quad list, as {@link net.minecraft.client.resources.model.WeightedBakedModel} already does
  * for its chosen variant; callers treat model quad lists as read-only. Several matching parts
  * still concatenate into a new list.
  */
-@Mixin(MultipartBakedModel.class)
+@Mixin(MultiPartBakedModel.class)
 public abstract class MultipartBakedModelMixin {
 
     @Shadow
     @Final
-    private List<Pair<Predicate<BlockState>, BakedModel>> components;
+    private List<Pair<Predicate<BlockState>, BakedModel>> selectors;
 
     @Shadow
     @Final
-    private Map<BlockState, BitSet> stateCache;
+    private Map<BlockState, BitSet> selectorCache;
 
-    private static final ThreadLocal<CheckedRandom> rtxremix$partRandom =
-            ThreadLocal.withInitial(() -> new CheckedRandom(0L));
+    private static final ThreadLocal<LegacyRandomSource> rtxremix$partRandom =
+            ThreadLocal.withInitial(() -> new LegacyRandomSource(0L));
 
     @Inject(method = "getQuads", at = @At("HEAD"), cancellable = true)
     private void rtxremix$getQuads(
             BlockState state,
             Direction face,
-            Random random,
+            RandomSource random,
             CallbackInfoReturnable<List<BakedQuad>> cir) {
         if (state == null) {
             cir.setReturnValue(Collections.emptyList());
             return;
         }
-        BitSet selected = stateCache.get(state);
+        BitSet selected = selectorCache.get(state);
         if (selected == null) {
             selected = new BitSet();
-            for (int i = 0, n = components.size(); i < n; i++) {
-                if (components.get(i).getLeft().test(state)) {
+            for (int i = 0, n = selectors.size(); i < n; i++) {
+                if (selectors.get(i).getLeft().test(state)) {
                     selected.set(i);
                 }
             }
-            stateCache.put(state, selected);
+            selectorCache.put(state, selected);
         }
         long seed = random.nextLong();
-        CheckedRandom partRandom = rtxremix$partRandom.get();
+        LegacyRandomSource partRandom = rtxremix$partRandom.get();
         List<BakedQuad> result = null;
         boolean owned = false;
         for (int i = selected.nextSetBit(0); i >= 0; i = selected.nextSetBit(i + 1)) {
             partRandom.setSeed(seed);
-            List<BakedQuad> quads = components.get(i).getRight().getQuads(state, face, partRandom);
+            List<BakedQuad> quads = selectors.get(i).getRight().getQuads(state, face, partRandom);
             if (result == null) {
                 result = quads;
             } else {

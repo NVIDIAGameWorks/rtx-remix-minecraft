@@ -7,17 +7,17 @@ package com.nvidia.rtxremix.minecraft.particle.rapids;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.fluid.FlowableFluid;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.particle.SimpleParticleType;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.math.random.Random;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.Vec3;
 
 public final class WaterRapidParticleSpawner {
     private static final int[] CARDINAL_X = {1, -1, 0, 0};
@@ -37,24 +37,24 @@ public final class WaterRapidParticleSpawner {
     private static final double MIN_VERTICAL_COLUMN_HORIZONTAL_SQUARED = 0.01;
     private static final double VERTICAL_COLUMN_SURFACE_RADIUS = 0.42;
     private static final double VERTICAL_COLUMN_OUTWARD_SPEED = 0.055;
-    private static ClientWorld budgetWorld;
+    private static ClientLevel budgetWorld;
     private static long budgetWorldTime = Long.MIN_VALUE;
     private static SpawnBudget tickBudget = new SpawnBudget(0);
 
     private WaterRapidParticleSpawner() {}
 
-    public static void spawnRandomDisplayParticles(ClientWorld world, int centerX, int centerY, int centerZ) {
+    public static void spawnRandomDisplayParticles(ClientLevel world, int centerX, int centerY, int centerZ) {
         if (!RtxRemixMod.isRtxEnabled() || !RtxRemixMod.isWorldEnabled() || !RtxRemixMod.isParticlesEnabled()) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.particleManager == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.particleEngine == null) {
             return;
         }
 
-        Random random = world.random;
-        BlockPos.Mutable pos = new BlockPos.Mutable();
+        RandomSource random = world.random;
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         SpawnBudget budget = currentTickBudget(world);
         if (!budget.hasRemaining()) {
             return;
@@ -67,26 +67,26 @@ public final class WaterRapidParticleSpawner {
         }
     }
 
-    private static void sample(ClientWorld world, MinecraftClient client,
+    private static void sample(ClientLevel world, Minecraft client,
                                int centerX, int centerY, int centerZ, int radius,
-                               Random random, BlockPos.Mutable pos, SpawnBudget budget) {
+                               RandomSource random, BlockPos.MutableBlockPos pos, SpawnBudget budget) {
         pos.set(
                 centerX + random.nextInt(radius) - random.nextInt(radius),
                 centerY + random.nextInt(radius) - random.nextInt(radius),
                 centerZ + random.nextInt(radius) - random.nextInt(radius));
 
         FluidState fluidState = world.getFluidState(pos);
-        if (!fluidState.isIn(FluidTags.WATER) || fluidState.isStill()) {
+        if (!fluidState.is(FluidTags.WATER) || fluidState.isSource()) {
             return;
         }
 
-        Vec3d flow = fluidState.getVelocity(world, pos);
+        Vec3 flow = fluidState.getFlow(world, pos);
         boolean verticalColumn = isVerticalColumn(world, pos, fluidState, flow);
-        if (!verticalColumn && flow.lengthSquared() < MIN_FLOW_SPEED_SQUARED) {
+        if (!verticalColumn && flow.lengthSqr() < MIN_FLOW_SPEED_SQUARED) {
             return;
         }
 
-        Vec3d direction = verticalColumn ? new Vec3d(0.0, -1.0, 0.0) : flow.normalize();
+        Vec3 direction = verticalColumn ? new Vec3(0.0, -1.0, 0.0) : flow.normalize();
         boolean falling = verticalColumn || direction.y < -0.35;
         float[] color = foamColor(world, pos, fluidState);
         int particleCount = verticalColumn ? 6 : falling ? 4 : 2 + random.nextInt(2);
@@ -111,22 +111,22 @@ public final class WaterRapidParticleSpawner {
         }
     }
 
-    private static boolean isVerticalColumn(ClientWorld world, BlockPos pos, FluidState state, Vec3d flow) {
+    private static boolean isVerticalColumn(ClientLevel world, BlockPos pos, FluidState state, Vec3 flow) {
         if (!isFallingWater(state)) {
             return false;
         }
 
-        FluidState below = world.getFluidState(pos.down());
-        if (!below.isIn(FluidTags.WATER)) {
+        FluidState below = world.getFluidState(pos.below());
+        if (!below.is(FluidTags.WATER)) {
             return false;
         }
 
         return flow.x * flow.x + flow.z * flow.z < MIN_VERTICAL_COLUMN_HORIZONTAL_SQUARED;
     }
 
-    private static void emitParticle(ClientWorld world, MinecraftClient client, BlockPos pos, FluidState fluidState,
-                                     Vec3d direction, boolean falling, boolean verticalColumn,
-                                     float[] color, Random random, SpawnBudget budget) {
+    private static void emitParticle(ClientLevel world, Minecraft client, BlockPos pos, FluidState fluidState,
+                                     Vec3 direction, boolean falling, boolean verticalColumn,
+                                     float[] color, RandomSource random, SpawnBudget budget) {
         double radialX = 0.0;
         double radialZ = 0.0;
         double spawnX;
@@ -170,22 +170,22 @@ public final class WaterRapidParticleSpawner {
         }
     }
 
-    private static BlockPos downstreamImpactWaterPos(ClientWorld world, BlockPos pos, Vec3d flow) {
+    private static BlockPos downstreamImpactWaterPos(ClientLevel world, BlockPos pos, Vec3 flow) {
         double horizontalLengthSquared = flow.x * flow.x + flow.z * flow.z;
         if (horizontalLengthSquared < MIN_HORIZONTAL_FLOW_SQUARED) {
             return null;
         }
 
-        int dx = MathHelper.floor(flow.x / Math.sqrt(horizontalLengthSquared) + 0.5);
-        int dz = MathHelper.floor(flow.z / Math.sqrt(horizontalLengthSquared) + 0.5);
-        BlockPos impactPos = pos.down().add(dx, 0, dz);
-        return world.getFluidState(impactPos).isIn(FluidTags.WATER) ? impactPos : null;
+        int dx = Mth.floor(flow.x / Math.sqrt(horizontalLengthSquared) + 0.5);
+        int dz = Mth.floor(flow.z / Math.sqrt(horizontalLengthSquared) + 0.5);
+        BlockPos impactPos = pos.below().offset(dx, 0, dz);
+        return world.getFluidState(impactPos).is(FluidTags.WATER) ? impactPos : null;
     }
 
-    private static void emitVerticalColumnImpactMist(MinecraftClient client, ClientWorld world,
-                                                     BlockPos pos, Random random, SpawnBudget budget) {
-        FluidState below = world.getFluidState(pos.down());
-        if (!below.isIn(FluidTags.WATER) || isFallingWater(below)) {
+    private static void emitVerticalColumnImpactMist(Minecraft client, ClientLevel world,
+                                                     BlockPos pos, RandomSource random, SpawnBudget budget) {
+        FluidState below = world.getFluidState(pos.below());
+        if (!below.is(FluidTags.WATER) || isFallingWater(below)) {
             return;
         }
 
@@ -196,9 +196,9 @@ public final class WaterRapidParticleSpawner {
 
             int dx = CARDINAL_X[i];
             int dz = CARDINAL_Z[i];
-            BlockPos impactPos = pos.add(dx, 0, dz);
+            BlockPos impactPos = pos.offset(dx, 0, dz);
             FluidState impactState = world.getFluidState(impactPos);
-            if (!impactState.isIn(FluidTags.WATER) || isFallingWater(impactState)) {
+            if (!impactState.is(FluidTags.WATER) || isFallingWater(impactState)) {
                 continue;
             }
 
@@ -210,17 +210,17 @@ public final class WaterRapidParticleSpawner {
     }
 
     private static boolean isFallingWater(FluidState state) {
-        return state.isIn(FluidTags.WATER) && state.contains(FlowableFluid.FALLING) && state.get(FlowableFluid.FALLING);
+        return state.is(FluidTags.WATER) && state.hasProperty(FlowingFluid.FALLING) && state.getValue(FlowingFluid.FALLING);
     }
 
-    private static void emitMist(MinecraftClient client, ClientWorld world, BlockPos pos, BlockPos impactPos,
-                                 Vec3d flow, Random random, SpawnBudget budget) {
+    private static void emitMist(Minecraft client, ClientLevel world, BlockPos pos, BlockPos impactPos,
+                                 Vec3 flow, RandomSource random, SpawnBudget budget) {
         double horizontalLength = Math.sqrt(flow.x * flow.x + flow.z * flow.z);
         emitMist(client, world, pos, impactPos, flow.x / horizontalLength, flow.z / horizontalLength, random, budget);
     }
 
-    private static void emitMist(MinecraftClient client, ClientWorld world, BlockPos pos, BlockPos impactPos,
-                                 double dirX, double dirZ, Random random, SpawnBudget budget) {
+    private static void emitMist(Minecraft client, ClientLevel world, BlockPos pos, BlockPos impactPos,
+                                 double dirX, double dirZ, RandomSource random, SpawnBudget budget) {
         double sideX = -dirZ;
         double sideZ = dirX;
         double downstream = 0.62 + random.nextDouble() * 0.28;
@@ -236,21 +236,21 @@ public final class WaterRapidParticleSpawner {
         addParticle(client, budget, RapidFoamParticles.RAPID_MIST, x, y, z, vx, vy, vz);
     }
 
-    private static double spawnCoord(int blockCoord, double flowComponent, Random random) {
+    private static double spawnCoord(int blockCoord, double flowComponent, RandomSource random) {
         double center = 0.5 + flowComponent * 0.32 + (random.nextDouble() - 0.5) * 0.55;
-        return blockCoord + MathHelper.clamp(center, 0.08, 0.92);
+        return blockCoord + Mth.clamp(center, 0.08, 0.92);
     }
 
-    private static double spawnY(ClientWorld world, BlockPos pos, FluidState fluidState, Random random) {
-        BlockPos above = pos.up();
-        if (!world.getFluidState(above).isIn(FluidTags.WATER)) {
+    private static double spawnY(ClientLevel world, BlockPos pos, FluidState fluidState, RandomSource random) {
+        BlockPos above = pos.above();
+        if (!world.getFluidState(above).is(FluidTags.WATER)) {
             return pos.getY() + fluidState.getHeight(world, pos) + 0.025;
         }
         return pos.getY() + 0.15 + random.nextDouble() * 0.7;
     }
 
-    private static float[] foamColor(ClientWorld world, BlockPos pos, FluidState fluidState) {
-        FluidRenderHandler handler = FluidRenderHandlerRegistry.INSTANCE.get(fluidState.getFluid());
+    private static float[] foamColor(ClientLevel world, BlockPos pos, FluidState fluidState) {
+        FluidRenderHandler handler = FluidRenderHandlerRegistry.INSTANCE.get(fluidState.getType());
         int color = handler != null ? handler.getFluidColor(world, pos, fluidState) : 0x3F76E4;
         float r = ((color >> 16) & 0xFF) / 255.0f;
         float g = ((color >> 8) & 0xFF) / 255.0f;
@@ -263,7 +263,7 @@ public final class WaterRapidParticleSpawner {
     }
 
     private static float brightenTowardFoam(float channel) {
-        return MathHelper.clamp(channel * 1.25f + 0.28f, 0.0f, 1.0f);
+        return Mth.clamp(channel * 1.25f + 0.28f, 0.0f, 1.0f);
     }
 
     private static void tint(Particle particle, float[] color) {
@@ -272,8 +272,8 @@ public final class WaterRapidParticleSpawner {
         }
     }
 
-    private static SpawnBudget currentTickBudget(ClientWorld world) {
-        long worldTime = world.getTime();
+    private static SpawnBudget currentTickBudget(ClientLevel world) {
+        long worldTime = world.getGameTime();
         if (world != budgetWorld || worldTime != budgetWorldTime) {
             budgetWorld = world;
             budgetWorldTime = worldTime;
@@ -282,14 +282,14 @@ public final class WaterRapidParticleSpawner {
         return tickBudget;
     }
 
-    private static Particle addParticle(MinecraftClient client, SpawnBudget budget,
+    private static Particle addParticle(Minecraft client, SpawnBudget budget,
                                         SimpleParticleType type,
                                         double x, double y, double z,
                                         double vx, double vy, double vz) {
         if (!budget.hasRemaining()) {
             return null;
         }
-        Particle particle = client.particleManager.addParticle(type, x, y, z, vx, vy, vz);
+        Particle particle = client.particleEngine.createParticle(type, x, y, z, vx, vy, vz);
         if (particle != null) {
             budget.consume();
         }

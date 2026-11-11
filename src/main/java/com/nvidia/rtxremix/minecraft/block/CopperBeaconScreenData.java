@@ -4,21 +4,21 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 
 /** Additional data needed to bind the client-side handler to its block entity. */
 public record CopperBeaconScreenData(BlockPos pos) {
-    public static final PacketCodec<RegistryByteBuf, CopperBeaconScreenData> PACKET_CODEC =
-            new PacketCodec<>() {
+    public static final StreamCodec<RegistryFriendlyByteBuf, CopperBeaconScreenData> PACKET_CODEC =
+            new StreamCodec<>() {
                 @Override
-                public CopperBeaconScreenData decode(RegistryByteBuf buffer) {
+                public CopperBeaconScreenData decode(RegistryFriendlyByteBuf buffer) {
                     return new CopperBeaconScreenData(buffer.readBlockPos());
                 }
 
                 @Override
-                public void encode(RegistryByteBuf buffer, CopperBeaconScreenData data) {
+                public void encode(RegistryFriendlyByteBuf buffer, CopperBeaconScreenData data) {
                     buffer.writeBlockPos(data.pos);
                 }
             };

@@ -7,8 +7,8 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionSnapshotRelease;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionBuilderRelease;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import net.minecraft.client.render.chunk.ChunkRendererRegionBuilder;
-import net.minecraft.client.render.chunk.RenderedChunk;
+import net.minecraft.client.renderer.chunk.RenderChunk;
+import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -17,21 +17,21 @@ import org.spongepowered.asm.mixin.Shadow;
  * The builder's reference on its cached snapshots; see {@link RegionBuilderRelease}. The
  * reference itself is taken when a snapshot is created ({@link ClientChunkMixin}).
  */
-@Mixin(ChunkRendererRegionBuilder.class)
+@Mixin(RenderRegionCache.class)
 public abstract class ChunkRendererRegionBuilderMixin implements RegionBuilderRelease {
 
     @Shadow
     @Final
-    private Long2ObjectMap<Object> chunks;
+    private Long2ObjectMap<Object> chunkInfoCache;
 
     @Override
     public void rtxremix$releaseSnapshots() {
-        for (Object clientChunk : chunks.values()) {
-            RenderedChunk snapshot = ((ClientChunkSnapshotAccess) clientChunk).rtxremix$snapshotOrNull();
+        for (Object clientChunk : chunkInfoCache.values()) {
+            RenderChunk snapshot = ((ClientChunkSnapshotAccess) clientChunk).rtxremix$snapshotOrNull();
             if (snapshot != null) {
                 ((RegionSnapshotRelease) snapshot).rtxremix$release();
             }
         }
-        chunks.clear();
+        chunkInfoCache.clear();
     }
 }

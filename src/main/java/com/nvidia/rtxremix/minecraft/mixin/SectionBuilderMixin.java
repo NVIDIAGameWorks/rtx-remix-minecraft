@@ -5,25 +5,25 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import net.minecraft.client.renderer.SectionBufferBuilderPack;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.chunk.RenderChunkRegion;
+import net.minecraft.client.renderer.chunk.SectionCompiler;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
 import com.nvidia.rtxremix.minecraft.terrain.capture.SectionBlockData;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockQuadEmitter;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockDataQueue;
 import com.nvidia.rtxremix.minecraft.terrain.VanillaSectionBuilds;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
-import net.minecraft.block.BlockRenderType;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.block.BlockRenderManager;
-import net.minecraft.client.render.chunk.ChunkRendererRegion;
-import net.minecraft.client.render.chunk.BlockBufferAllocatorStorage;
-import net.minecraft.client.render.chunk.SectionBuilder;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.world.BlockRenderView;
-import net.minecraft.world.BlockView;
-import com.mojang.blaze3d.systems.VertexSorter;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -37,10 +37,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * of running a separate pass.
  *
  * <ul>
- *   <li>{@code isOpaqueFullCube} redirect: captures opacity bitmap,
+ *   <li>{@code isSolidRender} redirect: captures opacity bitmap,
  *       face masks, and light entries for every block, and emits the
  *       block's model quads directly to the Remix interleaved buffer.</li>
- *   <li>{@code getRenderType} redirect: reports every block invisible while
+ *   <li>{@code getRenderShape} redirect: reports every block invisible while
  *       capturing, so vanilla skips its layer buffers, matrix stack, and
  *       {@code renderBlock} for geometry that is never drawn.</li>
  *   <li>{@code renderFluid} redirect: emits fluid quads directly,
@@ -49,7 +49,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *       for the render thread.</li>
  * </ul>
  */
-@Mixin(SectionBuilder.class)
+@Mixin(SectionCompiler.class)
 public class SectionBuilderMixin {
 
     private static final ThreadLocal<ProfileScope> rtxremix$tracyOuter = new ThreadLocal<>();
@@ -80,16 +80,16 @@ public class SectionBuilderMixin {
     }
 
     @Shadow
-    private BlockRenderManager blockRenderManager;
+    private BlockRenderDispatcher blockRenderer;
 
     // HEAD: init per-section emission state
-    @Inject(method = "build", at = @At("HEAD"))
+    @Inject(method = "compile", at = @At("HEAD"))
     private void rtxremix$onBuildHead(
-            ChunkSectionPos sectionPos,
-            ChunkRendererRegion renderRegion,
-            VertexSorter vertexSorter,
-            BlockBufferAllocatorStorage allocatorStorage,
-            CallbackInfoReturnable<SectionBuilder.RenderData> cir) {
+            SectionPos sectionPos,
+            RenderChunkRegion renderRegion,
+            VertexSorting vertexSorter,
+            SectionBufferBuilderPack allocatorStorage,
+            CallbackInfoReturnable<SectionCompiler.Results> cir) {
 
         // Latched before any early return below, and unconditionally, so a value
         // left over from this thread's previous build cannot decide this one.
@@ -109,24 +109,24 @@ public class SectionBuilderMixin {
             tex = mod.getRenderer().getTextureManager();
         }
 
-        BlockQuadEmitter.threadLocal().beginSection(sectionPos, tex, this.blockRenderManager);
+        BlockQuadEmitter.threadLocal().beginSection(sectionPos, tex, this.blockRenderer);
         rtxremix$tracyBlockLoop.set(ProfileScope.begin("block loop"));
     }
 
-    // isOpaqueFullCube: capture opacity / face masks / lights / quads
-    @Redirect(method = "build",
+    // isSolidRender: capture opacity / face masks / lights / quads
+    @Redirect(method = "compile",
               at = @At(value = "INVOKE",
-                       target = "Lnet/minecraft/block/BlockState;isOpaqueFullCube(Lnet/minecraft/world/BlockView;Lnet/minecraft/util/math/BlockPos;)Z"))
-    private boolean rtxremix$captureBlock(BlockState state, BlockView world, BlockPos pos) {
-        boolean opaque = state.isOpaqueFullCube(world, pos);
+                       target = "Lnet/minecraft/world/level/block/state/BlockState;isSolidRender(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Z"))
+    private boolean rtxremix$captureBlock(BlockState state, BlockGetter world, BlockPos pos) {
+        boolean opaque = state.isSolidRender(world, pos);
         BlockQuadEmitter emitter = BlockQuadEmitter.current();
         if (emitter != null && emitter.isActive()) {
             emitter.processBlock(state, world, pos, opaque);
             // Vanilla hands only MODEL blocks to renderBlock; ENTITYBLOCK_ANIMATED blocks
             // belong to their block-entity renderer.
-            if (BlockQuadEmitter.getRenderTypeCached(state) == BlockRenderType.MODEL) {
+            if (BlockQuadEmitter.getRenderTypeCached(state) == RenderShape.MODEL) {
                 // build() only ever passes its ChunkRendererRegion here.
-                emitter.emitBlock(state, pos, (BlockRenderView) world);
+                emitter.emitBlock(state, pos, (BlockAndTintGetter) world);
             }
         }
         return opaque;
@@ -135,39 +135,39 @@ public class SectionBuilderMixin {
     // While capturing, the block's quads were already emitted above, so vanilla's raster
     // path for it (layer buffer, matrix stack, renderBlock) is dead work. Reporting the
     // block invisible makes vanilla skip all of it.
-    @Redirect(method = "build",
+    @Redirect(method = "compile",
               at = @At(value = "INVOKE",
-                       target = "Lnet/minecraft/block/BlockState;getRenderType()Lnet/minecraft/block/BlockRenderType;"))
-    private BlockRenderType rtxremix$renderTypeForVanilla(BlockState state) {
+                       target = "Lnet/minecraft/world/level/block/state/BlockState;getRenderShape()Lnet/minecraft/world/level/block/RenderShape;"))
+    private RenderShape rtxremix$renderTypeForVanilla(BlockState state) {
         return rtxremix$capturing()
-                ? BlockRenderType.INVISIBLE
+                ? RenderShape.INVISIBLE
                 : BlockQuadEmitter.getRenderTypeCached(state);
     }
 
     // renderFluid: emit fluid quads for Remix, skip GL
-    @Redirect(method = "build",
+    @Redirect(method = "compile",
               at = @At(value = "INVOKE",
-                       target = "Lnet/minecraft/client/render/block/BlockRenderManager;renderFluid(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/world/BlockRenderView;Lnet/minecraft/client/render/VertexConsumer;Lnet/minecraft/block/BlockState;Lnet/minecraft/fluid/FluidState;)V"))
-    private void rtxremix$redirectFluid(BlockRenderManager brm,
-            BlockPos pos, BlockRenderView world, VertexConsumer consumer,
+                       target = "Lnet/minecraft/client/renderer/block/BlockRenderDispatcher;renderLiquid(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/BlockAndTintGetter;Lcom/mojang/blaze3d/vertex/VertexConsumer;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/material/FluidState;)V"))
+    private void rtxremix$redirectFluid(BlockRenderDispatcher brm,
+            BlockPos pos, BlockAndTintGetter world, VertexConsumer consumer,
             BlockState blockState, FluidState fluidState) {
         if (rtxremix$capturing()) {
             BlockQuadEmitter emitter = BlockQuadEmitter.threadLocal();
             if (!emitter.isActive()) return;
             emitter.emitFluid(pos, world, fluidState);
         } else {
-            brm.renderFluid(pos, world, consumer, blockState, fluidState);
+            brm.renderLiquid(pos, world, consumer, blockState, fluidState);
         }
     }
 
     // RETURN: finalise mesh data and enqueue
-    @Inject(method = "build", at = @At("RETURN"))
+    @Inject(method = "compile", at = @At("RETURN"))
     private void rtxremix$onBuildReturn(
-            ChunkSectionPos sectionPos,
-            ChunkRendererRegion renderRegion,
-            VertexSorter vertexSorter,
-            BlockBufferAllocatorStorage allocatorStorage,
-            CallbackInfoReturnable<SectionBuilder.RenderData> cir) {
+            SectionPos sectionPos,
+            RenderChunkRegion renderRegion,
+            VertexSorting vertexSorter,
+            SectionBufferBuilderPack allocatorStorage,
+            CallbackInfoReturnable<SectionCompiler.Results> cir) {
 
         try {
             BlockQuadEmitter emitter = BlockQuadEmitter.threadLocal();

@@ -6,9 +6,9 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
-import net.minecraft.client.render.model.BakedQuad;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -46,7 +46,7 @@ class FrapiBlockTintTest {
     @Test
     void aCopiedQuadKeepsItsColorIndexAndMaterial() {
         RemixRenderContext sourceContext = new RemixRenderContext();
-        sourceContext.prepare(null, null, BlockPos.ORIGIN, face -> false);
+        sourceContext.prepare(null, null, BlockPos.ZERO, face -> false);
         QuadEmitter source = sourceContext.getEmitter().colorIndex(4);
         assertEquals(4, captureOne(emitter -> emitter.copyFrom(source)).colorIndex());
         source.material(material(true));
@@ -69,7 +69,7 @@ class FrapiBlockTintTest {
 
     private static SectionBlockData.BlockQuad captureOne(Consumer<QuadEmitter> quad) {
         RemixRenderContext context = new RemixRenderContext();
-        context.prepare(null, null, BlockPos.ORIGIN, face -> false);
+        context.prepare(null, null, BlockPos.ZERO, face -> false);
         QuadEmitter emitter = context.getEmitter();
         emitter.pos(0, 0, 0, 0).pos(1, 1, 0, 0).pos(2, 1, 1, 0).pos(3, 0, 1, 0);
         quad.accept(emitter);

@@ -6,12 +6,12 @@ package com.nvidia.rtxremix.minecraft.settings;
 
 import com.nvidia.rtxremix.minecraft.light.BlockLightIntensityControls;
 import java.util.Locale;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.network.chat.Component;
 
 /** Deferred exponential slider used by the block-light intensity table. */
-class BlockLightMultiplierSlider extends SliderWidget {
+class BlockLightMultiplierSlider extends AbstractSliderButton {
 
     static final double MIN_NONZERO_MULTIPLIER = 0.02;
     static final double ZERO_SENTINEL_END = 0.04;
@@ -20,10 +20,10 @@ class BlockLightMultiplierSlider extends SliderWidget {
     private double pendingMultiplier;
 
     BlockLightMultiplierSlider(RtxSetting<Double> setting) {
-        super(0, 0, 150, 20, Text.empty(), positionFromMultiplier(setting.get()));
+        super(0, 0, 150, 20, Component.empty(), positionFromMultiplier(setting.get()));
         this.setting = setting;
         this.pendingMultiplier = setting.get();
-        setTooltip(Tooltip.of(Text.translatable(setting.tooltipKey())));
+        setTooltip(Tooltip.create(Component.translatable(setting.tooltipKey())));
         updateMessage();
     }
 
@@ -31,10 +31,10 @@ class BlockLightMultiplierSlider extends SliderWidget {
     protected void updateMessage() {
         pendingMultiplier = multiplierFromPosition(value);
         setMessage(pendingMultiplier == 0.0
-                ? Text.translatable("rtxremix.settings.value.off")
-                : Text.translatable(
+                ? Component.translatable("rtxremix.settings.value.off")
+                : Component.translatable(
                         "rtxremix.settings.value.multiplier",
-                        Text.literal(String.format(Locale.ROOT, "%.2f", pendingMultiplier))));
+                        Component.literal(String.format(Locale.ROOT, "%.2f", pendingMultiplier))));
     }
 
     @Override

@@ -4,21 +4,21 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.model.ModelLoader;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import net.minecraft.client.resources.model.ModelBakery;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Captures the block-breaking crack where vanilla draws it and submits it through the
@@ -60,7 +60,7 @@ public final class RemixBlockDamagePass {
      */
     @FunctionalInterface
     public interface BlockDamageRenderCall {
-        void render(MatrixStack matrices, VertexConsumer consumer);
+        void render(PoseStack matrices, VertexConsumer consumer);
     }
 
     private final RecyclingMatrixStack matrices = new RecyclingMatrixStack();
@@ -80,12 +80,12 @@ public final class RemixBlockDamagePass {
                         RemixEntitySubmitter submitter) {
         EntityRenderContext ctx = EntityRenderContext.get();
         provider.beginEntity();
-        matrices.push();
+        matrices.pushPose();
         ctx.begin(true);
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
         try {
             VertexConsumer crack = provider.getBuffer(
-                    ModelLoader.BLOCK_DESTRUCTION_RENDER_LAYERS.get(stage));
+                    ModelBakery.DESTROY_TYPES.get(stage));
             call.render(matrices, projector.target(crack));
             layers = provider.endEntity();
         } catch (Exception e) {
@@ -104,7 +104,7 @@ public final class RemixBlockDamagePass {
         reusableBoneData = ctx.snapshotBoneTransforms(reusableBoneData);
         RemixEntityPass.EntityCaptureResult result = new RemixEntityPass.EntityCaptureResult(
                 owners.ownerFor(pos.asLong()),
-                Vec3d.of(pos),
+                Vec3.atLowerCornerOf(pos),
                 0.0f,
                 layers,
                 reusableBoneData,
@@ -182,7 +182,7 @@ public final class RemixBlockDamagePass {
 
         CrackProjector() {
             for (Direction face : Direction.values()) {
-                faceRotations[face.ordinal()] = face.getRotationQuaternion();
+                faceRotations[face.ordinal()] = face.getRotation();
             }
         }
 
@@ -193,46 +193,46 @@ public final class RemixBlockDamagePass {
         }
 
         @Override
-        public VertexConsumer vertex(float x, float y, float z) {
+        public VertexConsumer addVertex(float x, float y, float z) {
             this.x = x;
             this.y = y;
             this.z = z;
-            target.vertex(x, y, z);
+            target.addVertex(x, y, z);
             return this;
         }
 
         @Override
-        public VertexConsumer color(int red, int green, int blue, int alpha) {
-            target.color(0xFFFFFFFF);
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            target.setColor(0xFFFFFFFF);
             return this;
         }
 
         @Override
-        public VertexConsumer texture(float u, float v) {
+        public VertexConsumer setUv(float u, float v) {
             return this;
         }
 
         @Override
-        public VertexConsumer overlay(int u, int v) {
-            target.overlay(u, v);
+        public VertexConsumer setUv1(int u, int v) {
+            target.setUv1(u, v);
             return this;
         }
 
         @Override
-        public VertexConsumer light(int u, int v) {
-            target.light(u, v);
+        public VertexConsumer setUv2(int u, int v) {
+            target.setUv2(u, v);
             return this;
         }
 
         @Override
-        public VertexConsumer normal(float x, float y, float z) {
-            Direction face = Direction.getFacing(x, y, z);
+        public VertexConsumer setNormal(float x, float y, float z) {
+            Direction face = Direction.getNearest(x, y, z);
             projected.set(this.x, this.y, this.z)
-                    .rotateY(MathHelper.PI)
-                    .rotateX(-MathHelper.HALF_PI)
+                    .rotateY(Mth.PI)
+                    .rotateX(-Mth.HALF_PI)
                     .rotate(faceRotations[face.ordinal()]);
-            target.texture(-projected.x, -projected.y);
-            target.normal(x, y, z);
+            target.setUv(-projected.x, -projected.y);
+            target.setNormal(x, y, z);
             return this;
         }
     }

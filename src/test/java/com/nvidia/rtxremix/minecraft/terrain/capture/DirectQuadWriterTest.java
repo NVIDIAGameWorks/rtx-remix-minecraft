@@ -7,11 +7,11 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.HardcodedVertex;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import net.minecraft.resources.ResourceLocation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DirectQuadWriterTest {
 
-    private static final Identifier CUTOUT_SPRITE = Identifier.ofVanilla("test/cutout");
+    private static final ResourceLocation CUTOUT_SPRITE = ResourceLocation.withDefaultNamespace("test/cutout");
     private static final float[] FRONT_POSITIONS = {
             0.0f, 0.0f, 0.0f,
             1.0f, 0.0f, 0.0f,
@@ -152,7 +152,7 @@ class DirectQuadWriterTest {
         stageCutoutQuad(writer, FRONT_POSITIONS, FRONT_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
         stageCutoutQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, 1.0f, CUTOUT_SPRITE, 0xFFFFFFFF);
         stageCutoutQuad(writer, BACK_POSITIONS, DISTINCT_BACK_UVS, -1.0f,
-                Identifier.ofVanilla("test/cutout_overlay"), 0xFFFFFFFF);
+                ResourceLocation.withDefaultNamespace("test/cutout_overlay"), 0xFFFFFFFF);
         writer.flushBlock(null);
 
         assertEquals(12, totalVertices(writer.buildMeshData()));
@@ -217,12 +217,12 @@ class DirectQuadWriterTest {
     }
 
     private static void stageCutoutQuad(DirectQuadWriter writer, float[] positions, float[] uvs,
-                                        float normalZ, Identifier sprite, int color) {
+                                        float normalZ, ResourceLocation sprite, int color) {
         stageQuad(writer, positions, uvs, normalZ, sprite, color, "cutout");
     }
 
     private static void stageQuad(DirectQuadWriter writer, float[] positions, float[] uvs,
-                                  float normalZ, Identifier sprite, int color, String layer) {
+                                  float normalZ, ResourceLocation sprite, int color, String layer) {
         writer.stageQuad(positions, uvs,
                 0.0f, 0.0f, normalZ,
                 color, sprite,
