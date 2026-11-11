@@ -151,7 +151,7 @@ only once at its end. `clouds.vanillaEdgeSmoothness` and `clouds.size` accept
 that debounce. Block Glow Intensity does not use `deferSliderApply`: movement
 only stores the pending multiplier. On close,
 `BlockTextureManager.commitTerrainEmissionMultiplier()` reports whether it
-changed; only then does `RtxRemixMod.rebuildTerrainForMaterialSettings()`
+changed; only then does `MinecraftRuntime.rebuildTerrainForMaterialSettings()`
 recreate shared materials and recapture terrain. Keep this separate from the
 Block Lights transaction.
 

@@ -34,7 +34,7 @@ def test_benchmark_jvm_args_mirror_build_gradle():
         "-XX:FlightRecorderOptions=stackdepth=256",
         "-XX:StartFlightRecording=name=rtx-benchmark,settings=profile,disk=true,dumponexit=false,maxsize=0",
     ]
-    gradle = (util.PROJECT_DIR / "build.gradle").read_text(encoding="utf-8")
+    gradle = (util.PROJECT_DIR / "versions" / "1.21.1" / "fabric" / "build.gradle").read_text(encoding="utf-8")
     for literal in (
         "-Drtxremix.profile.javaPhases=true",
         "-XX:FlightRecorderOptions=stackdepth=256",

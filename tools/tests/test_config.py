@@ -2,14 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import os
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
-from rtx_tools import config, launcher, sdk
+from rtx_tools import config, launcher, loader_registry, sdk
 from rtx_tools.benchmark import runner, util
+
+PROJECT_STATE = loader_registry.load_registry()
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -71,6 +74,33 @@ def test_local_updates_preserve_tracked_defaults(config_tree):
 def test_unconfigured_remote_names_missing_setting(config_tree):
     with pytest.raises(RuntimeError, match=r"Missing setting 'world.remote'.*tools/config.local.json"):
         config.require_setting(config.load_config(), "world.remote")
+
+
+def test_mod_loader_defaults_to_fabric_and_normalizes_config(monkeypatch):
+    monkeypatch.delenv("RTXREMIX_MOD_LOADER", raising=False)
+    assert config.mod_loader({}) == "fabric"
+    for loader_id in PROJECT_STATE.ids:
+        assert config.mod_loader({"modLoader": f" {loader_id.upper()} "}) == loader_id
+
+
+def test_mod_loader_environment_override_wins_and_is_validated(monkeypatch):
+    monkeypatch.setenv("RTXREMIX_MOD_LOADER", "FORGE")
+    assert config.mod_loader({"modLoader": "fabric"}) == "forge"
+    monkeypatch.setenv("RTXREMIX_MOD_LOADER", "quilt")
+    with pytest.raises(RuntimeError, match="modLoader must name a loader from project-state.json"):
+        config.mod_loader({})
+
+
+def test_explicit_runtime_loader_wins_without_changing_environment_or_config(monkeypatch):
+    monkeypatch.setenv("RTXREMIX_MOD_LOADER", "fabric")
+    merged = {"modLoader": "fabric"}
+    config.set_runtime_mod_loader("forge")
+    try:
+        assert config.mod_loader(merged) == "forge"
+        assert merged == {"modLoader": "fabric"}
+        assert os.environ["RTXREMIX_MOD_LOADER"] == "fabric"
+    finally:
+        config.set_runtime_mod_loader(None)
 
 
 @pytest.mark.parametrize("fixture", ["world", "resourcePack"])

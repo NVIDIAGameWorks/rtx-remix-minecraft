@@ -7,14 +7,15 @@ guide explains failure signatures and the ownership boundaries behind them;
 
 ## World Transitions
 
-Fabric's `ClientPlayConnectionEvents.JOIN` and `DISCONNECT` are not paired.
-`DISCONNECT` fires when the connection closes. A server reconfiguration
+Loader join and disconnect notifications are not necessarily paired.
+A disconnect notification fires when the connection closes. A server reconfiguration
 (`EnterReconfigurationS2CPacket`) switches the play handler to a configuration
 handler without closing that connection, clears `client.world`, and fires
-`JOIN` again when play resumes. Modded servers and proxies switching backends
-can do this; the integrated server does not reconfigure.
+another join notification when play resumes. Modded servers and proxies
+switching backends can do this; the integrated server does not reconfigure.
 
-The `RtxRemixMod` disconnect cleanup therefore does not run on that path:
+The shared `MinecraftClientRuntime` disconnect cleanup therefore does not run
+on that path:
 renderer world clear, benchmark and camera session reset, and world conf-layer
 release cannot be assumed to have happened. The null-world frame path hides
 retained terrain and discards the prepared particle payload. Join handlers
@@ -28,7 +29,7 @@ the first frame of the next world, during their reinitialization.
 
 ## Terrain Recapture
 
-`RtxRemixMod.rebuildLoadedTerrain()` owns the full recapture sequence:
+`MinecraftRuntime.rebuildLoadedTerrain()` owns the full recapture sequence:
 
 1. Clear the Remix terrain through `ChunkManager.clear()`.
 2. Snapshot `builtSections(client)` before `WorldRenderer.reload()` forgets

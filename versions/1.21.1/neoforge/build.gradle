@@ -1,0 +1,127 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+plugins {
+    id 'java'
+    id 'net.neoforged.moddev'
+}
+apply from: rootProject.file('gradle/loader-module.gradle')
+
+def neoForgeVersion = loaderState.loader.version
+def isSingleArchJar = archProperty != null
+logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
+        (isSingleArchJar ? ' (single-arch JAR mode)' : ' (fat JAR)'))
+
+neoForge {
+    version = neoForgeVersion
+    accessTransformers.from(
+            file('src/main/resources/META-INF/accesstransformer.cfg'))
+    runs {
+        client {
+            client()
+            gameDirectory = rootProject.file('run')
+        }
+    }
+    mods {
+        rtx_remix_renderer {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+dependencies {
+    compileOnly 'io.github.llamalad7:mixinextras-common:0.4.1'
+    annotationProcessor 'io.github.llamalad7:mixinextras-common:0.4.1'
+    testImplementation files(sourceSets.main.compileClasspath)
+    testRuntimeOnly files(sourceSets.main.runtimeClasspath)
+    testRuntimeOnly 'io.github.llamalad7:mixinextras-common:0.4.1'
+}
+
+test {
+    // These tests instantiate NeoForge-patched Minecraft classes without a
+    // game bootstrap. Canonical behavior is covered by the root suite.
+    exclude '**/RemixBlockDamagePassTest.class'
+    exclude '**/BlockLightRuleManagerTest.class'
+}
+
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title': 'RTX Remix for Minecraft (NeoForge)',
+            'Implementation-Version': resolvedBuildVersion,
+            'MixinConfigs': 'rtx-remix-renderer.mixins.json,rtx-remix-renderer.neoforge.mixins.json'
+        )
+    }
+}
+
+processResources {
+    // NeoForge's production classes use Mojmap names. A refmap produced from
+    // development mappings would rewrite selectors that are already correct.
+    filesMatching('rtx-remix-renderer*.mixins.json') {
+        filter { line ->
+            line.contains('"refmap"') ? null : line
+        }
+    }
+}
+
+def migrateDevelopmentResourcePacksTask =
+        tasks.register('migrateDevelopmentResourcePacks', Exec) {
+    commandLine 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', new File(repoRoot, 'packaging/migrate_resource_packs.ps1').absolutePath,
+            '-McDir', new File(repoRoot, 'run').absolutePath,
+            '-LegacyPackName', 'rtx-remix',
+            '-MinecraftVersion', minecraftVersion,
+            '-ModLoader', 'NeoForge'
+}
+
+tasks.matching { it.name == 'runClient' }.configureEach {
+    dependsOn ':setupRuntime', migrateDevelopmentResourcePacksTask
+}
+
+verifyPackageJarTask.configure {
+    doLast {
+        File archive = packageJarArchive.get().asFile
+        def zip = new java.util.zip.ZipFile(archive)
+        try {
+            [
+                'rtx-remix-renderer.mixins.json',
+                'rtx-remix-renderer.neoforge.mixins.json'
+            ].each { name ->
+                def entry = zip.getEntry(name)
+                if (entry == null) {
+                    throw new GradleException("NeoForge package is missing ${name}")
+                }
+                String config = zip.getInputStream(entry).getText('UTF-8')
+                if (config.contains('"refmap"')) {
+                    throw new GradleException(
+                            "${name} must not select a development refmap")
+                }
+                if (config.contains('"WindowMixin"')) {
+                    throw new GradleException(
+                            "${name} must not apply WindowMixin under NeoForge")
+                }
+            }
+
+            [
+                'com/nvidia/rtxremix/minecraft/mixin/MinecraftClientMixin.class': 'runTick',
+                'com/nvidia/rtxremix/minecraft/mixin/BiomeMixin.class': 'specialEffects',
+                'com/nvidia/rtxremix/minecraft/mixin/TorchBlockAccessor.class': 'flameParticle'
+            ].each { className, mojmapSelector ->
+                def entry = zip.getEntry(className)
+                if (entry == null) {
+                    throw new GradleException(
+                            "NeoForge package is missing ${className}")
+                }
+                String constantPool = new String(
+                        zip.getInputStream(entry).bytes,
+                        java.nio.charset.StandardCharsets.ISO_8859_1)
+                if (!constantPool.contains(mojmapSelector)) {
+                    throw new GradleException(
+                            "${className} lost Mojmap selector '${mojmapSelector}'")
+                }
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}

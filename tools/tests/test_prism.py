@@ -11,8 +11,10 @@ from pathlib import Path
 import pytest
 from conftest import recommended_heap_mib, write_jdk
 
-from rtx_tools import client, prism
+from rtx_tools import client, loader_registry, prism
 from rtx_tools.benchmark import util
+
+PROJECT_STATE = loader_registry.load_registry()
 
 
 def msa(name: str, *, owns: bool, active: bool, token: str = "SECRET") -> dict:
@@ -245,8 +247,8 @@ def test_write_instance_pins_versions_and_quotes_spaced_args(tmp_path):
     assert 'JvmArgs=-XX:+UseG1GC "-Dx=C:/a b/c"' in cfg and "OverrideJavaArgs=true" in cfg
     pack = json.loads((tmp_path / "instances" / "rtx-remix-dev" / "mmc-pack.json").read_text(encoding="utf-8"))
     assert {c["uid"]: c["version"] for c in pack["components"]} == {
-        "net.minecraft": prism.installer_constant("MC_VERSION"),
-        "net.fabricmc.fabric-loader": prism.installer_constant("FABRIC_LOADER_VER"),
+        "net.minecraft": PROJECT_STATE.minecraft_version,
+        "net.fabricmc.fabric-loader": PROJECT_STATE.get("fabric").version,
     }
     assert game == tmp_path / "instances" / "rtx-remix-dev" / ".minecraft" and game.is_dir()
 
@@ -278,13 +280,46 @@ def test_write_instance_writes_the_instance_settings_and_component_shape(tmp_pat
         "cachedName": "Minecraft",
         "important": True,
         "uid": "net.minecraft",
-        "version": prism.installer_constant("MC_VERSION"),
+        "version": PROJECT_STATE.minecraft_version,
     }
     assert loader == {
         "cachedName": "Fabric Loader",
         "uid": "net.fabricmc.fabric-loader",
-        "version": prism.installer_constant("FABRIC_LOADER_VER"),
+        "version": PROJECT_STATE.get("fabric").version,
     }
+
+
+@pytest.mark.parametrize("loader_id", PROJECT_STATE.ids)
+def test_write_instance_selects_manifest_loader_for_the_same_minecraft_version(tmp_path, loader_id):
+    declared = PROJECT_STATE.get(loader_id)
+    prism.write_instance(
+        tmp_path,
+        java=Path("C:/jdk/bin/javaw.exe"),
+        jvm_args=[],
+        mod_loader=loader_id,
+    )
+    pack = json.loads((tmp_path / "instances" / "rtx-remix-dev" / "mmc-pack.json").read_text(encoding="utf-8"))
+    minecraft, loader = pack["components"]
+    assert minecraft["version"] == PROJECT_STATE.minecraft_version
+    assert loader == {
+        "cachedName": declared.prism.name,
+        "uid": declared.prism.uid,
+        "version": declared.version,
+    }
+
+
+def test_write_instance_pins_requested_game_window_size(tmp_path):
+    prism.write_instance(
+        tmp_path,
+        java=Path("C:/jdk/bin/javaw.exe"),
+        jvm_args=[],
+        window_size=(1920, 1080),
+    )
+    cfg = (tmp_path / "instances" / "rtx-remix-dev" / "instance.cfg").read_text(encoding="utf-8")
+    assert prism_ini_value(cfg, "OverrideWindow") == "true"
+    assert prism_ini_value(cfg, "LaunchMaximized") == "false"
+    assert prism_ini_value(cfg, "MinecraftWinWidth") == "1920"
+    assert prism_ini_value(cfg, "MinecraftWinHeight") == "1080"
 
 
 def test_write_instance_lets_prism_exit_after_a_failed_launch(tmp_path):
@@ -456,7 +491,7 @@ def test_the_launched_jvm_gets_the_last_heap_limit_in_the_jvm_args(tmp_path, jvm
 
 
 def test_the_launched_jvm_gets_the_recommended_heap(tmp_path):
-    recommended = prism.installer_constant("RECOMMENDED_JVM_ARGS").split()
+    recommended = prism.recommended_jvm_args()
     launched = launched_jvm_args(tmp_path, recommended)
     assert last_with_prefix(launched, "-Xmx") == f"-Xmx{recommended_heap_mib()}m"
     assert {arg for arg in recommended if not arg.startswith(("-Xmx", "-Xms"))} <= set(launched)
@@ -480,7 +515,7 @@ def prism_refuses_jvm_args(jvm_args: str) -> bool:
 @pytest.mark.parametrize(
     "jvm_args",
     [
-        prism.installer_constant("RECOMMENDED_JVM_ARGS").split(),
+        prism.recommended_jvm_args(),
         ["-Xms1g", "-Xmx4g", "-XX:MaxHeapSize=3g", "-XX:InitialHeapSize=1g", "-Dx=1"],
     ],
     ids=["recommended", "every-heap-spelling"],
@@ -584,21 +619,18 @@ def test_seed_launcher_config_skips_the_first_run_wizard_and_updates(tmp_path):
     ]
 
 
-def test_installer_constant_reads_a_single_quoted_assignment(tmp_path, monkeypatch):
+def test_recommended_jvm_args_reads_a_single_quoted_assignment(tmp_path, monkeypatch):
     (tmp_path / "packaging").mkdir()
     (tmp_path / "packaging" / "installer.ps1").write_text(
-        "# $script:IGNORED = 'comment'\n$script:NAME      = 'it''s here'\n$script:OTHER = 'x'\n", encoding="utf-8"
+        "# $script:RECOMMENDED_JVM_ARGS = '-Xmx1G'\n$script:RECOMMENDED_JVM_ARGS = '-Dmessage=it''s_here -Xmx12G'\n",
+        encoding="utf-8",
     )
     monkeypatch.setattr(util, "PROJECT_DIR", tmp_path)
-    assert prism.installer_constant("NAME") == "it's here"
-    with pytest.raises(RuntimeError, match=r"\$script:IGNORED"):
-        prism.installer_constant("IGNORED")
+    assert prism.recommended_jvm_args() == ["-Dmessage=it's_here", "-Xmx12G"]
 
 
-def test_installer_constant_reads_the_pinned_versions():
-    assert prism.installer_constant("MC_VERSION")
-    assert prism.installer_constant("FABRIC_LOADER_VER")
-    assert "-Xmx" in prism.installer_constant("RECOMMENDED_JVM_ARGS")
+def test_installer_owned_recommended_jvm_arguments_exist():
+    assert any(arg.startswith("-Xmx") for arg in prism.recommended_jvm_args())
 
 
 def test_running_prism_pids_matches_only_this_data_folder(monkeypatch, tmp_path):

@@ -1,0 +1,33 @@
+modLoader="javafml"
+loaderVersion="[52,)"
+license="Apache-2.0"
+
+[[mixins]]
+config="rtx-remix-renderer.mixins.json"
+
+[[mixins]]
+config="rtx-remix-renderer.vanilla-section.mixins.json"
+
+[[mixins]]
+config="rtx-remix-renderer.forge.mixins.json"
+
+[[mods]]
+modId="rtx_remix_renderer"
+version="${file.jarVersion}"
+displayName="RTX Remix for Minecraft"
+description='''Renders Minecraft through NVIDIA RTX Remix path tracing.
+NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.'''
+
+[[dependencies.rtx_remix_renderer]]
+modId="forge"
+mandatory=true
+versionRange="${loaderVersionRange}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.rtx_remix_renderer]]
+modId="minecraft"
+mandatory=true
+versionRange="${minecraftVersionRange}"
+ordering="NONE"
+side="BOTH"

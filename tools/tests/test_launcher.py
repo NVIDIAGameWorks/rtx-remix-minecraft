@@ -49,6 +49,10 @@ def config():
         (["--mode", "play", "--world", "none"], "launch --sdk-variant release"),
         (["--mode", "play", "--world", "NONE"], "launch --sdk-variant release"),
         (["--mode", "play", "--world", "None"], "launch --sdk-variant release"),
+        (
+            ["--mode", "play", "--world", "DemoWorld", "--loader", "forge"],
+            "launch --world DemoWorld --loader forge --sdk-variant release",
+        ),
         (["--mode", "benchmark"], "run --sdk-variant release"),
     ],
 )
@@ -137,6 +141,7 @@ def test_explicit_resource_pack_override_does_not_validate_inherited_local_path(
 def test_interactive_toggles_default_on_and_follow_configuration(config):
     state = launcher.State.defaults(config)
     assert state.world_enabled and state.resource_pack_enabled
+    assert state.loader == "fabric"
     assert (state.camera, state.preset, state.runs) == ("benchmark", "ultra", 1)
     assert state.world_label(config) == "On (DemoWorld v0.11.0)"
     assert state.pack_label(config) == "On (texture 0.56.0)"
@@ -152,6 +157,14 @@ def test_interactive_toggles_default_on_and_follow_configuration(config):
     assert state.pack_label(config) == "On (ExampleArt 1.0.0)"
     assert "--resource-pack" not in args
     assert "--version" not in args
+
+
+def test_dashboard_loader_selection_is_forwarded_without_changing_config(config):
+    state = launcher.State.defaults(config)
+    state.loader = "forge"
+    args = state.command(config, benchmark=False)
+    assert args[args.index("--loader") + 1] == "forge"
+    assert "modLoader" not in config
 
 
 def test_interactive_toggles_off_omit_world_and_art_pack(config):
@@ -336,7 +349,9 @@ def test_unconfigured_fixture_notices_print_after_the_console_closes(dry_run):
     assert len(world_notice) == 1 and len(pack_notice) == 1
     assert exit_index < world_notice[0] and exit_index < pack_notice[0]
     launch_line = next(
-        i for i, text in enumerate(texts) if "Launcher -> .\\rtx.bat launch --sdk-variant release" in text
+        i
+        for i, text in enumerate(texts)
+        if "Launcher -> .\\rtx.bat launch --loader fabric --sdk-variant release" in text
     )
     assert "--resource-pack" not in texts[launch_line]
     assert max(world_notice[0], pack_notice[0]) < launch_line

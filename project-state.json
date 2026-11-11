@@ -1,0 +1,145 @@
+{
+  "schema": "multi-version/v1",
+  "defaultMinecraftVersion": "1.21.1",
+  "mod": {
+    "id": "rtx-remix-renderer",
+    "group": "com.nvidia.rtxremix",
+    "version": "0.1.1",
+    "displayName": "RTX Remix for Minecraft"
+  },
+  "versions": {
+    "1.21.1": {
+      "supportTier": "primary",
+      "defaultLoader": "fabric",
+      "minecraft": {
+        "version": "1.21.1",
+        "module": "versions/1.21.1/minecraft",
+        "versionRange": "[1.21.1,1.21.2)",
+        "javaTarget": 21,
+        "dataVersion": 3955,
+        "hostGraphicsBackend": "opengl"
+      },
+      "loaders": {
+        "fabric": {
+          "displayName": "Fabric",
+          "module": "versions/1.21.1/fabric",
+          "provider": "fabric",
+          "projectPath": ":versions:1.21.1:fabric",
+          "supportTier": "active",
+          "developmentArtifact": {
+            "directory": "versions/1.21.1/fabric/build/libs",
+            "pattern": "rtx-remix-renderer-*.jar"
+          },
+          "installedJar": "rtx-remix-renderer-fabric.jar",
+          "builtinResourcePack": "fabric",
+          "gradle": {
+            "build": ":versions:1.21.1:fabric:build",
+            "test": ":versions:1.21.1:fabric:test",
+            "package": ":versions:1.21.1:fabric:package",
+            "prepare": [
+              ":versions:1.21.1:fabric:stageFabricApi"
+            ]
+          },
+          "prism": {
+            "uid": "net.fabricmc.fabric-loader",
+            "name": "Fabric Loader",
+            "version": "0.16.5"
+          },
+          "gradlePlugin": {
+            "id": "fabric-loom",
+            "version": "1.9.2",
+            "repository": "https://maven.fabricmc.net/"
+          },
+          "loader": {
+            "coordinate": "net.fabricmc:fabric-loader",
+            "version": "0.16.5",
+            "versionRange": ">=0.16.5"
+          },
+          "api": {
+            "coordinate": "net.fabricmc.fabric-api:fabric-api",
+            "version": "0.116.10+1.21.1",
+            "versionRange": ">=0.116.10+1.21.1"
+          },
+          "metadataFile": "fabric.mod.json",
+          "archiveBaseName": "rtx-remix-renderer",
+          "packageSourceTask": "remapJar"
+        },
+        "forge": {
+          "displayName": "Forge",
+          "module": "versions/1.21.1/forge",
+          "provider": "forge",
+          "projectPath": ":versions:1.21.1:forge",
+          "supportTier": "active",
+          "developmentArtifact": {
+            "directory": "versions/1.21.1/forge/build/libs",
+            "pattern": "rtx-remix-renderer-forge-*-all.jar"
+          },
+          "installedJar": "rtx-remix-renderer-forge.jar",
+          "builtinResourcePack": "mod_resources",
+          "gradle": {
+            "build": ":versions:1.21.1:forge:build",
+            "test": ":versions:1.21.1:forge:test",
+            "package": ":versions:1.21.1:forge:package",
+            "prepare": []
+          },
+          "prism": {
+            "uid": "net.minecraftforge",
+            "name": "Forge",
+            "version": "52.1.20"
+          },
+          "gradlePlugin": {
+            "id": "net.minecraftforge.gradle",
+            "version": "[6.0.24,6.2)",
+            "repository": "https://maven.minecraftforge.net/"
+          },
+          "mixinGradleVersion": "0.7-SNAPSHOT",
+          "loader": {
+            "coordinate": "net.minecraftforge:forge",
+            "version": "52.1.20",
+            "versionRange": "[52.1.20,)"
+          },
+          "metadataFile": "META-INF/mods.toml",
+          "archiveBaseName": "rtx-remix-renderer-forge",
+          "packageSourceTask": "jarJar"
+        },
+        "neoforge": {
+          "displayName": "NeoForge",
+          "module": "versions/1.21.1/neoforge",
+          "provider": "neoforge",
+          "projectPath": ":versions:1.21.1:neoforge",
+          "supportTier": "active",
+          "developmentArtifact": {
+            "directory": "versions/1.21.1/neoforge/build/libs",
+            "pattern": "rtx-remix-renderer-neoforge-*.jar"
+          },
+          "installedJar": "rtx-remix-renderer-neoforge.jar",
+          "builtinResourcePack": "mod_resources",
+          "gradle": {
+            "build": ":versions:1.21.1:neoforge:build",
+            "test": ":versions:1.21.1:neoforge:test",
+            "package": ":versions:1.21.1:neoforge:package",
+            "prepare": []
+          },
+          "prism": {
+            "uid": "net.neoforged",
+            "name": "NeoForge",
+            "version": "21.1.265"
+          },
+          "gradlePlugin": {
+            "id": "net.neoforged.moddev",
+            "version": "2.0.148",
+            "repository": "https://plugins.gradle.org/m2/"
+          },
+          "loader": {
+            "coordinate": "net.neoforged:neoforge",
+            "version": "21.1.265",
+            "versionRange": "[21.1.265,)"
+          },
+          "metadataFile": "META-INF/neoforge.mods.toml",
+          "archiveBaseName": "rtx-remix-renderer-neoforge",
+          "packageSourceTask": "jar"
+        }
+      }
+    }
+  }
+}

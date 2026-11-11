@@ -7,34 +7,36 @@ import subprocess
 import unittest
 import xml.etree.ElementTree as ElementTree
 
-from rtx_tools import install
+from rtx_tools import install, loader_registry
 from rtx_tools.benchmark import util
 
 REPO_ROOT = util.PROJECT_DIR
+PROJECT_STATE = loader_registry.load_registry()
+RUNTIME_POLICY = REPO_ROOT / "packaging" / "runtime-payload.gradle"
+FABRIC_BUILD = REPO_ROOT / PROJECT_STATE.get("fabric").module / "build.gradle"
+FORGE_BUILD = REPO_ROOT / PROJECT_STATE.get("forge").module / "build.gradle"
+LOADER_BUILD = REPO_ROOT / "gradle" / "loader-module.gradle"
 
 
 class BuildConfigurationTests(unittest.TestCase):
     def test_build_tool_versions_are_reproducible(self):
-        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         wrapper = (REPO_ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text(encoding="utf-8")
 
-        loom = re.search(r"id 'fabric-loom' version '([^']+)'", build)
-        if loom is None:
-            self.fail("Fabric Loom version declaration is missing")
-        self.assertNotIn("SNAPSHOT", loom.group(1).upper())
+        for loader in PROJECT_STATE.loaders:
+            self.assertNotIn("SNAPSHOT", loader.gradle_plugin_version.upper())
 
         checksum = re.search(r"(?m)^distributionSha256Sum=([0-9a-f]{64})$", wrapper)
         self.assertIsNotNone(checksum)
 
     def test_packaging_uses_an_explicit_distributable_archive_task(self):
-        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        build = LOADER_BUILD.read_text(encoding="utf-8")
 
         self.assertNotIn("startParameter.taskNames", build)
         self.assertIn("tasks.register('packageJar', Zip)", build)
         self.assertIn("tasks.register('verifyPackageJar')", build)
         self.assertIn("destinationDirectory.set(layout.buildDirectory.dir('distributions'))", build)
 
-    def test_release_staging_uses_only_the_verified_package_archive(self):
+    def test_release_staging_uses_verified_loader_specific_package_archives(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         staging = re.search(
             r"(?ms)^def stageReleaseArchiveTask = tasks.register\('stageReleaseArchive', Sync\) \{(.+?)^\}", build
@@ -42,10 +44,11 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(staging, "release staging must remove stale files through Sync")
         assert staging is not None
         body = staging.group(1)
-        self.assertIn("dependsOn 'package'", body)
+        self.assertIn('dependsOn declaredLoaders.collect { "${it.projectPath}:verifyPackageJar" }', body)
         self.assertIn("into layout.buildDirectory.dir('release')", body)
-        self.assertIn("from(packageJarArchive)", body)
-        self.assertIn("into 'mods'", body)
+        self.assertIn("declaredLoaders.each { loader ->", body)
+        self.assertIn("from(loaderArchives[loader.id])", body)
+        self.assertIn('into "mods/${loader.id}"', body)
         # The JAR carries the runtime textures; a second copy beside it would only grow the archive.
         self.assertNotIn("runtimeTexturesDir", body)
         self.assertNotIn("textures", body)
@@ -218,19 +221,79 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("commandLine 'cmd', '/d', '/c', '.\\\\packman.cmd', 'pull', temporaryManifest.absolutePath", body)
         self.assertNotIn("'packman.cmd').absolutePath", body)
 
+    def test_root_lifecycle_tasks_aggregate_both_modules_without_nested_wrappers(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        settings = (REPO_ROOT / "settings.gradle").read_text(encoding="utf-8")
+        self.assertIn("state.loaders.each", settings)
+        for task in ("build", "test", "package"):
+            aggregate = re.search(rf"(?ms)^tasks\.register\('{task}'\) \{{(.+?)^\}}", build)
+            self.assertIsNotNone(aggregate)
+            assert aggregate is not None
+            self.assertIn(f'dependsOn declaredLoaders.collect {{ "${{it.projectPath}}:{task}" }}', aggregate.group(1))
+        clean = re.search(r"(?ms)^tasks\.register\('clean', Delete\) \{(.+?)^\}", build)
+        self.assertIsNotNone(clean)
+        assert clean is not None
+        self.assertIn('dependsOn declaredLoaders.collect { "${it.projectPath}:clean" }', clean.group(1))
+        for nested_build_file in (
+            "forge/gradlew",
+            "forge/gradlew.bat",
+            "forge/settings.gradle",
+            "forge/gradle.properties",
+            "forge/gradle/wrapper/gradle-wrapper.jar",
+            "forge/gradle/wrapper/gradle-wrapper.properties",
+        ):
+            with self.subTest(nested_build_file=nested_build_file):
+                self.assertFalse((REPO_ROOT / nested_build_file).exists())
+        self.assertNotIn("gradlew", build)
+
+    def test_loader_modules_use_symmetric_conventional_layouts(self):
+        for loader in PROJECT_STATE.loaders:
+            with self.subTest(loader=loader.id):
+                module = REPO_ROOT / loader.module
+                self.assertTrue((module / "src/main/java").is_dir())
+                self.assertTrue((module / "src/main/resources").is_dir())
+                self.assertTrue((module / "src/test/java").is_dir())
+                self.assertFalse((module / "main").exists())
+                self.assertFalse((module / "test").exists())
+
+    def test_forge_build_refreshes_the_runnable_jarjar_artifact(self):
+        build = FORGE_BUILD.read_text(encoding="utf-8")
+        lifecycle = re.search(r"(?ms)^tasks\.named\('build'\) \{(.+?)^\}", build)
+        self.assertIsNotNone(lifecycle)
+        assert lifecycle is not None
+        self.assertIn("dependsOn 'jarJar'", lifecycle.group(1))
+
+    def test_loader_run_tasks_share_runtime_setup_but_select_their_own_resource_pack(self):
+        root_build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        self.assertNotIn("tasks.register('migrateDevelopmentResourcePacks'", root_build)
+        for loader in PROJECT_STATE.loaders:
+            with self.subTest(loader=loader.id):
+                build = (REPO_ROOT / loader.module / "build.gradle").read_text(encoding="utf-8")
+                self.assertIn("tasks.register('migrateDevelopmentResourcePacks', Exec)", build)
+                self.assertIn(f"'-ModLoader', '{loader.display_name}'", build)
+                run_client = re.search(
+                    r"(?ms)^tasks\.matching \{ it\.name == 'runClient' \}\.configureEach \{(.+?)^\}",
+                    build,
+                )
+                self.assertIsNotNone(run_client)
+                assert run_client is not None
+                self.assertIn("dependsOn ':setupRuntime', migrateDevelopmentResourcePacksTask", run_client.group(1))
+
     def test_distributable_jar_carries_the_runtime_textures(self):
         # A launcher such as CurseForge installs the JAR alone, with no installer to copy textures beside it, so the
         # JAR must carry every runtime texture for NativeExtractor to write into the game directory.
-        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        build = LOADER_BUILD.read_text(encoding="utf-8")
+        policy = RUNTIME_POLICY.read_text(encoding="utf-8")
         package = re.search(r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}", build)
         verify = re.search(r"(?ms)^def verifyPackageJarTask = tasks.register\('verifyPackageJar'\) \{(.+?)^\}", build)
         assert package is not None and verify is not None
-        self.assertIn("dependsOn fetchRuntimeTexturesTask", package.group(1))
-        self.assertRegex(
-            package.group(1),
-            r'from\(runtimeTexturesDir\) \{\s*into\("native/textures"\)\s*include runtimeTextureFiles\s*\}',
-        )
-        self.assertIn('required.add("native/textures/${name}")', verify.group(1))
+        self.assertIn("dependsOn ':fetchRuntimeTextures'", package.group(1))
+        self.assertIn("with runtimePayloadSpec(repoRoot, buildArches)", package.group(1))
+        self.assertIn("verifyRuntimePayloadArchive(", verify.group(1))
+        self.assertRegex(policy, r"from\(new File\(repoRoot, 'remix-runtime/textures'\)\) \{")
+        self.assertIn("into 'native/textures'", policy)
+        self.assertIn("include runtimeTextureFiles", policy)
+        self.assertIn('required.add("native/textures/${it}")', policy)
         self.assertNotIn("must not contain packaging textures", build)
 
     def test_release_archive_zips_the_staged_installable_tree(self):
@@ -254,12 +317,15 @@ class BuildConfigurationTests(unittest.TestCase):
         assert archive is not None
         body = archive.group(1)
         self.assertIn("archiveClassifier.set('installer')", body)
-        # The installer's name stays apart from the JAR's, which has no classifier.
-        jar = re.search(r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}", build)
+        # The installer's name stays apart from both loader JARs, which have no classifier.
+        jar = re.search(
+            r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}",
+            LOADER_BUILD.read_text(encoding="utf-8"),
+        )
         assert jar is not None
         self.assertNotIn("archiveClassifier", jar.group(1))
 
-    def test_release_assets_are_the_four_release_files(self):
+    def test_release_assets_are_the_five_release_files(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         assets = re.search(r"(?ms)^tasks.register\('stageReleaseAssets', Sync\) \{(.+?)^\}", build)
         self.assertIsNotNone(assets, "release assets must be staged through Sync so a stale file cannot be uploaded")
@@ -267,10 +333,10 @@ class BuildConfigurationTests(unittest.TestCase):
         body = assets.group(1)
         self.assertIn("into layout.buildDirectory.dir('release-assets')", body)
         self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
-        # The JAR, both content zips and the bundle, and nothing else: the workflow uploads every file here.
+        # Every declared loader JAR, both content zips, and the bundle, and nothing else.
         self.assertEqual(
             re.findall(r"from\(([^)]*)\)", body),
-            ["packageJarArchive", "materialsArchiveTask", "worldArchiveTask", "releaseArchiveTask"],
+            ["loaderArchives[loader.id]", "materialsArchiveTask", "worldArchiveTask", "releaseArchiveTask"],
         )
         self.assertNotIn("include", body)
         self.assertNotIn("exclude", body)
@@ -304,8 +370,8 @@ class BuildConfigurationTests(unittest.TestCase):
         # pinned here: the nv-usd layouts that shipped, nested and renamed
         # interpreters, and nothing legitimate. java.util.regex and re agree on
         # every construct the pattern uses.
-        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        declaration = re.search(r"(?m)^\s*def pythonEntry = ~/(.+)/\s*$", build)
+        policy = RUNTIME_POLICY.read_text(encoding="utf-8")
+        declaration = re.search(r"(?m)^\s*def pythonEntry = ~/(.+)/\s*$", policy)
         if declaration is None:
             self.fail("verifyPackageJar's pythonEntry pattern is missing")
         pattern = re.compile(declaration.group(1))
@@ -363,13 +429,16 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertNotRegex(build, r"from\(?\s*'packaging/textures'")
 
     def test_runtime_texture_check_names_the_files_the_mod_and_installer_load(self):
-        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        listed = re.search(r"(?m)^def runtimeTextureFiles = \[([^\]]*)\]", build)
-        self.assertIsNotNone(listed, "build.gradle must list the runtime textures it verifies")
+        policy = RUNTIME_POLICY.read_text(encoding="utf-8")
+        listed = re.search(r"(?ms)^ext\.runtimeTextureFiles = \[([^\]]*)\]", policy)
+        self.assertIsNotNone(listed, "the shared runtime policy must list the textures it verifies")
         assert listed is not None
         checked = set(re.findall(r"'([^']+)'", listed.group(1)))
         loaded = set()
-        for source in (REPO_ROOT / "src" / "main" / "java").rglob("*.java"):
+        minecraft_module = json.loads((REPO_ROOT / "project-state.json").read_text(encoding="utf-8"))["versions"][
+            PROJECT_STATE.minecraft_version
+        ]["minecraft"]["module"]
+        for source in (REPO_ROOT / minecraft_module / "main" / "java").rglob("*.java"):
             loaded.update(re.findall(r'"textures/([^"/]+\.dds)"', source.read_text(encoding="utf-8")))
         installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
         installed = set(re.findall(r"'textures\\([^'\\]+\.dds)'", installer))
@@ -397,7 +466,7 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("file('run/rtx.conf')", build)
 
     def test_dev_instance_fabric_api_comes_from_the_pinned_dependency(self):
-        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        build = FABRIC_BUILD.read_text(encoding="utf-8")
         task = re.search(r"(?ms)^tasks.register\('stageFabricApi', Copy\) \{(.+?)^\}", build)
         self.assertIsNotNone(task)
         assert task is not None

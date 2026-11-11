@@ -1,0 +1,164 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+plugins {
+    id 'fabric-loom'
+    id 'java'
+}
+
+apply from: rootProject.file('gradle/loader-module.gradle')
+
+// --- Build target architectures ------------------------------------------
+// Gradle -Parch flag controls which platforms are included in the JAR and
+// which native bridges are compiled. Omit for the default dual-arch fat JAR;
+// pass -Parch=win64 or -Parch=arm64 for a single-arch dev JAR.
+def isSingleArchJar = archProperty != null
+logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
+        (isSingleArchJar ? " (single-arch JAR mode)" : " (fat JAR)"))
+
+def benchmarkJfrPath = providers.gradleProperty("benchmarkJfrPath")
+def benchmarkQuickPlayWorld = providers.gradleProperty("benchmarkQuickPlayWorld")
+def benchmarkTracyJavaMaxDepth = providers.gradleProperty("benchmarkTracyJavaMaxDepth").orElse("6")
+def benchmarkJfrThrowables = providers.gradleProperty("benchmarkJfrThrowables")
+        .orElse(providers.environmentVariable("RTX_BENCHMARK_JFR_THROWABLES"))
+        .orElse("false")
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+}
+
+loom {
+    accessWidenerPath = file('src/main/resources/rtx-remix-renderer.accesswidener')
+
+    // Loom 1.15+ disabled the mixin annotation processor by default. We use
+    // mixins extensively (see the selected Minecraft module's mixin config),
+    // so explicitly opt back into the legacy AP via the `mixin` extension's
+    // useLegacyMixinAp flag. The previous defaultRefmapName setting is no
+    // longer needed. Without it, Loom derives the refmap name from the
+    // project; our mixins.json doesn't reference the refmap by literal name,
+    // so the auto-derived name works fine.
+    runs {
+        client {
+            // Keep in sync with RECOMMENDED_JVM_ARGS in packaging/installer.ps1.
+            // Minecraft Launcher defaults for the supported target and Windows arches:
+            // version metadata supplies HeapDumpPath; the profile supplies G1.
+            vmArgs "-Xmx2G", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC",
+                   "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20",
+                   "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M",
+                   "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump"
+            if (benchmarkJfrPath.isPresent()) {
+                def jfrPath = benchmarkJfrPath.get().replace('\\', '/')
+                // maxsize=0 lifts JDK 21's 250 MB default disk cap so a long
+                // recording keeps its earliest frames.
+                def jfrRecording = "name=rtx-benchmark,settings=profile,disk=true,dumponexit=false,maxsize=0"
+                if (benchmarkJfrThrowables.get().toBoolean()) {
+                    jfrRecording += ",jdk.JavaExceptionThrow#enabled=true,jdk.JavaExceptionThrow#stackTrace=true"
+                    jfrRecording += ",jdk.JavaErrorThrow#enabled=true,jdk.JavaErrorThrow#stackTrace=true"
+                }
+                vmArgs "-Drtxremix.benchmark.jfrPath=${jfrPath}",
+                       "-Drtxremix.profile.javaPhases=true",
+                       "-Drtxremix.profile.tracyJavaMaxDepth=${benchmarkTracyJavaMaxDepth.get()}",
+                       "-XX:FlightRecorderOptions=stackdepth=256",
+                       "-XX:StartFlightRecording=${jfrRecording}"
+            }
+            if (benchmarkQuickPlayWorld.isPresent()) {
+                programArgs "--quickPlaySingleplayer", benchmarkQuickPlayWorld.get()
+            }
+            // Optional --username passthrough for runClient.
+            if (project.hasProperty('mcUsername')) {
+                programArgs "--username", project.property('mcUsername')
+            }
+            // Set Remix's graphics preset for this runClient launch only:
+            // `gradlew runClient -PrtxPreset=high`.
+            if (project.hasProperty('rtxPreset')) {
+                vmArgs "-Drtxremix.preset=${project.property('rtxPreset')}"
+            }
+            // Join a multiplayer server directly on launch (debugging aid):
+            // `gradlew runClient -PmcQuickPlayServer=localhost:25565`
+            if (project.hasProperty('mcQuickPlayServer')) {
+                programArgs "--quickPlayMultiplayer", project.property('mcQuickPlayServer')
+            }
+            runDir '../../../run'
+        }
+    }
+}
+
+// The branch-state manifest pins both the compile dependency and staged API.
+def fabricApiCoordinate =
+        "${loaderState.api.coordinate}:${loaderState.api.version}"
+def fabricLoaderVersion = loaderState.loader.version
+
+configurations {
+    fabricTestRuntime {
+        extendsFrom testRuntimeClasspath
+    }
+}
+
+dependencies {
+    // Minecraft and Fabric
+    minecraft "com.mojang:minecraft:${minecraftVersion}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
+
+    modImplementation fabricApiCoordinate
+
+    // Testing
+    fabricTestRuntime "net.fabricmc:fabric-loader-junit:${fabricLoaderVersion}"
+}
+
+def fabricTest = tasks.register('fabricTest', Test) {
+    group = 'verification'
+    description = 'Runs renderer integration tests under Fabric Loader.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath - configurations.testRuntimeClasspath +
+            configurations.fabricTestRuntime
+    useJUnitPlatform {
+        includeTags 'fabric'
+    }
+    systemProperty 'fabric.side', 'client'
+    workingDir = repoRoot
+}
+
+test {
+    dependsOn fabricTest
+    useJUnitPlatform {
+        excludeTags 'fabric'
+    }
+}
+
+processResources {
+    inputs.property 'fabricApiVersion', loaderState.api.version
+    inputs.property 'fabricApiVersionRange', loaderState.api.versionRange
+}
+
+// A development launcher instance loads mods as a player's install does, so it
+// needs the published intermediary jar, not Loom's remapped copy. A detached,
+// non-transitive configuration resolves exactly the pinned coordinate and keeps
+// this task free of the native build and runtime staging.
+tasks.register('stageFabricApi', Copy) {
+    description = 'Copies the pinned Fabric API jar to build/dev/ for development launcher instances'
+    group = 'build'
+    from configurations.detachedConfiguration(dependencies.create(fabricApiCoordinate)).tap { transitive = false }
+    into layout.buildDirectory.dir('dev')
+    rename { 'fabric-api.jar' }
+}
+
+def migrateDevelopmentResourcePacksTask =
+        tasks.register('migrateDevelopmentResourcePacks', Exec) {
+    commandLine 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', new File(repoRoot, 'packaging/migrate_resource_packs.ps1').absolutePath,
+            '-McDir', new File(repoRoot, 'run').absolutePath,
+            '-LegacyPackName', 'rtx-remix',
+            '-MinecraftVersion', minecraftVersion,
+            '-ModLoader', 'Fabric'
+}
+
+tasks.matching { it.name == 'runClient' }.configureEach {
+    dependsOn ':setupRuntime', migrateDevelopmentResourcePacksTask
+}

@@ -119,7 +119,9 @@ def public_tracked_files():
     for name in filter(None, tracked.split("\0")):
         if name == "tools/tests/benchmark/test_public_boundary.py":
             continue
-        yield name, REPO_ROOT / name
+        path = REPO_ROOT / name
+        if path.is_file():
+            yield name, path
 
 
 def is_text(name):

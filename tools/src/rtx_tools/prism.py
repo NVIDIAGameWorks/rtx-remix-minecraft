@@ -17,6 +17,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import loader_registry
 from .benchmark import util
 from .client import LaunchBlocked
 
@@ -37,10 +38,8 @@ HEAP_SIZE = re.compile(r"(\d+)([kKmMgGtT]?)")
 HEAP_UNIT_BYTES = {"": 1, "k": 1 << 10, "m": 1 << 20, "g": 1 << 30, "t": 1 << 40}
 # Prism's default MinMemAlloc (Application::Application in launcher/Application.cpp).
 PRISM_MIN_HEAP_MIB = 512
-# The only Java major Prism's metadata lists for Minecraft 1.21.1 (compatibleJavaMajors in
-# https://meta.prismlauncher.org/v1/net.minecraft/1.21.1.json). Prism refuses any other, newer ones included, unless
-# IgnoreJavaCompatibility is set (VerifyJavaInstall::executeTask in launcher/minecraft/launch/VerifyJavaInstall.cpp).
-GAME_JAVA_MAJOR = 21
+# Prism refuses a Java major outside Minecraft's compatibleJavaMajors unless IgnoreJavaCompatibility is set
+# (VerifyJavaInstall::executeTask); project-state.json pins the required target.
 PE_MACHINE_ARCH = {0x8664: "win64", 0xAA64: "arm64"}
 JAVA_VERSION_LINE = re.compile(r'^JAVA_VERSION="(\d+(?:\.\d+)*)', re.MULTILINE)
 
@@ -298,7 +297,8 @@ def executable_arch(exe: Path) -> str | None:
 
 def _is_game_jdk(home: Path, arch: str) -> bool:
     version = java_version(home)
-    return version is not None and version[0] == GAME_JAVA_MAJOR and executable_arch(home / "bin" / "javaw.exe") == arch
+    java_target = loader_registry.load_registry().java_target
+    return version is not None and version[0] == java_target and executable_arch(home / "bin" / "javaw.exe") == arch
 
 
 def _installed_jdk_folders() -> list[list[Path]]:
@@ -310,16 +310,16 @@ def _installed_jdk_folders() -> list[list[Path]]:
     folders = [[*gradle_jdks.glob("*"), *gradle_jdks.glob("*/*")]]
     program_files = os.environ.get("ProgramFiles")
     if program_files:
+        java_target = loader_registry.load_registry().java_target
         folders += [
-            sorted((Path(program_files) / vendor).glob(f"jdk-{GAME_JAVA_MAJOR}*"))
+            sorted((Path(program_files) / vendor).glob(f"jdk-{java_target}*"))
             for vendor in ("Eclipse Adoptium", "Microsoft", "Java")
         ]
     return folders
 
 
 def find_game_jdk(arch: str, java_home: Path | None) -> Path | None:
-    """The Java home to run the game with: `java_home` when it is a JDK of GAME_JAVA_MAJOR for `arch`, else the newest
-    such JDK in the first of _installed_jdk_folders() holding one, else None."""
+    """The Java home to run the game with: the manifest's Java target for `arch`, preferring `java_home`."""
     if java_home is not None and _is_game_jdk(java_home, arch):
         return java_home
     for candidates in _installed_jdk_folders():
@@ -329,15 +329,14 @@ def find_game_jdk(arch: str, java_home: Path | None) -> Path | None:
     return None
 
 
-def installer_constant(name: str) -> str:
-    """A `$script:NAME = '...'` string from packaging/installer.ps1, the one source of the pinned versions and the
-    recommended JVM arguments."""
+def recommended_jvm_args() -> list[str]:
+    """Installer-owned recommended JVM arguments shared by development launches."""
     path = util.PROJECT_DIR / "packaging" / "installer.ps1"
-    pattern = rf"^[ \t]*\$script:{re.escape(name)}[ \t]*=[ \t]*'((?:[^']|'')*)'"
+    pattern = r"^[ \t]*\$script:RECOMMENDED_JVM_ARGS[ \t]*=[ \t]*'((?:[^']|'')*)'"
     match = re.search(pattern, path.read_text(encoding="utf-8"), re.MULTILINE)
     if match is None:
-        raise RuntimeError(f"{path} has no $script:{name} string assignment")
-    return match.group(1).replace("''", "'")
+        raise RuntimeError(f"{path} has no $script:RECOMMENDED_JVM_ARGS string assignment")
+    return match.group(1).replace("''", "'").split()
 
 
 def _ini_value(value: str) -> str:
@@ -474,10 +473,17 @@ def write_instance(
     instance_name: str = INSTANCE_NAME,
     java: Path,
     jvm_args: list[str],
+    mod_loader: str | None = None,
+    window_size: tuple[int, int] | None = None,
 ) -> Path:
-    """Write the instance's two files, replacing what is there, and return its game directory. The JSON pins Minecraft
-    and Fabric Loader to the versions packaging/installer.ps1 pins, and the game's heap is the last one `jvm_args`
-    sets."""
+    """Write the manifest-pinned Minecraft/loader instance and return its game directory."""
+    registry = loader_registry.load_registry()
+    loader = registry.get(mod_loader or registry.default_id)
+    loader_component = {
+        "cachedName": loader.prism.name,
+        "uid": loader.prism.uid,
+        "version": loader.prism.version,
+    }
     memory = _memory_settings(jvm_args)
     instance_args = instance_jvm_args(jvm_args)
     instance_dir = (data_dir / "instances" if instances_dir is None else instances_dir) / instance_id
@@ -492,6 +498,16 @@ def write_instance(
             ("JavaPath", java.as_posix()),
             ("OverrideJavaArgs", "true"),
             ("JvmArgs", join_jvm_args(instance_args)),
+            *(
+                [
+                    ("OverrideWindow", "true"),
+                    ("LaunchMaximized", "false"),
+                    ("MinecraftWinWidth", str(window_size[0])),
+                    ("MinecraftWinHeight", str(window_size[1])),
+                ]
+                if window_size is not None
+                else []
+            ),
             *memory,
             # Prism exits once no launch is running and no window is open (Application::controllerFinished in
             # launcher/Application.cpp). A failed launch opens the console window while ShowConsoleOnError, true by
@@ -511,13 +527,9 @@ def write_instance(
                     "cachedName": "Minecraft",
                     "important": True,
                     "uid": "net.minecraft",
-                    "version": installer_constant("MC_VERSION"),
+                    "version": registry.minecraft_version,
                 },
-                {
-                    "cachedName": "Fabric Loader",
-                    "uid": "net.fabricmc.fabric-loader",
-                    "version": installer_constant("FABRIC_LOADER_VER"),
-                },
+                loader_component,
             ],
             "formatVersion": 1,
         },

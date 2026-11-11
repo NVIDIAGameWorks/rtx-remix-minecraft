@@ -2,7 +2,7 @@
 
 This guide takes you from a downloaded archive to a path-traced world. It is
 written for players. You do not need development tools, and you do not need to
-install Java, Fabric, or the RTX Remix runtime yourself.
+install Java, a mod loader, or the RTX Remix runtime yourself.
 
 ## What You Need
 
@@ -14,7 +14,8 @@ install Java, Fabric, or the RTX Remix runtime yourself.
 - An internet connection while the installer runs.
 - 16 GB of system memory is recommended.
 
-Java 21, Fabric, and the RTX Remix runtime are installed for you.
+Java 21, your choice of Fabric, Forge, or NeoForge, and the RTX Remix runtime are installed
+for you. Fabric API is installed only with Fabric.
 
 ## Before You Start
 
@@ -36,7 +37,8 @@ fixed.
 
 ## Download
 
-Download the installer bundle, `rtx-remix-renderer-<version>-installer.zip`,
+Download the installer bundle,
+`rtx-remix-renderer-mc<minecraft-version>-<mod-version>-installer.zip`,
 from the
 [Releases page](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest)
 and extract it. It holds the mod, the RTX Remix Materials texture pack, the
@@ -74,9 +76,9 @@ Microsoft account.
    administrator under another account.
 3. The installer opens a menu and preselects the right action for what is
    already on your machine: Install, Upgrade, or Repair. Press Enter to accept
-   it. Answer the launcher question described above. Upgrade and Repair keep
-   the launcher that already has the mod and do not ask; to use the other
-   launcher, choose Install instead.
+   it. Answer the launcher and mod-loader questions described above. Upgrade
+   and Repair keep an unambiguous installed launcher and loader; choose Install
+   to switch either.
 4. Keep all three items ticked in the list that follows: RTX Remix Renderer,
    the mod; RTX Remix Materials, the texture pack the renderer was made with;
    and RTX Remix Showcase World, the world it was tuned against. The highlight
@@ -95,22 +97,28 @@ Microsoft account.
    already. In Prism this is Accounts, then Manage Accounts, then Add
    Microsoft.
 6. Start the game. In Prism, select the **NVIDIA RTX Remix for Minecraft**
-   instance and press Launch. In the Microsoft launcher, select the **NVIDIA
-   RTX Remix for Minecraft** profile and press Play.
+   instance and press Launch. In the Microsoft launcher, select **NVIDIA RTX
+   Remix for Minecraft** for Fabric, **NVIDIA RTX Remix for Minecraft
+   (Forge)** for Forge, or **NVIDIA RTX Remix for Minecraft (NeoForge)** for
+   NeoForge, then press Play.
 7. Open Singleplayer and choose **NVIDIA RTX Demo**, the showcase world.
 
 ### Installing Without The Installer
 
-If you already run a Fabric instance for Minecraft 1.21.1 in a launcher of
-your choice, you can install by hand from the separate files on the
-[Releases page](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest).
-The instance needs Java 21, Fabric Loader 0.16.5 or newer, and Fabric API
-0.116.10+1.21.1 or newer. The installer bundle holds the same three files,
-under `mods\`, `resourcepacks\`, and `saves\`.
+If you already run a Fabric, Forge, or NeoForge instance for Minecraft 1.21.1 in a
+launcher of your choice, you can install by hand from the release's standalone
+files on the
+[Releases page](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest)
+or from the corresponding JAR, Materials zip, and Showcase World zip inside
+the installer bundle. The instance needs Java 21 and the loader matching the
+JAR. Fabric needs Fabric Loader 0.16.5 or newer and Fabric API
+0.116.10+1.21.1 or newer; Forge uses Forge 52.1.20 and NeoForge uses NeoForge
+21.1.265. Neither uses Fabric API.
 
-1. Copy the mod, `rtx-remix-renderer-<version>.jar`, into the instance's
-   `mods\` folder. It carries the runtime and its textures and unpacks them
-   into the game folder on first launch.
+1. Copy the selected loader JAR from the release, or from the bundle's
+   `mods\<loader-id>\` folder, into the instance's `mods\` folder.
+   It carries the runtime and its textures and unpacks them into the game
+   folder on first launch.
 2. Copy RTX Remix Materials, `RTX-Remix-Materials-<version>.zip`, into the
    instance's `resourcepacks\` folder without extracting it, start the game,
    and turn it on in Options, Resource Packs.
@@ -229,7 +237,7 @@ has the details.
 | Windows SmartScreen warns about the Prism Launcher download | Prism Launcher is open-source and is not signed by Microsoft. Choose More info, then Run anyway. You can also install it yourself from <https://prismlauncher.org>, start Prism once, then re-run `install.bat`, which detects it. |
 | The installer does not find your Prism Launcher, such as a portable copy | At the launcher question, choose Use a Prism I already have and enter the folder holding `prismlauncher.exe`. Later runs remember that Prism. |
 | Very choppy at a high render distance | Lower Minecraft's render distance, or pick a lower tier in Options, RTX Remix Settings, RTX Remix Graphics Settings. |
-| The game will not start at all | Launch the **NVIDIA RTX Remix for Minecraft** profile rather than a plain Minecraft one, and confirm the launcher is set to Java 21. |
+| The game will not start at all | Launch the NVIDIA RTX Remix profile matching Fabric, Forge, or NeoForge rather than a plain Minecraft profile, and confirm the launcher is set to Java 21. |
 | A crash, a black screen, or wrong rendering with other mods installed | Remove the other mods and try again. Mods that change rendering or chunk loading are the likely conflict. If one mod turns out to be the cause, say which in your report. |
 
 If none of that helps, the log is the next thing to look at. It is at
@@ -265,6 +273,7 @@ following:
 | What to include | Where to find it |
 |---|---|
 | The mod file name | The `mods\` folder in the game directory. The name ends in a build stamp, which identifies the exact build. |
+| The selected loader | Fabric, Forge, or NeoForge. |
 | Which launcher you used | Prism or Microsoft. |
 | Your GPU and driver version | The NVIDIA app, or `nvidia-smi` in a Command Prompt. |
 | Whether a laptop display is driven by the built-in graphics chip | Windows Settings, Display, Graphics. |
@@ -298,13 +307,15 @@ but still preserves existing profiles.
 ## Uninstalling
 
 Run `install.bat` and choose Uninstall. It removes the mod files, such as the
-mod, Fabric API, the runtime, RTX Remix Materials, and `rtx.conf`, and then
+selected loader's mod, the runtime, RTX Remix Materials, and `rtx.conf`; for a
+Fabric installation it also removes the installer-managed Fabric API. It then
 offers to remove the Java, the Prism portable, and the Prism instance it
-installed for you. Basic uninstall leaves your worlds alone, the showcase world
-included, along with any lighting profiles you authored under `rtx-remix\`.
-The optional Prism instance or portable cleanup deletes everything inside
-those directories, including worlds and authored profiles. The full manual
-file list is in [packaging/INSTALL.md](../packaging/INSTALL.md).
+installed for you. Basic uninstall leaves your worlds alone, the showcase
+world included, along with any lighting profiles you authored under
+`rtx-remix\`. The optional Prism instance or portable cleanup deletes
+everything inside those directories, including worlds and authored profiles.
+The full manual file list is in
+[packaging/INSTALL.md](../packaging/INSTALL.md).
 
 ## Going Further
 
