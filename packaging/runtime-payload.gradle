@@ -7,8 +7,7 @@
 
 ext.supportedRuntimeArches = ['win64', 'arm64'].asImmutable()
 ext.runtimeTextureFiles = [
-        'overcast_thunderstorm_bc6u.dds',
-        'water_normals_flipbook.dds'
+        'overcast_thunderstorm_bc6u.dds'
 ].asImmutable()
 
 ext.resolveRuntimeArches = { Object archValue ->

@@ -331,6 +331,46 @@ public class RemixAPI {
 
     // ─── textures ────────────────────────────────────────────────────────
 
+    public int waterNormalsTextureSize() {
+        long size = RemixBridge.waterNormalsTextureSize();
+        if (size <= 0 || size > Integer.MAX_VALUE) {
+            throw new IllegalStateException("Invalid water-normal texture size: " + size);
+        }
+        return (int) size;
+    }
+
+    /**
+     * Fills a direct buffer with the canonical RG8 octahedral water-normal flipbook.
+     *
+     * @return native generation time in seconds
+     */
+    public double generateWaterNormals(ByteBuffer output, long seed) {
+        if (output == null || !output.isDirect()) {
+            throw new IllegalArgumentException("Water-normal output must be a direct ByteBuffer");
+        }
+        int size = waterNormalsTextureSize();
+        if (output.capacity() < size) {
+            throw new IllegalArgumentException(
+                    "Water-normal output capacity " + output.capacity() + " is less than " + size);
+        }
+        double[] timings = new double[2];
+        byte[] error = new byte[512];
+        int result = RemixBridge.generateWaterNormals(output, seed, timings, error);
+        if (result != 0) {
+            int length = 0;
+            while (length < error.length && error[length] != 0) {
+                length++;
+            }
+            String detail = new String(error, 0, length, StandardCharsets.UTF_8);
+            throw new RemixException(
+                    detail.isEmpty() ? "Water-normal generation failed" : detail,
+                    ErrorCode.GENERAL_FAILURE);
+        }
+        output.position(0);
+        output.limit(size);
+        return timings[0];
+    }
+
     public long createTextureFromMemory(TextureFromMemoryInfo info) {
         checkInitialized();
         long handle = RemixBridge.createTextureFromMemory(

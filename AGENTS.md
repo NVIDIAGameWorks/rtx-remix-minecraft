@@ -136,6 +136,9 @@ every shipped version; a payload change appends its line and never removes
 one, and `ShippedPayloadHistoryTest` fails with the missing line. Deleting a
 shipped conf restores its default on the next launch. A present conf that fails to acquire still prevents renderer
 initialization; the error identifies the file.
+The former mod-owned `textures/water_normals_flipbook.dds` is an obsolete
+runtime payload: startup and development installation remove that exact path,
+while leaving every unrelated texture alone.
 
 Baseline LabPBR textures live in
 `versions/1.21.1/minecraft/main/resources/assets/` and load

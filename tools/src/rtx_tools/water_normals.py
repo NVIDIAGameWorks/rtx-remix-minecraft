@@ -1,15 +1,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Generates the animated water normal flipbook the mod loads from <gameDir>/textures/water_normals_flipbook.dds.
+"""Generates a BC5 DDS reference for the animated water normal flipbook.
 
 The surface is a linear deep-water ocean in the manner of Tessendorf's "Simulating Ocean Water": Gaussian random
 amplitudes under an isotropic Phillips spectrum on a periodic grid, so every frame tiles, with each wave's angular
 frequency snapped to a whole number of cycles per loop, so the frame after the last is exactly the first. Normals come
 from the spectrum's analytic slope. The frames fill a sheet row by row, which is the sprite-sheet order
-BlockTextureManager plays, and the sheet is stored as BC5 with a full mip chain.
+BlockTextureManager plays, and the reference sheet is stored as BC5 with a full mip chain. The game instead generates
+raw RG8 pixels through the native bridge and uploads them directly to Remix; this implementation remains as an
+independent visual-regression oracle.
 
-Remix takes a normal texture loaded from a file as it is, so the normals are written in its internal encoding:
+The normals are written in Remix's internal encoding:
 octahedral, in a tangent space whose +Y points down the image, the direction of increasing v along which Remix builds a
 surface's bitangent.
 

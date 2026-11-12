@@ -84,6 +84,8 @@ def compileNativeTasks = [
                 file('rtxremix-java/native/build_native.bat').absolutePath, 'x64'
         inputs.files file('rtxremix-java/native/build_native.bat'),
                 file('rtxremix-java/native/remixbridge.cpp'),
+                file('rtxremix-java/native/water_normals.cpp'),
+                file('rtxremix-java/native/water_normals.h'),
                 file('rtxremix-java/native/include/remix_c.h')
         outputs.files file('build/native/win64/remixbridge.dll'),
                 file('build/native/win64/remixbridge.pdb')
@@ -96,6 +98,8 @@ def compileNativeTasks = [
                 file('rtxremix-java/native/build_native.bat').absolutePath, 'arm64'
         inputs.files file('rtxremix-java/native/build_native.bat'),
                 file('rtxremix-java/native/remixbridge.cpp'),
+                file('rtxremix-java/native/water_normals.cpp'),
+                file('rtxremix-java/native/water_normals.h'),
                 file('rtxremix-java/native/include/remix_c.h')
         outputs.files file('build/native/arm64/remixbridge.dll'),
                 file('build/native/arm64/remixbridge.pdb')
