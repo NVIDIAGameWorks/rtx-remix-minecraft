@@ -442,6 +442,9 @@ class BuildConfigurationTests(unittest.TestCase):
             loaded.update(re.findall(r'"textures/([^"/]+\.dds)"', source.read_text(encoding="utf-8")))
         installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
         installed = set(re.findall(r"'textures\\([^'\\]+\.dds)'", installer))
+        # Uninstall also retires this asset from releases that predate
+        # in-memory water-normal generation; it is no longer installed.
+        installed.discard("water_normals_flipbook.dds")
         self.assertTrue(checked)
         self.assertEqual(checked, loaded)
         self.assertEqual(checked, installed)

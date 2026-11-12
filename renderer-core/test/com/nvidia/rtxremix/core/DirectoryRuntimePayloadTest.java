@@ -287,7 +287,7 @@ class DirectoryRuntimePayloadTest {
 
         DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
 
-        assertEquals("shipped water normals", Files.readString(textures.resolve("water_normals_flipbook.dds")));
+        assertEquals("shipped overcast", Files.readString(textures.resolve("overcast_thunderstorm_bc6u.dds")));
         assertEquals("someone else's file", Files.readString(textures.resolve("unrelated.png")));
         try (var listing = Files.list(textures)) {
             assertEquals(2, listing.count(), "no staging copies may be left behind");
@@ -300,14 +300,14 @@ class DirectoryRuntimePayloadTest {
         // release that replaces a texture must reach installs that have the old one.
         Path nativeRoot = createNativePayload(tmp);
         Path gameDir = Files.createDirectories(tmp.resolve("game"));
-        Path waterNormals = Files.createDirectories(gameDir.resolve("textures"))
-                .resolve("water_normals_flipbook.dds");
-        Files.writeString(waterNormals, "previous release's water normals");
+        Path overcast = Files.createDirectories(gameDir.resolve("textures"))
+                .resolve("overcast_thunderstorm_bc6u.dds");
+        Files.writeString(overcast, "previous release's overcast");
         Files.writeString(gameDir.resolve(".rtx-remix-version"), "0.9|remix-sdk-win64");
 
         DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
 
-        assertEquals("shipped water normals", Files.readString(waterNormals));
+        assertEquals("shipped overcast", Files.readString(overcast));
     }
 
     @Test
@@ -315,14 +315,47 @@ class DirectoryRuntimePayloadTest {
         Path nativeRoot = createNativePayload(tmp);
         Path gameDir = Files.createDirectories(tmp.resolve("game"));
         DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
-        Path waterNormals = gameDir.resolve("textures/water_normals_flipbook.dds");
-        Files.delete(waterNormals);
+        Path overcast = gameDir.resolve("textures/overcast_thunderstorm_bc6u.dds");
+        Files.delete(overcast);
         Files.writeString(gameDir.resolve("remix-sdk/d3d9.dll"), "existing runtime");
 
         DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64", NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
 
-        assertEquals("shipped water normals", Files.readString(waterNormals));
+        assertEquals("shipped overcast", Files.readString(overcast));
         assertEquals("existing runtime", Files.readString(gameDir.resolve("remix-sdk/d3d9.dll")));
+    }
+
+    @Test
+    void aVersionChangeRemovesAnObsoleteRuntimeTextureOnly(@TempDir Path tmp) throws IOException {
+        Path nativeRoot = createNativePayload(tmp);
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        Path textures = Files.createDirectories(gameDir.resolve("textures"));
+        Path obsolete = textures.resolve("water_normals_flipbook.dds");
+        Path unrelated = textures.resolve("custom.dds");
+        Files.writeString(obsolete, "previously shipped water normals");
+        Files.writeString(unrelated, "author texture");
+        Files.writeString(gameDir.resolve(".rtx-remix-version"), "0.9|remix-sdk-win64");
+
+        DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64",
+                NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
+
+        assertFalse(Files.exists(obsolete));
+        assertEquals("author texture", Files.readString(unrelated));
+    }
+
+    @Test
+    void matchingMarkerStillRemovesAnObsoleteRuntimeTexture(@TempDir Path tmp) throws IOException {
+        Path nativeRoot = createNativePayload(tmp);
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64",
+                NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
+        Path obsolete = gameDir.resolve("textures/water_normals_flipbook.dds");
+        Files.writeString(obsolete, "previously shipped water normals");
+
+        DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64",
+                NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
+
+        assertFalse(Files.exists(obsolete));
     }
 
     @Test
@@ -412,7 +445,7 @@ class DirectoryRuntimePayloadTest {
         Path confs = Files.createDirectories(nativeRoot.resolve("rtx-remix/mods/minecraft-logic/confs"));
         Files.writeString(confs.resolve("water.conf"), "shipped water");
         Path textures = Files.createDirectories(nativeRoot.resolve("textures"));
-        Files.writeString(textures.resolve("water_normals_flipbook.dds"), "shipped water normals");
+        Files.writeString(textures.resolve("overcast_thunderstorm_bc6u.dds"), "shipped overcast");
         return nativeRoot;
     }
 

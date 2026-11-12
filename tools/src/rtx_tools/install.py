@@ -13,7 +13,8 @@ from . import loader_registry
 from .benchmark import util
 
 # The runtime textures the mod loads from <gameDir>/textures/. build.gradle checks the same files after every pull.
-RUNTIME_TEXTURE_FILES = ("overcast_thunderstorm_bc6u.dds", "water_normals_flipbook.dds")
+RUNTIME_TEXTURE_FILES = ("overcast_thunderstorm_bc6u.dds",)
+OBSOLETE_RUNTIME_TEXTURE_FILES = ("water_normals_flipbook.dds",)
 
 
 def development_mod_jar(project_dir: Path, mod_loader: str) -> Path | None:
@@ -162,6 +163,11 @@ def install_development_build(
     shutil.copy2(packaging / "rtx.conf", game_dir / "rtx.conf")
     # Shipped profiles are refreshed; extra author-created files stay intact.
     shutil.copytree(packaging / "rtx-remix", game_dir / "rtx-remix", dirs_exist_ok=True)
+    for name in OBSOLETE_RUNTIME_TEXTURE_FILES:
+        obsolete = game_dir / "textures" / name
+        if obsolete.is_file():
+            obsolete.unlink()
+            print(f"Removed obsolete runtime texture {obsolete}")
     shutil.copytree(textures, game_dir / "textures", dirs_exist_ok=True)
     migration = util.run(
         [

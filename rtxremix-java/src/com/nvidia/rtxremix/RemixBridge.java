@@ -20,6 +20,24 @@ public final class RemixBridge {
     private RemixBridge() {}
 
     /**
+     * @return bytes required by {@link #generateWaterNormals}
+     */
+    public static native long waterNormalsTextureSize();
+
+    /**
+     * Generates the canonical animated water-normal RG8 flipbook directly
+     * into caller-owned memory without loading or initializing the Remix runtime.
+     *
+     * @param output direct ByteBuffer with capacity of at least {@link #waterNormalsTextureSize()} bytes
+     * @param seed deterministic unsigned 64-bit seed (the default surface is 225)
+     * @param timings optional double[2]: generation seconds, total seconds
+     * @param error UTF-8 error text on failure, NUL-terminated when space permits
+     * @return zero on success; nonzero for invalid input, I/O, allocation, or internal failure
+     */
+    public static native int generateWaterNormals(
+            ByteBuffer output, long seed, double[] timings, byte[] error);
+
+    /**
      * Loads d3d9.dll via SetDllDirectory + LoadLibrary, calls
      * remixapi_InitializeLibrary to fill the vtable.
      *

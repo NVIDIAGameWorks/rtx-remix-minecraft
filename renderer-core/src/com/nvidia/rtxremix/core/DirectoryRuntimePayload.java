@@ -30,14 +30,16 @@ import java.util.stream.Stream;
  *
  * <p>Mirrors the runtime layout produced by the installer so existing native
  * path resolution works unchanged. The runtime textures land in
- * {@code textures/}, where {@code SkyRenderer} and {@code BlockTextureManager}
- * load them, so a JAR that a launcher drops into {@code mods/} needs nothing
- * beside it.
+ * {@code textures/}, where the renderer loads them, so a JAR that a launcher
+ * drops into {@code mods/} needs nothing beside it.
  */
 public final class DirectoryRuntimePayload {
     private static final String VERSION_MARKER = ".rtx-remix-version";
     private static final String RTX_CONF = "rtx.conf";
     private static final String TEXTURES_DIR = "textures";
+    private static final String[] OBSOLETE_RUNTIME_TEXTURES = {
+            "water_normals_flipbook.dds"
+    };
     private static final Executor RETIRED_SDK_CLEANUP = new Executor() {
         @Override
         public void execute(Runnable task) {
@@ -115,7 +117,9 @@ public final class DirectoryRuntimePayload {
      *
      * <p>The runtime textures are mod-owned too, but share {@code textures/}
      * with whatever else is there, so each shipped file replaces only its own
-     * live copy, through a staging file beside it.
+     * live copy, through a staging file beside it. Exact paths that an earlier
+     * release owned but the current one has retired are removed on every
+     * launch until cleanup succeeds.
      *
      * <p>A current marker skips the SDK copy only while {@code remix-sdk/d3d9.dll}
      * is present. Missing author-owned files, {@code rtx.conf}, and runtime
@@ -161,6 +165,7 @@ public final class DirectoryRuntimePayload {
             String existing = new String(Files.readAllBytes(versionFile), StandardCharsets.UTF_8).trim();
             if (markerMatches(existing, expectedMarker)) {
                 if (Files.isRegularFile(remixSdkDir.resolve("d3d9.dll"))) {
+                    cleanupObsoleteRuntimeTextures(gameDir, reporter);
                     if (restoreMissingRtxConf(nativeRoot, gameDir)) {
                         reporter.info("Restored mod-owned " + RTX_CONF
                                 + " after it was deleted since the last extraction");
@@ -198,6 +203,8 @@ public final class DirectoryRuntimePayload {
                     + "or matching single-platform archive instead.");
             return;  // No marker written; mod init will fail loudly later.
         }
+
+        cleanupObsoleteRuntimeTextures(gameDir, reporter);
 
         Path sdkStaging = gameDir.resolve("remix-sdk.staging");
         Path rtxConfFile = gameDir.resolve(RTX_CONF);
@@ -300,6 +307,26 @@ public final class DirectoryRuntimePayload {
                 Files.move(staging, live, StandardCopyOption.REPLACE_EXISTING);
                 fileCount.incrementAndGet();
                 totalBytes.addAndGet(Files.size(live));
+            }
+        }
+    }
+
+    /**
+     * Removes files that an earlier release owned but the current runtime no
+     * longer ships. Cleanup runs on every launch until it succeeds, while
+     * unrelated files in the shared textures directory remain untouched.
+     */
+    private static void cleanupObsoleteRuntimeTextures(Path gameDir, Reporter reporter) {
+        Path texturesDir = gameDir.resolve(TEXTURES_DIR);
+        for (String name : OBSOLETE_RUNTIME_TEXTURES) {
+            Path obsolete = texturesDir.resolve(name);
+            try {
+                if (Files.deleteIfExists(obsolete)) {
+                    reporter.info("Removed obsolete mod-owned runtime texture " + obsolete);
+                }
+            } catch (IOException e) {
+                reporter.warn("Could not remove obsolete runtime texture " + obsolete
+                        + " (" + e + "); will retry next launch");
             }
         }
     }
