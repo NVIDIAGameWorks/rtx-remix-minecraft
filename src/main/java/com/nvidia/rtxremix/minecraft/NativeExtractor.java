@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -123,8 +124,9 @@ public final class NativeExtractor {
      * <p>The version marker is written only after the copy and both staged
      * moves succeed. A failure before that point leaves the marker stale so the
      * next launch retries extraction. Auxiliary directories may already be
-     * partially updated, and a failed SDK swap can leave the live SDK path
-     * absent; callers must not rely on rollback to the prior payload.
+     * partially updated, each file in them whole, and a failed SDK swap can
+     * leave the live SDK path absent; callers must not rely on rollback to the
+     * prior payload.
      *
      * @return false when extraction failed with an error this launch, so the
      *         caller can say why the runtime is missing
@@ -224,7 +226,8 @@ public final class NativeExtractor {
         Files.deleteIfExists(rtxConfStaging);
 
         // Mod-owned files stage first and replace their live copies only once
-        // every copy succeeds. Author-owned directories are repaired in place.
+        // every copy succeeds. Author-owned directories are repaired in place,
+        // one whole file at a time.
         try (var topStream = Files.list(nativeRoot)) {
             for (Path entry : (Iterable<Path>) topStream::iterator) {
                 String name = entry.getFileName().toString();
@@ -278,7 +281,8 @@ public final class NativeExtractor {
             for (Path entry : (Iterable<Path>) topStream::iterator) {
                 String name = entry.getFileName().toString();
                 if (Files.isDirectory(entry) && !name.startsWith("remix-sdk-") && !TEXTURES_DIR.equals(name)) {
-                    extractAuthorTree(entry, gameDir.resolve(name), name, history, fileCount, totalBytes, keptCount);
+                    extractAuthorTree(entry, gameDir.resolve(name), name, history, Files::newInputStream,
+                            fileCount, totalBytes, keptCount);
                 }
             }
         }
@@ -376,11 +380,16 @@ public final class NativeExtractor {
      * {@code history} records as shipped, which proves nobody edited it.
      * Anything else is left untouched and counted in {@code keptCount}.
      *
+     * <p>Every write goes through {@link #writeThroughStaging}. A partial file
+     * on a live path matches no shipped version, so each later launch would
+     * keep it as an edit and the update could never finish.
+     *
      * @param historyRoot the name {@code src} has under the JAR's {@code native/}
      *                    root, which prefixes the paths {@code history} records
+     * @param opener      opens each bundled file that is written
      */
     static void extractAuthorTree(Path src, Path dst, String historyRoot, ShippedPayloadHistory history,
-                                  AtomicInteger fileCount, AtomicLong totalBytes,
+                                  FileOpener opener, AtomicInteger fileCount, AtomicLong totalBytes,
                                   AtomicInteger keptCount) throws IOException {
         Files.createDirectories(dst);
         Files.walkFileTree(src, new SimpleFileVisitor<>() {
@@ -405,10 +414,46 @@ public final class NativeExtractor {
                     }
                     LOGGER.info("Updating unedited {} to its current shipped default", target);
                 }
-                copyFile(file, target, attrs, fileCount, totalBytes);
+                writeThroughStaging(file, target, opener);
+                fileCount.incrementAndGet();
+                totalBytes.addAndGet(attrs.size());
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    /** Opens a bundled file for copying; tests substitute one whose stream fails partway. */
+    @FunctionalInterface
+    interface FileOpener {
+        InputStream open(Path file) throws IOException;
+    }
+
+    /**
+     * Writes the bundled {@code file} to {@code target} through a staging file
+     * beside it, so the live path keeps its previous content until the whole
+     * copy exists. A failed write removes the staging file.
+     */
+    private static void writeThroughStaging(Path file, Path target, FileOpener opener) throws IOException {
+        Path staging = target.resolveSibling(target.getFileName() + ".staging");
+        try {
+            try (InputStream in = opener.open(file)) {
+                Files.copy(in, staging, StandardCopyOption.REPLACE_EXISTING);
+            }
+            retrying("Moving " + staging + " to " + target, () -> moveReplacing(staging, target),
+                    Thread::sleep, RENAME_RETRY_DELAYS_MS);
+        } catch (IOException e) {
+            deleteQuietly(staging);
+            throw e;
+        }
+    }
+
+    /** Replaces {@code target} with {@code source}, in one step where the file system can. */
+    private static void moveReplacing(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private static void createTargetDirectory(Path src, Path dst, Path dir) throws IOException {
@@ -418,6 +463,11 @@ public final class NativeExtractor {
         }
     }
 
+    /**
+     * Streams {@code file} straight onto {@code target}, so a failure leaves a
+     * partial file there. Only for a target inside a staging directory that is
+     * discarded unless every copy succeeds.
+     */
     private static void copyFile(Path file, Path target, BasicFileAttributes attrs,
                                  AtomicInteger fileCount, AtomicLong totalBytes) throws IOException {
         Files.createDirectories(target.getParent());
