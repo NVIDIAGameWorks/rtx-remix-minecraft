@@ -303,6 +303,13 @@ public final class GlInterop {
             try {
                 drainStaleGlErrors();
                 memoryObject = glCreateMemoryObjectsEXT();
+                // The runtime's shared images are dedicated allocations, and
+                // EXT_external_objects requires an importer of one to set this
+                // flag. It must precede the import, which fixes the memory
+                // object's parameters.
+                glMemoryObjectParameteriEXT(
+                        memoryObject, GL_DEDICATED_MEMORY_OBJECT_EXT, GL_TRUE);
+                checkGlError("glMemoryObjectParameteriEXT(" + debugName + ")");
                 glImportMemoryWin32HandleEXT(
                         memoryObject,
                         allocationSize,
