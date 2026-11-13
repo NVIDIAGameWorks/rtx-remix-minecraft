@@ -46,6 +46,9 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(RemixFirstPersonPass.class);
     private static final String CAPTURE_TYPE_KEY = "rtx-remix:first_person_model";
     private static final float[] EMPTY_BONES = new float[0];
+    private static final EntityTextureKey BLOCK_ATLAS_TEXTURE = EntityTextureKey.of(
+            MinecraftBlockAtlasSource.BLOCK_ATLAS_ID.getNamespace(),
+            MinecraftBlockAtlasSource.BLOCK_ATLAS_ID.getPath());
 
     /**
      * Camera-relative scale used to pull first-person geometry in front of
@@ -186,7 +189,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         // the most block-atlas vertices for this hand; that is the baked item,
         // while skin/arm cuboids use the player texture instead.
         for (RemixVertexConsumerProvider.CapturedLayer layer : layers) {
-            if (!MinecraftBlockAtlasSource.BLOCK_ATLAS_ID.equals(layer.textureId())) continue;
+            if (!isBlockAtlasTexture(layer.textureId())) continue;
             RemixCapturingConsumer consumer = layer.consumer();
             int[] indices = consumer.getBoneIndices();
             for (int candidate = 0; candidate < transformCount; candidate++) {
@@ -221,6 +224,10 @@ public final class RemixFirstPersonPass implements AutoCloseable {
                 (minX + maxX) * 0.5f,
                 (minY + maxY) * 0.5f,
                 (minZ + maxZ) * 0.5f);
+    }
+
+    static boolean isBlockAtlasTexture(EntityTextureKey textureId) {
+        return BLOCK_ATLAS_TEXTURE.equals(textureId);
     }
 
     static Vec3 transformPoint(Transform transform, float x, float y, float z) {

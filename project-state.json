@@ -89,10 +89,10 @@
           },
           "gradlePlugin": {
             "id": "net.minecraftforge.gradle",
-            "version": "[6.0.24,6.2)",
+            "version": "6.0.54",
             "repository": "https://maven.minecraftforge.net/"
           },
-          "mixinGradleVersion": "0.7-SNAPSHOT",
+          "mixinGradleVersion": "0.7.38",
           "loader": {
             "coordinate": "net.minecraftforge:forge",
             "version": "52.1.20",

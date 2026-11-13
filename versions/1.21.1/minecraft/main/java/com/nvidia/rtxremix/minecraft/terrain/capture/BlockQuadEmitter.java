@@ -546,12 +546,22 @@ public final class BlockQuadEmitter {
     private void stageCustomBakedQuad(BakedQuad quad, String renderLayer) {
         stageBakedQuad(
                 quad,
-                renderLayer != null ? renderLayer : customQuadLayer,
+                resolveCustomLayer(renderLayer, customQuadLayer),
                 customCullState,
                 customCullWorld,
                 customQuadX,
                 customQuadY,
                 customQuadZ);
+    }
+
+    static String resolveCustomLayer(String renderLayer, String blockLayer) {
+        // Clear glass has a Remix-specific material bucket even though loader
+        // extension APIs report vanilla's translucent/cutout render type.
+        // Preserve that state-based classification on custom-model paths.
+        if ("glass".equals(blockLayer)) {
+            return blockLayer;
+        }
+        return renderLayer != null ? renderLayer : blockLayer;
     }
 
     private void emitCustomBlock(

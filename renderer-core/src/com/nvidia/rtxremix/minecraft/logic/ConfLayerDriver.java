@@ -147,6 +147,28 @@ public final class ConfLayerDriver {
         String id() {
             return source == LayerSource.WORLD ? WORLD_ID_PREFIX + name : name;
         }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof LayerSpec)) {
+                return false;
+            }
+            LayerSpec spec = (LayerSpec) other;
+            return Float.compare(priority, spec.priority) == 0
+                    && Float.compare(blendThreshold, spec.blendThreshold) == 0
+                    && smoothed == spec.smoothed
+                    && name.equals(spec.name)
+                    && confPath.equals(spec.confPath)
+                    && source == spec.source;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, confPath, priority, blendThreshold, smoothed, source);
+        }
     }
 
     /** Marks a world-sourced layer in {@code layersById} and in status output. */
@@ -724,8 +746,14 @@ public final class ConfLayerDriver {
         Map<String, LayerState> rebuilt = new LinkedHashMap<>();
         for (LayerSpec spec : specs) {
             LayerState existing = layersById.get(spec.id());
-            rebuilt.put(spec.id(),
-                    existing != null && existing.spec.equals(spec) ? existing : new LayerState(spec));
+            if (existing != null && existing.spec.equals(spec)) {
+                rebuilt.put(spec.id(), existing);
+            } else {
+                if (existing != null) {
+                    releaseLayer(existing);
+                }
+                rebuilt.put(spec.id(), new LayerState(spec));
+            }
         }
         // Anything dropped from the catalog must give its handle back first.
         for (Map.Entry<String, LayerState> entry : layersById.entrySet()) {

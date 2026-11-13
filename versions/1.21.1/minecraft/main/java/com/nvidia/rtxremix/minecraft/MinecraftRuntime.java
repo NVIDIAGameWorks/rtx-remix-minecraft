@@ -21,6 +21,7 @@ public final class MinecraftRuntime {
     public static final Logger LOGGER = LoggerFactory.getLogger("RTX Remix");
 
     public interface Host {
+        void onClientStarted(Minecraft client);
         void setRtxEnabled(boolean enabled);
         void setSkyEnabled(boolean enabled);
         void openRemixMenu(RemixInputGate.Menu menu);
@@ -72,6 +73,7 @@ public final class MinecraftRuntime {
 
     public static RemixRenderer renderer() { return renderer; }
     public static void publishRenderer(RemixRenderer value) { renderer = value; }
+    public static void onClientStarted(Minecraft client) { host().onClientStarted(client); }
     public static RemixInputGate inputGate() { return INPUT_GATE; }
     public static String modVersion() { return MinecraftPlatform.services().modVersion(); }
     public static boolean isRtxEnabled() { return rtxEnabled; }

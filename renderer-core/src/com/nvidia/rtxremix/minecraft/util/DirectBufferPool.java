@@ -126,6 +126,8 @@ public final class DirectBufferPool {
                 }
             };
         } catch (ReflectiveOperationException unavailable) {
+            LOGGER.warn("LWJGL native allocator unavailable; direct buffers will use JVM-managed cleanup: {}",
+                    unavailable.toString());
             return JVM_ALLOCATOR;
         }
     }

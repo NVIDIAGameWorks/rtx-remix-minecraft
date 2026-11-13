@@ -109,18 +109,16 @@ processResources {
     }
 }
 
-def migrateDevelopmentResourcePacksTask =
-        tasks.register('migrateDevelopmentResourcePacks', Exec) {
-    commandLine 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-            '-File', new File(repoRoot, 'packaging/migrate_resource_packs.ps1').absolutePath,
-            '-McDir', new File(repoRoot, 'run').absolutePath,
-            '-LegacyPackName', 'rtx-remix',
-            '-MinecraftVersion', minecraftVersion,
-            '-ModLoader', 'Forge'
-}
-
-tasks.matching { it.name == 'runClient' }.configureEach {
-    dependsOn ':setupRuntime', migrateDevelopmentResourcePacksTask
+tasks.named('jarJar') {
+    from(rootProject.file('LICENSE')) {
+        into 'META-INF'
+    }
+    from(rootProject.file('NOTICE')) {
+        into 'META-INF'
+    }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md')) {
+        into 'META-INF'
+    }
 }
 
 verifyPackageJarTask.configure {
@@ -140,6 +138,15 @@ verifyPackageJarTask.configure {
                 it.startsWith('META-INF/jarjar/mixinextras-forge-') && it.endsWith('.jar')
             }) {
                 throw new GradleException('Forge package is missing the nested MixinExtras runtime')
+            }
+            [
+                'META-INF/LICENSE',
+                'META-INF/NOTICE',
+                'META-INF/THIRD_PARTY_NOTICES.md'
+            ].each { name ->
+                if (!entries.contains(name)) {
+                    throw new GradleException("Forge package is missing ${name}")
+                }
             }
 
             [

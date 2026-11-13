@@ -67,3 +67,22 @@ jobs:
         env:
           PUBLIC_COMMIT_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '' }}
         run: '& "$env:GITHUB_WORKSPACE\tools\rtx.bat" check --tests'
+
+  check:
+    name: check
+    if: always()
+    needs: [catalog, targets, tooling]
+    runs-on: windows-latest
+    steps:
+      - name: Require every check
+        env:
+          CATALOG_RESULT: ${{ needs.catalog.result }}
+          TARGETS_RESULT: ${{ needs.targets.result }}
+          TOOLING_RESULT: ${{ needs.tooling.result }}
+        run: |
+          if ($env:CATALOG_RESULT -ne 'success' -or
+              $env:TARGETS_RESULT -ne 'success' -or
+              $env:TOOLING_RESULT -ne 'success') {
+            Write-Error "Check prerequisites failed: catalog=$env:CATALOG_RESULT targets=$env:TARGETS_RESULT tooling=$env:TOOLING_RESULT"
+            exit 1
+          }

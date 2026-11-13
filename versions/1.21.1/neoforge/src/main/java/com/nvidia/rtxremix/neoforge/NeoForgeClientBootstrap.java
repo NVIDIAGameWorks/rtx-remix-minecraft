@@ -48,7 +48,6 @@ final class NeoForgeClientBootstrap {
     private NeoForgeClientBootstrap() {
     }
 
-    private static boolean clientStarted;
     private static KeyMapping toggleHeldLights;
     private static KeyMapping toggleRtx;
 
@@ -139,17 +138,8 @@ final class NeoForgeClientBootstrap {
 
     private static void onClientTick(ClientTickEvent.Post event) {
         Minecraft client = Minecraft.getInstance();
-        startClient(client);
         RUNTIME.handleKeyMappings(client, toggleHeldLights, toggleRtx);
         RUNTIME.onClientTick(client);
-    }
-
-    private static void startClient(Minecraft client) {
-        if (clientStarted) {
-            return;
-        }
-        clientStarted = true;
-        RUNTIME.onClientStarted(client);
     }
 
     private static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
@@ -158,7 +148,6 @@ final class NeoForgeClientBootstrap {
 
     private static void onLogin(ClientPlayerNetworkEvent.LoggingIn event) {
         Minecraft client = Minecraft.getInstance();
-        startClient(client);
         RUNTIME.onJoin(client);
     }
 

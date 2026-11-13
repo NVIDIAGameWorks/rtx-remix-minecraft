@@ -49,7 +49,6 @@ final class ForgeClientBootstrap {
     private ForgeClientBootstrap() {
     }
 
-    private static boolean clientStarted;
     private static KeyMapping toggleHeldLights;
     private static KeyMapping toggleRtx;
 
@@ -143,17 +142,8 @@ final class ForgeClientBootstrap {
 
     private static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         Minecraft client = Minecraft.getInstance();
-        startClient(client);
         RUNTIME.handleKeyMappings(client, toggleHeldLights, toggleRtx);
         RUNTIME.onClientTick(client);
-    }
-
-    private static void startClient(Minecraft client) {
-        if (clientStarted) {
-            return;
-        }
-        clientStarted = true;
-        RUNTIME.onClientStarted(client);
     }
 
     private static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
@@ -162,7 +152,6 @@ final class ForgeClientBootstrap {
 
     private static void onLogin(ClientPlayerNetworkEvent.LoggingIn event) {
         Minecraft client = Minecraft.getInstance();
-        startClient(client);
         RUNTIME.onJoin(client);
     }
 

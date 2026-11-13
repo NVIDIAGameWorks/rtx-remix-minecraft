@@ -267,8 +267,8 @@ $script:PRISM_KNOWN_HASHES = @{
 # and paste below. Update when bumping the VER constants above.
 $script:FABRIC_INSTALLER_SHA256 = ''
 $script:FABRIC_API_SHA256       = ''
-$script:FORGE_INSTALLER_SHA256  = ''
-$script:NEOFORGE_INSTALLER_SHA256 = ''
+$script:FORGE_INSTALLER_SHA256  = '6b83521a70aaf5371af8c4c9f97d930d51ec4266ac6ec3bc975182fba2ef9f62'
+$script:NEOFORGE_INSTALLER_SHA256 = 'a547ccc30a80a675d1c61d04b55d10c45c39a86971e09731482c50a24399d1a2'
 
 # Minimum Prism Launcher version we'll install as a fresh portable. Prism
 # 9.0's official release notes tagged the Windows MSVC portable asset as

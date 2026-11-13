@@ -121,6 +121,13 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("branches: [main]", check)
         self.assertIn("fromJSON(needs.catalog.outputs.matrix)", check)
         self.assertNotIn('"mc/**"', build + check)
+        self.assertRegex(build, r"(?m)^  build:\n    name: build$")
+        self.assertIn("needs: [catalog, targets]", build)
+        self.assertRegex(check, r"(?m)^  check:\n    name: check$")
+        self.assertIn("needs: [catalog, targets, tooling]", check)
+        for workflow in (build, check):
+            self.assertIn("if: always()", workflow)
+            self.assertIn("-ne 'success'", workflow)
         for workflow in (build, check):
             run_bodies = _run_bodies(workflow.splitlines())
             self.assertEqual([], [body for body in run_bodies if "${{" in body])

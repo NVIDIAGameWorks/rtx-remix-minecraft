@@ -144,10 +144,6 @@ public final class RtxRemixMod implements ClientModInitializer {
     }
 
     private void registerLifecycleHooks() {
-        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            MinecraftRuntime.LOGGER.info("Minecraft client started");
-            CLIENT_RUNTIME.onClientStarted(client);
-        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             CLIENT_RUNTIME.onClientStopping();
         });

@@ -34,6 +34,23 @@ import static org.junit.jupiter.api.Assertions.fail;
 class ConfLayerDriverTest {
 
     @Test
+    void layerSpecsRetainRecordValueSemantics() {
+        ConfLayerDriver.LayerSpec first = new ConfLayerDriver.LayerSpec(
+                "mc.biome.plains", "confs/biomes/plains.conf",
+                6000.0f, 0.01f, true, ConfLayerDriver.LayerSource.MOD);
+        ConfLayerDriver.LayerSpec same = new ConfLayerDriver.LayerSpec(
+                "mc.biome.plains", "confs/biomes/plains.conf",
+                6000.0f, 0.01f, true, ConfLayerDriver.LayerSource.MOD);
+        ConfLayerDriver.LayerSpec changed = new ConfLayerDriver.LayerSpec(
+                "mc.biome.plains", "confs/biomes/plains.conf",
+                6001.0f, 0.01f, true, ConfLayerDriver.LayerSource.MOD);
+
+        assertEquals(first, same);
+        assertEquals(first.hashCode(), same.hashCode());
+        assertNotEquals(first, changed);
+    }
+
+    @Test
     void weatherStrengthsBeginAtZero() {
         ConfLayerDriver.WeatherStrengths weather = new ConfLayerDriver().weatherStrengths();
         assertEquals(0.0f, weather.rain());

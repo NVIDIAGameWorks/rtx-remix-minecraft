@@ -88,6 +88,24 @@ tasks.withType(Test).configureEach {
     systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
 }
 
+// Compiling a runnable target must also leave the native bridge and pinned
+// runtime ready for the authenticated launcher workflow.
+tasks.named('classes') {
+    dependsOn ':setupRuntime'
+}
+
+// The public repository launches through Prism so Minecraft ownership is
+// authenticated by Microsoft's normal launcher flow. Gradle's development
+// client bypasses that flow and is reserved for NVIDIA's private CI checkout.
+tasks.matching { it.name == 'runClient' }.configureEach {
+    setDependsOn([])
+    doFirst {
+        throw new GradleException(
+                'runClient is intentionally unavailable in the public repository. ' +
+                'Use tools\\rtx.bat launch with an authenticated Prism profile.')
+    }
+}
+
 def gitShortHash = providers.exec {
     commandLine 'git', 'rev-parse', '--short=7', 'HEAD'
 }.standardOutput.asText.map { it.trim() }

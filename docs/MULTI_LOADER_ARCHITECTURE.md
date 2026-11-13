@@ -57,6 +57,18 @@ module keeps its plugin and remapping verification local. Gradle selects one
 Minecraft target with `-PmcVersion` and can narrow configuration to one loader
 with `-Ploader`. The resulting JAR contains only that target's sources.
 
+`renderer-core` deliberately remains within the Java 8 source-language subset
+even though the current Minecraft target requires Java 21. This keeps stable
+renderer policy reusable by an older Minecraft target without creating a
+second core; version and loader integrations may use their target's Java level.
+
+The root Gradle wrapper and loader plugins are one compatibility set. Gradle
+8.11.1 is the newest shared baseline supported by the pinned ForgeGradle 6
+toolchain, while Fabric Loom 1.9 remains on that Gradle generation. The public
+branch therefore does not inherit main's Gradle 9/Loom 1.15 pair. Upgrade these
+pins together only after every declared loader configures, builds, tests, and
+packages on the proposed set.
+
 ```powershell
 .\gradlew.bat build "-PmcVersion=1.21.1" "-Ploader=fabric"
 .\gradlew.bat package "-PmcVersion=1.21.1" "-Ploader=forge"

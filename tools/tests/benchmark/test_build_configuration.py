@@ -28,6 +28,15 @@ class BuildConfigurationTests(unittest.TestCase):
         checksum = re.search(r"(?m)^distributionSha256Sum=([0-9a-f]{64})$", wrapper)
         self.assertIsNotNone(checksum)
 
+    def test_loader_installer_hashes_are_pinned(self):
+        installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
+        for name in ("FORGE_INSTALLER_SHA256", "NEOFORGE_INSTALLER_SHA256"):
+            with self.subTest(name=name):
+                self.assertRegex(
+                    installer,
+                    rf"(?m)^\$script:{name}\s*=\s*'[0-9a-f]{{64}}'$",
+                )
+
     def test_packaging_uses_an_explicit_distributable_archive_task(self):
         build = LOADER_BUILD.read_text(encoding="utf-8")
 
@@ -262,22 +271,31 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(lifecycle)
         assert lifecycle is not None
         self.assertIn("dependsOn 'jarJar'", lifecycle.group(1))
+        jarjar = re.search(r"(?ms)^tasks\.named\('jarJar'\) \{(.+?)^\}", build)
+        self.assertIsNotNone(jarjar)
+        assert jarjar is not None
+        for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"):
+            self.assertIn(f"rootProject.file('{name}')", jarjar.group(1))
+            self.assertIn(f"'META-INF/{name}'", build)
 
-    def test_loader_run_tasks_share_runtime_setup_but_select_their_own_resource_pack(self):
-        root_build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
-        self.assertNotIn("tasks.register('migrateDevelopmentResourcePacks'", root_build)
+    def test_public_build_refuses_gradle_run_client(self):
+        convention = LOADER_BUILD.read_text(encoding="utf-8")
+        self.assertIn("tasks.matching { it.name == 'runClient' }.configureEach", convention)
+        self.assertIn("setDependsOn([])", convention)
+        self.assertIn("runClient is intentionally unavailable in the public repository", convention)
+        self.assertIn("tools\\\\rtx.bat launch", convention)
         for loader in PROJECT_STATE.loaders:
             with self.subTest(loader=loader.id):
                 build = (REPO_ROOT / loader.module / "build.gradle").read_text(encoding="utf-8")
-                self.assertIn("tasks.register('migrateDevelopmentResourcePacks', Exec)", build)
-                self.assertIn(f"'-ModLoader', '{loader.display_name}'", build)
-                run_client = re.search(
-                    r"(?ms)^tasks\.matching \{ it\.name == 'runClient' \}\.configureEach \{(.+?)^\}",
-                    build,
-                )
-                self.assertIsNotNone(run_client)
-                assert run_client is not None
-                self.assertIn("dependsOn ':setupRuntime', migrateDevelopmentResourcePacksTask", run_client.group(1))
+                self.assertNotIn("migrateDevelopmentResourcePacks", build)
+                self.assertNotIn("dependsOn ':setupRuntime'", build)
+
+    def test_compilation_prepares_the_runtime_for_authenticated_launches(self):
+        convention = LOADER_BUILD.read_text(encoding="utf-8")
+        classes = re.search(r"(?ms)^tasks\.named\('classes'\) \{(.+?)^\}", convention)
+        self.assertIsNotNone(classes)
+        assert classes is not None
+        self.assertIn("dependsOn ':setupRuntime'", classes.group(1))
 
     def test_distributable_jar_carries_the_runtime_textures(self):
         # A launcher such as CurseForge installs the JAR alone, with no installer to copy textures beside it, so the
@@ -331,6 +349,7 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(assets, "release assets must be staged through Sync so a stale file cannot be uploaded")
         assert assets is not None
         body = assets.group(1)
+        self.assertIn("dependsOn declaredLoaders.collect { it.gradle['package'] }", body)
         self.assertIn("into layout.buildDirectory.dir('release-assets')", body)
         self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
         # Every declared loader JAR, both content zips, and the bundle, and nothing else.

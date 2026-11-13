@@ -11,6 +11,7 @@ import com.nvidia.rtxremix.minecraft.LoaderArchitectureContract;
 import com.nvidia.rtxremix.minecraft.MinecraftPlatform;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -113,6 +114,22 @@ class FabricLoaderResourcesTest {
         assertEquals(
                 Set.of("CopperBeaconBlockEntityFabricMixin"),
                 strings(config.getAsJsonArray("mixins")));
+    }
+
+    @Test
+    void copperBeaconMixinCarriesTheErasedFabricPayloadEntryPoint() throws Exception {
+        Class<?> mixin = Class.forName(
+                "com.nvidia.rtxremix.fabric.mixin.CopperBeaconBlockEntityFabricMixin");
+        boolean found = false;
+        for (Method method : mixin.getDeclaredMethods()) {
+            if (method.getName().equals("getScreenOpeningData")
+                    && method.getReturnType() == Object.class) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found,
+                "Fabric calls the erased Object-returning interface descriptor");
     }
 
     private static Set<String> strings(JsonArray values) {

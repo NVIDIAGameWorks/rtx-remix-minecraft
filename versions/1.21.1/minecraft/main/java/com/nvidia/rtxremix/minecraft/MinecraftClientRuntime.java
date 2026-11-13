@@ -123,6 +123,7 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
         }
     }
 
+    @Override
     public void onClientStarted(Minecraft client) {
         if (clientStarted) {
             return;

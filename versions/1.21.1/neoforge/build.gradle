@@ -64,20 +64,6 @@ processResources {
     }
 }
 
-def migrateDevelopmentResourcePacksTask =
-        tasks.register('migrateDevelopmentResourcePacks', Exec) {
-    commandLine 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-            '-File', new File(repoRoot, 'packaging/migrate_resource_packs.ps1').absolutePath,
-            '-McDir', new File(repoRoot, 'run').absolutePath,
-            '-LegacyPackName', 'rtx-remix',
-            '-MinecraftVersion', minecraftVersion,
-            '-ModLoader', 'NeoForge'
-}
-
-tasks.matching { it.name == 'runClient' }.configureEach {
-    dependsOn ':setupRuntime', migrateDevelopmentResourcePacksTask
-}
-
 verifyPackageJarTask.configure {
     doLast {
         File archive = packageJarArchive.get().asFile

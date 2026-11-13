@@ -279,24 +279,21 @@ class CanonicalArchitectureTest {
         assertTrue(runtime.contains("retainFailedRenderer(renderer);"));
         assertTrue(runtime.contains("pendingJoin = true;"));
 
-        Set<String> checkedLoaders = new TreeSet<>();
+        String clientMixin = read(MINECRAFT.resolve(
+                "main/java/com/nvidia/rtxremix/minecraft/mixin/"
+                        + "MinecraftClientMixin.java"));
+        assertTrue(clientMixin.contains("@Inject(method = \"run\", at = @At(\"HEAD\"))"));
+        assertTrue(clientMixin.contains("MinecraftRuntime.onClientStarted("),
+                "the shared game-loop boundary must initialize every loader at the same time");
+
         for (LoaderArchitectureContract.Loader loader : MANIFEST.loaders()) {
             Path sourceRoot = loader.modulePath().resolve("src/main/java");
             for (Path relative : relativeJavaSources(sourceRoot)) {
                 String source = read(sourceRoot.resolve(relative));
-                int join = source.indexOf("RUNTIME.onJoin(client);");
-                if (join < 0) {
-                    continue;
-                }
-                int start = source.lastIndexOf("startClient(client);", join);
-                assertTrue(start >= 0 && start < join,
-                        loader.id()
-                                + " must initialize the canonical runtime before world join");
-                checkedLoaders.add(loader.id());
+                assertFalse(source.contains(".onClientStarted("),
+                        loader.id() + " must not own renderer startup timing");
             }
         }
-        assertFalse(checkedLoaders.isEmpty(),
-                "at least one event-driven loader must verify join startup ordering");
     }
 
     private static void assertNoMatchingImports(

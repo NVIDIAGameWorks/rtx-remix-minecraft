@@ -394,7 +394,9 @@ def releaseArchiveTask = tasks.register('releaseArchive', Zip) {
 tasks.register('stageReleaseAssets', Sync) {
     description = 'Stages the files published by a GitHub release'
     group = 'build'
-    dependsOn declaredLoaders.collect { "${it.projectPath}:verifyPackageJar" }
+    // Release publication is gated by each loader's conventional package
+    // lifecycle, which runs compilation, tests, and payload verification.
+    dependsOn declaredLoaders.collect { it.gradle['package'] }
     into layout.buildDirectory.dir('release-assets')
     duplicatesStrategy = DuplicatesStrategy.FAIL
     declaredLoaders.each { loader ->
