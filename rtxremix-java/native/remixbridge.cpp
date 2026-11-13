@@ -19,6 +19,7 @@
 #include <tlhelp32.h>
 #include <malloc.h>
 #include <jni.h>
+#include <algorithm>
 #include <cstring>
 #include <cstdint>
 #include <cstdio>
@@ -34,6 +35,7 @@
 #pragma comment(lib, "opengl32.lib")
 
 #include "remix_c.h"
+#include "water_normals.h"
 
 // ════════════════════════════════════════════════════════════════════════════
 // Crash dump: VEH that writes a minidump and a human-readable crash report.
@@ -704,6 +706,59 @@ static jint initializeRuntime(const wchar_t* dllPath)
 // ════════════════════════════════════════════════════════════════════════════
 
 extern "C" {
+
+// ─── standalone texture generation ─────────────────────────────────────
+
+JNIEXPORT jlong JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_waterNormalsTextureSize(
+    JNIEnv*, jclass)
+{
+    return static_cast<jlong>(water_normals::textureSize());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_generateWaterNormals(
+    JNIEnv* env, jclass, jobject jOutput, jlong seed, jdoubleArray jTimings, jbyteArray jError)
+{
+    if (!jOutput)
+        return 1;
+
+    void* output = env->GetDirectBufferAddress(jOutput);
+    const jlong outputSize = env->GetDirectBufferCapacity(jOutput);
+    if (!output || outputSize < 0)
+        return 1;
+
+    std::string error;
+    water_normals::Stats stats{};
+    const jint status = water_normals::generate(
+        static_cast<std::uint8_t*>(output),
+        static_cast<std::size_t>(outputSize),
+        static_cast<std::uint64_t>(seed),
+        &stats,
+        &error);
+    if (jTimings) {
+        const jsize capacity = env->GetArrayLength(jTimings);
+        const jdouble timings[] = {
+            stats.generationSeconds,
+            stats.elapsedSeconds,
+        };
+        env->SetDoubleArrayRegion(
+            jTimings, 0, std::min<jsize>(capacity, 2), timings);
+    }
+    if (jError && !error.empty()) {
+        const jsize capacity = env->GetArrayLength(jError);
+        const jsize count = std::min<jsize>(
+            capacity > 0 ? capacity - 1 : 0,
+            static_cast<jsize>(error.size()));
+        if (count > 0)
+            env->SetByteArrayRegion(jError, 0, count, reinterpret_cast<const jbyte*>(error.data()));
+        if (capacity > 0) {
+            const jbyte terminator = 0;
+            env->SetByteArrayRegion(jError, count, 1, &terminator);
+        }
+    }
+    return status;
+}
 
 // ─── initialize ──────────────────────────────────────────────────────────
 

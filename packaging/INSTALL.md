@@ -259,8 +259,8 @@ The automated uninstall removes these:
 - `remix-sdk\`
 - `rtx.conf`
 - `.rtx-remix-version`
-- `textures\water_normals_flipbook.dds` and
-  `textures\overcast_thunderstorm_bc6u.dds`
+- the legacy `textures\water_normals_flipbook.dds`, if an earlier release left
+  it behind, and `textures\overcast_thunderstorm_bc6u.dds`
 - `resourcepacks\RTX-Remix-Materials-<version>.zip`, RTX Remix Materials, and
   its entry in the `resourcePacks:` line of `options.txt`
 - `resourcepacks\RtxRemix-LabPBR\`, if left by an earlier version
