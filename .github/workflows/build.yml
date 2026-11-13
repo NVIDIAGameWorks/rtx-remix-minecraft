@@ -12,44 +12,67 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  catalog:
+    runs-on: windows-latest
+    outputs:
+      matrix: ${{ steps.project_state.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the multi-version project state
+        id: project_state
+        run: '& "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1" -GitHubOutput $env:GITHUB_OUTPUT'
+
+  targets:
+    needs: catalog
+    name: target (${{ matrix.minecraftVersion }}, ${{ matrix.loader }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.catalog.outputs.matrix) }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Validate selected target
+        env:
+          TARGET_MINECRAFT_VERSION: ${{ matrix.minecraftVersion }}
+          TARGET_LOADER: ${{ matrix.loader }}
+        run: |
+          & "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1" `
+            -MinecraftVersion $env:TARGET_MINECRAFT_VERSION `
+            -ModLoader $env:TARGET_LOADER
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ matrix.javaTarget }}
       # The pinned runtime comes from public Packman; no credentials are used.
-      - name: Build and test
-        run: '& "$env:GITHUB_WORKSPACE\gradlew.bat" build test'
+      - name: Build, test, and package target
+        env:
+          TARGET_MINECRAFT_VERSION: ${{ matrix.minecraftVersion }}
+          TARGET_LOADER: ${{ matrix.loader }}
+          TARGET_BUILD_TASK: ${{ matrix.buildTask }}
+          TARGET_TEST_TASK: ${{ matrix.testTask }}
+          TARGET_PACKAGE_TASK: ${{ matrix.packageTask }}
+        run: |
+          & "$env:GITHUB_WORKSPACE\gradlew.bat" `
+            $env:TARGET_BUILD_TASK $env:TARGET_TEST_TASK $env:TARGET_PACKAGE_TASK `
+            "-PmcVersion=$env:TARGET_MINECRAFT_VERSION" "-Ploader=$env:TARGET_LOADER" -Parch=win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  legacy-interop:
+  build:
+    name: build
+    if: always()
+    needs: [catalog, targets]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "8"
-      - name: Compile and test legacy OpenGL bridge
-        shell: powershell
-        run: '& "$env:GITHUB_WORKSPACE\forge-1.12.2\scripts\build-bridge.ps1" -JdkPath $env:JAVA_HOME'
-
-  forge:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "8"
-      - name: Build and test Forge 1.12.2
-        working-directory: forge-1.12.2
-        run: '.\gradlew.bat build test diagnosticJar'
+      - name: Require every target build
+        env:
+          CATALOG_RESULT: ${{ needs.catalog.result }}
+          TARGETS_RESULT: ${{ needs.targets.result }}
+        run: |
+          if ($env:CATALOG_RESULT -ne 'success' -or $env:TARGETS_RESULT -ne 'success') {
+            Write-Error "Build prerequisites failed: catalog=$env:CATALOG_RESULT targets=$env:TARGETS_RESULT"
+            exit 1
+          }

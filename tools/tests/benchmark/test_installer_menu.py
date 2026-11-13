@@ -12,16 +12,19 @@ the menu therefore waits for a key first, or its result and any error vanish wit
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from rtx_tools import loader_registry
 from rtx_tools.benchmark import util
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs the installer")
 
 INSTALLER = util.PROJECT_DIR / "packaging" / "installer.ps1"
+PROJECT_STATE = loader_registry.load_registry()
 HELD = "Window held"
 QUEUED = "Queued key read"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -35,9 +38,10 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # mode ends as -Outcome says (ok, fail, or throw), the console holds -Queued keys typed ahead, each read of one prints
 # QUEUED, and a wait for a fresh key prints HELD.
 HARNESS = r"""
-param([string]$Installer, [string]$Loaded, [string]$Action, [string]$Installed, [switch]$NoPrism, [switch]$NoMs,
-      [string]$Mode, [switch]$Unattended, [string]$Choice, [string]$Outcome, [int]$Queued, [switch]$TwoJars,
-      [string]$Dist)
+param([string]$Installer, [string]$Loaded, [string]$Action, [string]$Installed,
+  [switch]$NoPrism, [switch]$NoMs, [string]$Mode, [string]$MinecraftVersion,
+  [string]$ModLoader, [switch]$Unattended, [string]$Choice, [string]$Outcome, [int]$Queued,
+      [switch]$TwoJars, [string]$Dist)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
 $entryPoint = $ast.EndBlock.Statements[-1]
 if ($entryPoint -isnot [System.Management.Automation.Language.TryStatementAst]) {
@@ -67,10 +71,19 @@ switch ($Action) {
         Write-Host "Picked: $(Select-Launcher -State $launchers)"
     }
     'MainMenu' {
-        $script:package = if ($TwoJars) { $script:AMBIGUOUS_MOD_PACKAGE } else { 'rtx-remix-renderer-0.0.2.jar' }
+        $script:packages = @{
+            Fabric = 'rtx-remix-renderer-0.0.2.jar'
+            Forge = 'rtx-remix-renderer-forge-0.0.2.jar'
+        }
+        if ($TwoJars) { $script:packages[$ModLoader] = '(ambiguous, see Install)' }
+        $script:loaders = @{}
+        foreach ($launcher in $mods.Keys) {
+            $script:loaders[$launcher] = if ($ModLoader) { $ModLoader } else { 'Fabric' }
+        }
         function Get-DetectedState {
             [pscustomobject]@{
-                ModInstalled = $mods; ModPackage = $script:package
+                ModInstalled = $mods; ModLoaders = $script:loaders
+                ModPackage = '(loader-specific)'; ModPackages = $script:packages
                 HasPrism = $launchers.HasPrism; HasMs = $launchers.HasMs
             }
         }
@@ -88,12 +101,19 @@ switch ($Action) {
     }
     'DistJar' {
         $script:SCRIPT_DIR = $Dist
-        try { Write-Host "Found: $(Get-DistModJar)" } catch { Write-Host "Error: $($_.Exception.Message)" }
+        $env:RTXREMIX_PROJECT_STATE = Join-Path $Dist 'project-state.json'
+        Initialize-LoaderCatalog
+        try {
+            Write-Host "Found: $(Get-DistModJar -ModLoader $ModLoader)"
+        } catch {
+            Write-Host "Error: $($_.Exception.Message)"
+        }
     }
     'Run' {
         function Test-InteractiveHost { return $true }
         function Show-MainMenu { return $Choice }
         function Invoke-InstallOrUpgrade {
+            param([string]$PreferredLauncher, [string]$PreferredModLoader, [switch]$Unattended, [string]$Mode)
             switch ($Outcome) {
                 'ok' { return 0 }
                 'fail' { Write-Err 'Close this window and start install.bat by double-clicking it.'; return 1 }
@@ -203,10 +223,11 @@ def test_with_prism_and_no_microsoft_launcher_the_menu_says_what_the_microsoft_l
     assert "Item: Install | reinstall into Prism; for the Microsoft launcher, install and start it first" in items
 
 
-def test_a_download_with_two_mod_jars_says_so_and_how_to_fix_it(tmp_path: Path):
+@pytest.mark.parametrize("mod_loader", [loader.display_name for loader in PROJECT_STATE.loaders])
+def test_a_download_with_two_mod_jars_says_so_and_how_to_fix_it(tmp_path: Path, mod_loader: str):
     # Extracting a newer download over an older one leaves two JARs in mods\. Saying none were found sends the player
     # looking for a missing file; the fix is an empty folder.
-    output = run_harness(tmp_path, "-Action", "MainMenu", "-Installed", "", "-TwoJars")
+    output = run_harness(tmp_path, "-Action", "MainMenu", "-Installed", "", "-ModLoader", mod_loader, "-TwoJars")
     assert output.returncode == 0, output.stdout + output.stderr
     lines = ANSI.sub("", output.stdout).splitlines()
     text = " ".join(lines)
@@ -217,13 +238,15 @@ def test_a_download_with_two_mod_jars_says_so_and_how_to_fix_it(tmp_path: Path):
     assert "Disabled: Install" in lines
 
 
-def test_get_dist_mod_jar_names_both_jars_and_the_fix(tmp_path: Path):
-    mods = tmp_path / "dist" / "mods"
+@pytest.mark.parametrize("mod_loader", [loader.display_name for loader in PROJECT_STATE.loaders])
+def test_get_dist_mod_jar_names_both_jars_and_the_fix(tmp_path: Path, mod_loader: str):
+    mods = tmp_path / "dist" / "mods" / mod_loader.lower()
     mods.mkdir(parents=True)
+    shutil.copy2(util.PROJECT_DIR / "project-state.json", tmp_path / "dist" / "project-state.json")
     older, newer = "rtx-remix-renderer-0.1.0-1-aaaaaaa-win64.jar", "rtx-remix-renderer-0.1.0-2-bbbbbbb-win64.jar"
     for name in (older, newer):
         (mods / name).write_bytes(b"PK")
-    result = run_harness(tmp_path, "-Action", "DistJar", "-Dist", str(tmp_path / "dist"))
+    result = run_harness(tmp_path, "-Action", "DistJar", "-Dist", str(tmp_path / "dist"), "-ModLoader", mod_loader)
     assert result.returncode == 0, result.stdout + result.stderr
     error = next(line for line in result.stdout.splitlines() if line.startswith("Error: "))
     assert older in error and newer in error
@@ -264,7 +287,13 @@ def test_quitting_the_menu_closes_without_waiting(tmp_path: Path):
 def test_a_run_given_its_mode_does_not_wait(tmp_path: Path, unattended: bool):
     arguments = ["-Action", "Run", "-Mode", "Install", "-Outcome", "ok", "-Queued", "1"]
     if unattended:
-        arguments.append("-Unattended")
+        arguments += [
+            "-Unattended",
+            "-MinecraftVersion",
+            PROJECT_STATE.minecraft_version,
+            "-ModLoader",
+            "Fabric",
+        ]
     result = run_harness(tmp_path, *arguments)
     assert result.returncode == 0, result.stdout + result.stderr
     assert HELD not in result.stdout

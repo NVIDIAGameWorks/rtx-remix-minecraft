@@ -1,0 +1,198 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+buildscript {
+    def modulePath = rootProject.relativePath(project.projectDir).replace('\\', '/')
+    def loaderEntry = gradle.ext.targetState.loaders.find { loaderId, candidate ->
+        candidate.projectPath == project.path && candidate.module == modulePath
+    }
+    if (loaderEntry == null) {
+        throw new GradleException(
+                "Project ${project.path} has no matching loader declaration")
+    }
+    repositories {
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+    }
+    dependencies {
+        classpath "org.spongepowered:mixingradle:" +
+                loaderEntry.value.mixinGradleVersion
+    }
+}
+
+plugins {
+    id 'java'
+    id 'net.minecraftforge.gradle'
+}
+apply plugin: 'org.spongepowered.mixin'
+jarJar.enable()
+apply from: rootProject.file('gradle/loader-module.gradle')
+
+def forgeVersion = loaderState.loader.version
+def isSingleArchJar = archProperty != null
+logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
+        (isSingleArchJar ? ' (single-arch JAR mode)' : ' (fat JAR)'))
+
+minecraft {
+    mappings channel: 'official', version: minecraftVersion
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+    runs {
+        configureEach {
+            workingDirectory rootProject.file('run')
+        }
+        client {
+            mods {
+                rtx_remix_renderer {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+mixin {
+    add sourceSets.main, 'rtx-remix-renderer-refmap.json'
+    config 'rtx-remix-renderer.mixins.json'
+    config 'rtx-remix-renderer.vanilla-section.mixins.json'
+    config 'rtx-remix-renderer.forge.mixins.json'
+}
+
+repositories {
+    maven {
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net/'
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraftVersion}-${forgeVersion}"
+    implementation jarJar('io.github.llamalad7:mixinextras-forge:0.4.1') {
+        jarJar.ranged(it, '[0.4.1,0.5)')
+    }
+    compileOnly 'io.github.llamalad7:mixinextras-common:0.4.1'
+    annotationProcessor 'org.spongepowered:mixin:0.8.7'
+    annotationProcessor 'io.github.llamalad7:mixinextras-common:0.4.1'
+    annotationProcessor 'org.spongepowered:mixin:0.8.7:processor'
+    testRuntimeOnly 'io.github.llamalad7:mixinextras-common:0.4.1'
+}
+
+test {
+    // These tests instantiate Forge-patched Minecraft classes without a game
+    // bootstrap. The canonical behavior is covered by the root suite; Forge's
+    // adapter suite must not pretend an uninitialized registry/config is a
+    // valid client environment.
+    exclude '**/RemixBlockDamagePassTest.class'
+    exclude '**/BlockLightRuleManagerTest.class'
+}
+
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title': 'RTX Remix for Minecraft (Forge)',
+            'Implementation-Version': resolvedBuildVersion,
+            'MixinConfigs': 'rtx-remix-renderer.mixins.json,'
+                    + 'rtx-remix-renderer.vanilla-section.mixins.json,'
+                    + 'rtx-remix-renderer.forge.mixins.json'
+        )
+    }
+}
+
+processResources {
+    // The supported Forge target ships Mojmap-named game classes. MixinGradle still emits an
+    // SRG refmap for reobfuscation, which would turn source selectors such as
+    // runTick and flameParticle into names that do not exist at runtime.
+    // Forge's early display owns its GL 4.6 context; the Fabric-only window
+    // creation hook lives in Fabric's mixin set.
+    filesMatching('rtx-remix-renderer*.mixins.json') {
+        filter { line ->
+            line.contains('"refmap"') ? null : line
+        }
+    }
+}
+
+tasks.named('jarJar') {
+    from(rootProject.file('LICENSE')) {
+        into 'META-INF'
+    }
+    from(rootProject.file('NOTICE')) {
+        into 'META-INF'
+    }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md')) {
+        into 'META-INF'
+    }
+}
+
+verifyPackageJarTask.configure {
+    doLast {
+        File archive = packageJarArchive.get().asFile
+
+        // Verify the artifact that users actually launch, not only source compilation.
+        // This catches ForgeGradle remapping/refmap and JarJar packaging regressions
+        // before a live client has to discover them one mixin at a time.
+        def zip = new java.util.zip.ZipFile(archive)
+        try {
+            def entries = zip.entries().toList()*.name
+            if (!entries.contains('META-INF/jarjar/metadata.json')) {
+                throw new GradleException('Forge package is missing JarJar metadata')
+            }
+            if (!entries.any {
+                it.startsWith('META-INF/jarjar/mixinextras-forge-') && it.endsWith('.jar')
+            }) {
+                throw new GradleException('Forge package is missing the nested MixinExtras runtime')
+            }
+            [
+                'META-INF/LICENSE',
+                'META-INF/NOTICE',
+                'META-INF/THIRD_PARTY_NOTICES.md'
+            ].each { name ->
+                if (!entries.contains(name)) {
+                    throw new GradleException("Forge package is missing ${name}")
+                }
+            }
+
+            [
+                'rtx-remix-renderer.mixins.json',
+                'rtx-remix-renderer.vanilla-section.mixins.json',
+                'rtx-remix-renderer.forge.mixins.json'
+            ].each { name ->
+                def entry = zip.getEntry(name)
+                if (entry == null) {
+                    throw new GradleException("Forge package is missing ${name}")
+                }
+                String config = zip.getInputStream(entry).getText('UTF-8')
+                if (config.contains('"refmap"')) {
+                    throw new GradleException("${name} must not select ForgeGradle's SRG refmap")
+                }
+                if (config.contains('"WindowMixin"')) {
+                    throw new GradleException("${name} must not apply WindowMixin under Forge's early display")
+                }
+            }
+
+            [
+                'com/nvidia/rtxremix/minecraft/mixin/MinecraftClientMixin.class': 'runTick',
+                'com/nvidia/rtxremix/minecraft/mixin/BiomeMixin.class': 'specialEffects',
+                'com/nvidia/rtxremix/minecraft/mixin/TorchBlockAccessor.class': 'flameParticle'
+            ].each { className, mojmapSelector ->
+                def entry = zip.getEntry(className)
+                if (entry == null) {
+                    throw new GradleException("Forge package is missing ${className}")
+                }
+                String constantPool = new String(zip.getInputStream(entry).bytes,
+                        java.nio.charset.StandardCharsets.ISO_8859_1)
+                if (!constantPool.contains(mojmapSelector)) {
+                    throw new GradleException(
+                            "${className} lost Mojmap selector '${mojmapSelector}'; " +
+                            'the production artifact appears reobfuscated')
+                }
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.named('build') {
+    // The development installer selects JarJar's runnable `-all.jar`; keep it
+    // part of the conventional build lifecycle so a launch cannot reuse a
+    // stale artifact that predates the current classes.
+    dependsOn 'jarJar'
+}

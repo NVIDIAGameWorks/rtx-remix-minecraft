@@ -12,7 +12,45 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  catalog:
+    runs-on: windows-latest
+    outputs:
+      matrix: ${{ steps.project_state.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the multi-version project state
+        id: project_state
+        run: '& "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1" -GitHubOutput $env:GITHUB_OUTPUT'
+
+  targets:
+    needs: catalog
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.catalog.outputs.matrix) }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.javaTarget }}
+      - name: Check selected target
+        env:
+          TARGET_MINECRAFT_VERSION: ${{ matrix.minecraftVersion }}
+          TARGET_LOADER: ${{ matrix.loader }}
+          TARGET_TEST_TASK: ${{ matrix.testTask }}
+        run: |
+          & "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1" `
+            -MinecraftVersion $env:TARGET_MINECRAFT_VERSION -ModLoader $env:TARGET_LOADER
+          & "$env:GITHUB_WORKSPACE\gradlew.bat" $env:TARGET_TEST_TASK `
+            "-PmcVersion=$env:TARGET_MINECRAFT_VERSION" "-Ploader=$env:TARGET_LOADER"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  tooling:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -23,7 +61,28 @@ jobs:
         with:
           version: "0.13.0"
           enable-cache: false
+      - name: Validate the multi-version project state
+        run: '& "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1"'
       - name: Check tooling and public boundary
         env:
           PUBLIC_COMMIT_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '' }}
         run: '& "$env:GITHUB_WORKSPACE\tools\rtx.bat" check --tests'
+
+  check:
+    name: check
+    if: always()
+    needs: [catalog, targets, tooling]
+    runs-on: windows-latest
+    steps:
+      - name: Require every check
+        env:
+          CATALOG_RESULT: ${{ needs.catalog.result }}
+          TARGETS_RESULT: ${{ needs.targets.result }}
+          TOOLING_RESULT: ${{ needs.tooling.result }}
+        run: |
+          if ($env:CATALOG_RESULT -ne 'success' -or
+              $env:TARGETS_RESULT -ne 'success' -or
+              $env:TOOLING_RESULT -ne 'success') {
+            Write-Error "Check prerequisites failed: catalog=$env:CATALOG_RESULT targets=$env:TARGETS_RESULT tooling=$env:TOOLING_RESULT"
+            exit 1
+          }

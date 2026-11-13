@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.nvidia.rtxremix.minecraft.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "rtx-remix-renderer-refmap.json",
+  "client": [
+    "SectionBuilderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

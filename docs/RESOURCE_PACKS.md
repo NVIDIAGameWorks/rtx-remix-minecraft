@@ -16,9 +16,10 @@ with one addition of the mod's own, `_sss`.
 
 ## Quick Start
 
-1. Enable your own pack in Options, Resource Packs above Fabric's `fabric`
-   pack. The mod's built-in baseline fills in textures you have not covered
-   yet; yours wins for anything you replace.
+1. Enable your own pack in Options, Resource Packs above the loader's built-in
+   mod resources (`fabric` on Fabric and `mod_resources` on Forge and NeoForge). The mod's
+   built-in baseline fills in textures you have not covered yet; yours wins
+   for anything you replace.
 2. Pick one block that should glow, say `glowstone`, and add
    `assets/minecraft/textures/block/glowstone_s.png` beside its base colour
    texture. Paint the alpha channel below 255 wherever it should emit.
@@ -31,20 +32,21 @@ with one addition of the mod's own, `_sss`.
 
 ## The Built-In Baseline
 
-The baseline LabPBR textures ship inside the mod JAR as part of Fabric's
-`fabric` pack, below user packs. No separate pack needs enabling. It carries
-the minimum set of sidecars the renderer needs: `_s` for the blocks that are
-meant to glow, and `_sss` for foliage so leaves and grass scatter light instead
-of looking like painted cardboard. It also includes sky and particle base
-textures. Your own pack wins for any of those you replace in turn.
+The baseline LabPBR textures ship inside the mod JAR as built-in mod resources,
+below user packs. No separate pack needs enabling. It carries the minimum set
+of sidecars the renderer needs: `_s` for the blocks that are meant to glow, and
+`_sss` for foliage so leaves and grass scatter light instead of looking like
+painted cardboard. It also includes sky and particle base textures. Your own
+pack wins for any of those you replace in turn.
 
 Surface emission comes only from `_s` alpha, and the block atlas deliberately
 passes an emission fallback of zero (`LabPBRConverter.blitEmissive`), so a
 block's vanilla light level never becomes surface glow on its own. For
 example, without an `_s` for glowstone, the block renders dark.
 
-The textures live in `src/main/resources/assets/` in this repository and are
-covered by the [LICENSE](../LICENSE), so copy them and build on them. A glow
+The textures live in `versions/1.21.1/minecraft/main/resources/assets/` in
+this repository and are covered by the [LICENSE](../LICENSE), so copy them and
+build on them. A glow
 map for part of a texture, such as a torch flame, lines up with the vanilla
 texture, so a pack that redraws that texture should ship its own `_s` too.
 

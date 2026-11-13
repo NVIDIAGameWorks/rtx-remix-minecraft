@@ -11,11 +11,11 @@ import json
 import re
 from collections.abc import Callable
 from contextlib import redirect_stdout
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from . import client, sdk
+from . import client, loader_registry, sdk
 from . import config as tools_config
 from .benchmark import util
 from .launcher_console import Console
@@ -51,6 +51,7 @@ def build_command(
     config: dict,
     *,
     mode: str,
+    loader: str = "",
     sdk: str = "release",
     world: str = "",
     resource_pack: str = "",
@@ -70,6 +71,8 @@ def build_command(
         args = ["launch", "--world", world]
     else:
         args = ["run" if mode == "benchmark" else "launch"]
+    if loader:
+        args += ["--loader", loader]
     args += ["--sdk-variant", sdk]
     if resource_pack.strip():
         args += ["--resource-pack", resource_pack]
@@ -88,6 +91,7 @@ def build_command(
 
 @dataclass
 class State:
+    loader: str = field(default_factory=lambda: loader_registry.load_registry().default_id)
     sdk: str = "release"
     world_enabled: bool = True
     resource_pack_enabled: bool = True
@@ -99,6 +103,7 @@ class State:
     def defaults(cls, config: dict) -> State:
         world = config.get("world") or {}
         return cls(
+            loader=tools_config.mod_loader(config),
             camera=world.get("camera") or "",
             preset=(config.get("render") or {}).get("preset") or "Custom",
         )
@@ -144,6 +149,7 @@ class State:
         return build_command(
             config,
             mode=mode,
+            loader=self.loader,
             sdk=self.sdk,
             world=world or "none",
             resource_pack=self.pack_spec(),
@@ -163,6 +169,8 @@ def load_state(path: Path, config: dict) -> State:
         for field in fields(state):
             if loaded.get(field.name) is not None:
                 setattr(state, field.name, loaded[field.name])
+    if state.loader not in loader_registry.load_registry().ids:
+        state.loader = State.defaults(config).loader
     return state
 
 
@@ -214,6 +222,7 @@ class Item:
 
 def dashboard_items(state: State, config: dict, status: dict, auto: bool) -> list[Item]:
     defaults = State.defaults(config)
+    selected_loader = loader_registry.load_registry().get(state.loader)
     return [
         Item("launch", "Launch game", "Fetch, stage, build, and play current world", group="verb"),
         Item("benchmark", "Run benchmark", "Benchmark current world + camera", group="verb"),
@@ -225,6 +234,7 @@ def dashboard_items(state: State, config: dict, status: dict, auto: bool) -> lis
             "setting",
         ),
         Item("resourcepack", "Art pack", state.pack_label(config), state.resource_pack_enabled, "setting"),
+        Item("loader", "Mod loader", selected_loader.display_name, state.loader == defaults.loader, "setting"),
         Item("launcher", "Launcher", client.active().describe(), group="setting"),
         Item("preset", "Quality preset", preset_label(state.preset), state.preset == defaults.preset, "setting"),
         Item("sdk", "SDK variant", state.sdk, state.sdk == defaults.sdk, "sdk"),
@@ -428,6 +438,7 @@ class Menu:
                 f"Arch: {status.get('arch', 'unknown')}",
                 f"World: {self.state.world_label(self.config)}",
                 f"Art pack: {self.state.pack_label(self.config)}",
+                f"Mod loader: {loader_registry.load_registry().get(self.state.loader).display_name}",
                 f"Launcher: {launcher_description}",
                 f"Quality preset: {preset_label(self.state.preset)}",
                 f"SDK variant: {self.state.sdk}",
@@ -470,6 +481,12 @@ class Menu:
             elif action == "resourcepack":
                 self.state.resource_pack_enabled = not self.state.resource_pack_enabled
                 self.save()
+            elif action == "loader":
+                registry = loader_registry.load_registry()
+                picked = self.choose("Which mod loader?", [loader.display_name for loader in registry.loaders])
+                if picked >= 0:
+                    self.state.loader = registry.loaders[picked].id
+                    self.save()
             elif action == "preset":
                 self.preset_menu()
             elif action == "launcher" and hasattr(client.active(), "open_sign_in"):
@@ -502,6 +519,7 @@ def run(args: argparse.Namespace, command: Command) -> int:
     resolved = build_command(
         read_shared_config(),
         mode=args.mode,
+        loader=args.loader,
         sdk=args.sdk,
         world=args.world,
         resource_pack=args.resource_pack,

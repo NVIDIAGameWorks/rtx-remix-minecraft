@@ -4,9 +4,11 @@ Context for AI coding agents working in this repository.
 
 ## Project Overview
 
-`rtx-remix-minecraft` is a Fabric mod that renders Minecraft 1.21.1 through
-NVIDIA RTX Remix. It captures terrain, entities, particles, sky, and clouds from
-the client and submits them to the Remix runtime as a path-traced scene. The
+`rtx-remix-minecraft` renders Minecraft through NVIDIA RTX Remix. One checkout
+contains every supported Minecraft target. The current catalog declares
+Minecraft 1.21.1 with Fabric, Forge, and NeoForge. It captures terrain,
+entities, particles, sky, and clouds
+from the client and submits them to the Remix runtime as a path-traced scene. The
 Java facade and JNI bridge are tracked under `rtxremix-java/`; the native
 runtime and the Remix C API come from dxvk-remix. A change often spans all
 three layers.
@@ -15,15 +17,21 @@ three layers.
 
 Prefer these sources in this order:
 
-1. source under `src/main/java/`
-2. `build.gradle`
-3. the Architecture section below
-4. `README.md` and the guides under `docs/`
+1. loader-neutral renderer behavior under `renderer-core/src/`
+2. shared integration under `versions/<minecraft>/minecraft/`
+3. thin adapters under `versions/<minecraft>/<loader>/`
+4. `project-state.json`, root `build.gradle`, and the declared loader modules
+5. the Architecture section below
+6. `README.md` and the guides under `docs/`
 
-There is deliberately no standalone architecture document. One existed and went
-stale faster than the code it described. Code standards and review expectations
-are in [CONTRIBUTING.md](CONTRIBUTING.md) and apply to agent-written code too. A
-subdirectory may carry its own `AGENTS.md`; read the nearest one as well.
+There is deliberately no exhaustive standalone architecture specification; one
+went stale faster than the code it described.
+[Multi-Loader Architecture](docs/MULTI_LOADER_ARCHITECTURE.md) documents the
+stable ownership boundary only. The code and the Architecture section below
+remain authoritative for implementation details. Code standards and review
+expectations are in [CONTRIBUTING.md](CONTRIBUTING.md) and apply to
+agent-written code too. A subdirectory may carry its own `AGENTS.md`; read the
+nearest one as well.
 
 ## Build, Run, Package, Test
 
@@ -31,10 +39,11 @@ Java 21, Windows, and the C++ toolchain are required. Gradle fetches a missing
 Remix runtime automatically. [Getting Started](docs/GETTING_STARTED.md) covers local overrides.
 
 ```powershell
-.\gradlew.bat build
+.\gradlew.bat build "-PmcVersion=1.21.1" "-Ploader=fabric"
 .\tools\rtx.bat launch
-.\gradlew.bat test
-.\gradlew.bat package -Parch=win64
+.\gradlew.bat test "-PmcVersion=1.21.1" "-Ploader=neoforge"
+.\gradlew.bat package "-PmcVersion=1.21.1" "-Ploader=forge" -Parch=win64
+.\gradlew.bat releaseArchive "-PmcVersion=1.21.1" -Parch=win64
 ```
 
 `tools\rtx.bat launch` builds the mod, installs it into a checkout-specific
@@ -44,28 +53,65 @@ reuses its normal account profile; portable Prism keeps its profile under
 owns Minecraft: Java Edition. See
 [Getting Started](docs/GETTING_STARTED.md#sign-in-to-prism).
 
-`classes` depends on `setupRuntime`, which compiles the JNI bridge, fetches a
-missing runtime, and stages it, so even `test` needs the C++ toolchain.
-`build` leaves a lightweight JAR in `build/libs/`; `package` embeds
-the runtime and payload in `build/distributions/`. It verifies inclusion of
+The neutral root applies no loader plugin. `project-state.json` is the
+schema-versioned authority for the repository's Minecraft targets, Java
+targets, support tiers, loader catalogs, dependency pins, and module paths.
+`-PmcVersion=<version>` selects one version at Gradle configuration time and
+`-Ploader=<loader>` narrows that build to one loader. The resulting JAR
+contains only that target; no runtime version switch or alternate loader code
+is packaged. Omitting `-Ploader` includes every loader declared for the
+selected version. PowerShell callers should quote dotted `-PmcVersion` values.
+Shared conventions apply common source, test, license, runtime-payload, and
+package contracts; loader plugins and remapping checks stay local.
+
+The root owns native compilation, runtime fetching, and `setupRuntime`.
+Ordinary `build` and `test` tasks for the declared loaders compile and verify Java
+without staging native payloads. Each loader's `runClient` depends on the
+shared runtime setup and applies that loader's resource-pack migration;
+`package` also builds and embeds the selected native payload. Lightweight
+development JARs go under each module's `build/libs/`, and self-contained JARs
+under each module's `build/distributions/`. Packaging verifies inclusion of
 every `packaging/licenses/` file and excludes Python interpreter and binding
 payloads. Staged and packaged contents must agree with `NativeExtractor`.
-A release carries four files, which `stageReleaseAssets` collects: the JAR;
-the RTX Remix Materials and RTX Remix Showcase World zips, which
+A release carries one JAR per declared loader plus the other release content
+that `stageReleaseAssets` collects: the RTX Remix Materials and RTX Remix
+Showcase World zips, which
 `materialsArchive` and `worldArchive` build from what `fetchReleaseContent`
 pulls for the `resourcePack` and `world` pins in `tools/config.json`; and the
-installer bundle `releaseArchive` makes from those three and the installer.
+installer bundle `releaseArchive` makes from those artifacts and the installer.
 `build`, `test`, and `package` never fetch the pack or world.
 See [Getting Started](docs/GETTING_STARTED.md) and
-[`build.gradle`](build.gradle) for the staging inventory.
+root [`build.gradle`](build.gradle) for the shared staging inventory.
+
+The release archive stages each self-contained JAR under
+`mods/<loader-id>/`. Its `install.bat` offers the loaders declared by the
+packaged project state.
 
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
 worktree. Build guards should prevent a silently wrong artifact, as the
 mixed-runtime-source guard does, rather than police checkout cleanliness.
 
+## Minecraft Versions And Ports
+
+`main` contains every maintained Minecraft target under `versions/`.
+`project-state.json` marks each version `primary`, `active`, `maintenance`, or
+`archived`; CI expands the catalog into one job per version/loader target.
+Release tags are immutable. The default target keeps the ordinary
+`v<mod-version>` tag, while another target qualifies new tags with its
+Minecraft version.
+
+Add a version by creating `versions/<version>/minecraft/`, the applicable
+loader modules beside it, and one catalog entry. Port shared renderer changes
+directly; adapt only the version-owned Minecraft layer and loader providers.
+Validate semantic parity with the shared world, camera, and shot fixtures.
+`tools\rtx.bat versions` reports the whole checkout and
+`tools\rtx.bat target-status` reports evidence for one selected target. Do not
+add source preprocessors or runtime version switches.
+
 Keep the unconditional tuning arguments in `loom.runs.client.vmArgs` in
-`build.gradle` and `RECOMMENDED_JVM_ARGS` in `packaging/installer.ps1`
+`versions/1.21.1/fabric/build.gradle` and `RECOMMENDED_JVM_ARGS` in
+`packaging/installer.ps1`
 identical, and when `RECOMMENDED_JVM_ARGS` changes, append its outgoing value to
 `PREVIOUS_RECOMMENDED_JVM_ARGS`. Opt-in benchmark and profiling arguments are
 excluded. See
@@ -85,29 +131,47 @@ any missing shipped files under `rtx-remix/` without replacing existing files. T
 is author-owned: an existing file is replaced only when its content is a
 version of that file that has shipped, so an untouched old default takes the
 current one and edited confs are never overwritten, even during full
-extraction. `src/main/resources/rtx-remix-shipped-payload.sha256` records
+extraction. `renderer-core/main/resources/rtx-remix-shipped-payload.sha256` records
 every shipped version; a payload change appends its line and never removes
 one, and `ShippedPayloadHistoryTest` fails with the missing line. Deleting a
 shipped conf restores its default on the next launch. A present conf that fails to acquire still prevents renderer
 initialization; the error identifies the file.
 
-Baseline LabPBR textures live in `src/main/resources/assets/` and load through
-Fabric's `fabric` resource pack below user packs. Development setup, `rtx install`,
-and the release installer use `packaging/migrate_resource_packs.ps1` to remove
-their exactly identified legacy baseline copies and migrate existing pack order.
+Baseline LabPBR textures live in
+`versions/1.21.1/minecraft/main/resources/assets/` and load
+from the selected loader's built-in mod resources below user packs.
+Development setup, `rtx install`, and the multi-loader release installer use
+`packaging/migrate_resource_packs.ps1` to remove their exactly identified
+legacy baseline copies and migrate existing pack order.
 
 ## Architecture
 
-**Orchestration.** `RtxRemixMod` is the Fabric entrypoint: lifecycle hooks, key
-bindings, and the `/rtx` command tree. `RemixRenderer` is the render thread's
-bridge into Remix and owns the frame. Sky textures are generated and published
-on the render thread, branched on the dimension's sky type: the End
+**Orchestration.** `renderer-core/` is the loader- and version-neutral owner of
+native scene behavior, resources, and captured-frame ordering.
+`versions/<minecraft>/minecraft/` owns policy and game integration shared by
+that Minecraft target. Catalog loader modules beside it contain only
+registration, event and Mixin signature
+adapters, and loader services. They translate loader events into shared
+contracts and must not create parallel renderer pipelines. Gradle selects one
+version/loader pair at configuration time, so ordinary Java remains
+type-checked against exactly one Minecraft API without source-level switches.
+`MinecraftClientRuntime` owns client lifecycle and `MinecraftRuntime` exposes
+the canonical state used by hooks. `RemixRenderer` adapts the render thread
+into the canonical frame coordinator. Sky textures are generated and
+published on the render thread, branched on the dimension's sky type: the End
 keeps a constant dark dome and a skyless dimension a black one with no sky
 ambient. Thread-safe stores wrap Remix-side meshes, instances, textures,
 materials, and lights over raw `long` handles from the JNI wrapper.
 `JoinBurstHold` keeps vanilla's terrain-download screen up for a bounded wait
 for stable frames after a world join, hiding first-sight mesh, pipeline, and
 BLAS costs without holding the screen indefinitely.
+
+**Host graphics.** `HostGraphicsIntegration` separates canonical scene and
+frame policy from host-window and graphics-backend operations. The current
+Minecraft provider owns Windows/GLFW/OpenGL capability checks, framebuffer
+transfer, output acquisition, and presentation. Do not move those assumptions
+into `renderer-core/`; another host backend must replace the provider without
+forking renderer policy.
 
 **Overlay input.** `RemixInputGate` owns the Minecraft-side capture session for
 the Remix overlays; `KeyboardMixin` and `MouseMixin` route GLFW input through
@@ -118,7 +182,7 @@ menus' own close and switch controls, the runtime's menu hotkey, and its First
 Use Guide change it too. Alt+X without Control toggles the developer menu over
 gameplay or a screen. The only other open command in the mod is the RTX Remix
 Graphics Settings button on the settings landing page; both open through
-`RtxRemixMod.openRemixMenu`, and the button queues its request so the click
+`MinecraftRuntime.openRemixMenu`, and the button queues its request so the click
 finishes dispatching first. Opening, by the mod or the runtime, finalizes held
 key bindings, vanilla's F3 combination state, and active mouse interactions
 because their releases will not reach Minecraft. Capture excludes Minecraft
@@ -268,7 +332,7 @@ diluting the sampler's candidate pool.
 - A terrain recapture must clear Remix terrain, reload vanilla terrain, and
   explicitly queue the previous built set. Snapshot `builtSections` before
   `WorldRenderer.reload()` forgets it, then call `recaptureTerrainForRemix`.
-  `RtxRemixMod.rebuildLoadedTerrain()` owns this sequence. Commit settings once
+ `MinecraftRuntime.rebuildLoadedTerrain()` owns this sequence. Commit settings once
   per transaction, never once per slider step.
 - Schedule world-transition work through `client.execute`, not a flag drained
   by a world-render hook: those hooks stop when `client.world` is null, so the
@@ -313,14 +377,14 @@ diluting the sampler's candidate pool.
   runtime loads, because its crash dumps copy that line (`RemixRenderer`,
   `CommandLineRedaction`).
 - Vanilla's shared worker pool and section-builder concurrency stay capped
-  (`WorkerPoolCap`, `SectionBuildConcurrency`).
+  (`WorkerPoolPolicy`, `RemixMixinPlugin`, `SectionBuildConcurrency`).
 - Nothing but the render thread reads client light (`World.getLightLevel`,
   `LightingProvider.get`) while capture is on: the published snapshot is then
   the engine's live map (`ClientLightSnapshotPolicy`, `LightStorageMixin`).
 - There is one overlay toggle path. `RemixInputGate` alone owns the capture
-  session. Every open request goes through `RtxRemixMod.openRemixMenu`, and
+  session. Every open request goes through `MinecraftRuntime.openRemixMenu`, and
   every menu the runtime shows or hides reaches the gate through
-  `RtxRemixMod.followRemixMenuVisibility`, which `GameRendererMixin` calls at
+  `MinecraftRuntime.followRemixMenuVisibility`, which `GameRendererMixin` calls at
   the start of each frame and which allocates nothing on the Java heap. The
   packaged runtime menu binding stays away from Alt+X (`KeyboardMixin`,
   `MouseMixin`, `RtxSettingsScreen`, `packaging/rtx.conf`).
@@ -358,9 +422,10 @@ diluting the sampler's candidate pool.
 ## Integrated JNI Wrapper
 
 `rtxremix-java/` is a Minecraft-agnostic Java facade and JNI shim over the
-RTX Remix C API. It must never import `net.minecraft` or `net.fabricmc`;
-`RemixJavaBoundaryTest.shimSourcesDoNotImportMinecraftOrFabric` enforces this
-boundary across `rtxremix-java/src/`. Keep game-state capture and Fabric
+RTX Remix C API. It must never import `net.minecraft`, `net.fabricmc`,
+`net.minecraftforge`, or `net.neoforged`;
+`RemixJavaBoundaryTest.shimSourcesDoNotImportHostApis` enforces this
+boundary across `rtxremix-java/src/`. Keep game-state capture and loader
 integration in the mod, not in the shim. Wrapper and affected mod callers
 change in the same pull request.
 
@@ -376,11 +441,12 @@ The wrapper's source of truth, in order, is:
 5. `packman/remix-sdk.packman.xml`: the published runtime pins.
 6. SDK source management in `tools/src/rtx_tools/sdk.py` and fetching in `build.gradle`.
 
-The root Gradle build compiles the Java sources directly and builds
-`remixbridge.dll` into `build/native/{win64|arm64}/`. There is no separate
-wrapper Java build or example launcher. The native build needs Visual Studio
-C++ tools and `JAVA_HOME` pointing to a 64-bit JDK 21. It uses the
-copied header unless `REMIX_INCLUDE` explicitly selects another directory.
+Declared loader modules compile the Java sources directly, while the neutral
+root builds `remixbridge.dll` into
+`build/native/{win64|arm64}/`. There is no separate wrapper Java build or
+example launcher. The native build needs Visual Studio C++ tools and
+`JAVA_HOME` pointing to a 64-bit JDK 21. It uses the copied header unless
+`REMIX_INCLUDE` explicitly selects another directory.
 The supported targets are Windows x64 and ARM64; agent shells may be POSIX
 even though the Gradle wrapper and native compiler entry points are batch scripts.
 

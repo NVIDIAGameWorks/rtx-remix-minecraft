@@ -5,10 +5,71 @@ param(
     [Parameter(Mandatory)] [string]$McDir,
     [Parameter(Mandatory)]
     [ValidateSet('RtxRemix-LabPBR', 'rtx-remix', 'rtx-remix-labpbr')]
-    [string]$LegacyPackName
+    [string]$LegacyPackName,
+    [ValidateNotNullOrEmpty()]
+    [string]$BuiltInResourcePack,
+    [string]$MinecraftVersion,
+    # Backward-compatible for development launch tasks and tools.  The
+    # release installer passes the selected loader.
+    [string]$ModLoader
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Read-LoaderManifest {
+    $scriptDir = $PSScriptRoot
+    $manifestPath = @(
+        (Join-Path $scriptDir 'project-state.json')
+        (Join-Path (Split-Path -Parent $scriptDir) 'project-state.json')
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $manifestPath) {
+        throw 'Missing project-state.json beside the migration script or at the repository root.'
+    }
+    try {
+        $manifest = [IO.File]::ReadAllText($manifestPath, [Text.UTF8Encoding]::new($false)) |
+            ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "Cannot read loader manifest ${manifestPath}: $($_.Exception.Message)"
+    }
+    if ([string]$manifest.schema -cne 'multi-version/v1' -or
+        $manifest.versions -isnot [pscustomobject] -or
+        $manifest.versions.PSObject.Properties.Count -eq 0) {
+        throw "Invalid project-state.json: expected schema 'multi-version/v1' and a non-empty versions object."
+    }
+    return $manifest
+}
+
+$manifest = Read-LoaderManifest
+$selectedVersion = if ($MinecraftVersion) {
+    $MinecraftVersion
+} else {
+    [string]$manifest.defaultMinecraftVersion
+}
+$versionProperty = $manifest.versions.PSObject.Properties[$selectedVersion]
+if ($null -eq $versionProperty -or
+    $versionProperty.Value.loaders -isnot [pscustomobject] -or
+    $versionProperty.Value.loaders.PSObject.Properties.Count -eq 0) {
+    throw "Minecraft version '$selectedVersion' has no loader catalog in project-state.json."
+}
+$loaderDeclarations = @($versionProperty.Value.loaders.PSObject.Properties)
+$builtInPacks = @($loaderDeclarations | ForEach-Object {
+    $pack = [string]$_.Value.builtinResourcePack
+    if ([string]::IsNullOrWhiteSpace($pack)) {
+        throw "project-state.json loader '$($_.Name)' has no builtinResourcePack."
+    }
+    $pack
+} | Select-Object -Unique)
+if (-not $BuiltInResourcePack) {
+    $selected = @($loaderDeclarations | Where-Object {
+        $_.Name -ieq $ModLoader -or [string]$_.Value.displayName -ieq $ModLoader
+    })
+    if ($selected.Count -ne 1) {
+        throw "Mod loader '$ModLoader' does not identify exactly one project-state.json loader."
+    }
+    $BuiltInResourcePack = [string]$selected[0].Value.builtinResourcePack
+} elseif ($BuiltInResourcePack -notin $builtInPacks) {
+    throw "Built-in resource pack '$BuiltInResourcePack' is not declared by project-state.json."
+}
 
 function Remove-LegacyResourcePack {
     param([string]$Path)
@@ -32,13 +93,14 @@ function Remove-LegacyResourcePack {
 }
 
 function Update-ResourcePackOptions {
-    param([string]$Path, [string]$LegacyPackName, [bool]$RemoveLegacyEntry)
+    param([string]$Path, [string]$LegacyPackName, [string]$BuiltInPackName,
+        [string[]]$AllBuiltInPackNames, [bool]$RemoveLegacyEntry)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
     $text = [IO.File]::ReadAllText($Path)
     $match = [regex]::Match($text, '(?m)^resourcePacks:[^\r\n]*')
     $packs = if ($match.Success) { @($match.Value.Substring('resourcePacks:'.Length) | ConvertFrom-Json) } else { @() }
-    $ordered = @('vanilla', 'fabric') + @($packs | Where-Object {
-        $_ -cne 'vanilla' -and $_ -cne 'fabric' -and
+    $ordered = @('vanilla', $BuiltInPackName) + @($packs | Where-Object {
+        $_ -cne 'vanilla' -and $_ -notin $AllBuiltInPackNames -and
         (-not $RemoveLegacyEntry -or $_ -cne "file/$LegacyPackName")
     })
     $line = 'resourcePacks:' + (ConvertTo-Json -InputObject $ordered -Compress)
@@ -63,4 +125,5 @@ function Update-ResourcePackOptions {
 
 $legacyPack = Join-Path $McDir "resourcepacks\$LegacyPackName"
 $removed = Remove-LegacyResourcePack -Path $legacyPack
-Update-ResourcePackOptions -Path (Join-Path $McDir 'options.txt') -LegacyPackName $LegacyPackName -RemoveLegacyEntry $removed
+Update-ResourcePackOptions -Path (Join-Path $McDir 'options.txt') -LegacyPackName $LegacyPackName `
+    -BuiltInPackName $BuiltInResourcePack -AllBuiltInPackNames $builtInPacks -RemoveLegacyEntry $removed

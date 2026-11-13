@@ -7,289 +7,39 @@ import javax.inject.Inject
 import org.apache.tools.ant.filters.ReplaceTokens
 import org.gradle.process.ExecOperations
 
-plugins {
-    id 'fabric-loom' version '1.15.5'
-    id 'java'
-}
+apply from: 'packaging/runtime-payload.gradle'
 
 interface RuntimeFetchServices {
     @Inject
     ExecOperations getExecOperations()
 }
 
-def baseVersion = providers.gradleProperty('mod_version').get()
-def buildTimestamp = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
-        .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmm"))
-def gitShortHash = providers.exec { commandLine 'git', 'rev-parse', '--short=7', 'HEAD' }
-        .standardOutput.asText.map { it.trim() }
-// Ignore untracked build outputs; wrapper sources are tracked with the mod.
-def gitDirty = providers.exec {
-    commandLine 'git', 'status', '--porcelain', '--untracked-files=no'
-}.standardOutput.asText.map { it.trim().isEmpty() ? '' : '-dirty' }
-
-// --- Build target architectures ------------------------------------------
-// Gradle -Parch flag controls which platforms are included in the JAR and
-// which native bridges are compiled. Omit for the default dual-arch fat JAR;
-// pass -Parch=win64 or -Parch=arm64 for a single-arch dev JAR.
-def archProperty = project.findProperty('arch')
-if (archProperty && !(archProperty in ['win64', 'arm64'])) {
-    throw new GradleException(
-        "Invalid -Parch value: '${archProperty}'. Use win64 or arm64 " +
-        "(or omit for dual-arch fat JAR).")
+def targetState = gradle.ext.targetState
+def declaredLoaders = targetState.loaders.collect { loaderId, loader ->
+    loader + [id: loaderId]
 }
-def buildArches = archProperty ? [archProperty] : ['win64', 'arm64']
-def isSingleArchJar = archProperty != null
-logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
-        (isSingleArchJar ? " (single-arch JAR mode)" : " (fat JAR)"))
-
-def archSuffix = isSingleArchJar ? "-${archProperty}" : ''
-version = "${baseVersion}-${buildTimestamp}-${gitShortHash.get()}${gitDirty.get()}${archSuffix}"
-def resolvedBuildVersion = version.toString()
-group = 'com.nvidia.rtxremix'
-def benchmarkJfrPath = providers.gradleProperty("benchmarkJfrPath")
-def benchmarkQuickPlayWorld = providers.gradleProperty("benchmarkQuickPlayWorld")
-def benchmarkTracyJavaMaxDepth = providers.gradleProperty("benchmarkTracyJavaMaxDepth").orElse("6")
-def benchmarkJfrThrowables = providers.gradleProperty("benchmarkJfrThrowables")
-        .orElse(providers.environmentVariable("RTX_BENCHMARK_JFR_THROWABLES"))
-        .orElse("false")
-
-// --- Fat-JAR source homogeneity check ------------------------------------
-// When building the dual-arch fat JAR, both platforms' SDKs must come from
-// the same source: both staged locally, or both from a managed source. Mixed
-// sources inside a single JAR would be confusing and are disallowed.
-// Single-arch JARs (isSingleArchJar) skip this check trivially.
-def checkPackageSourceHomogeneity = { ->
-    if (isSingleArchJar) return
-
-    def sources = [:]
-    ['win64', 'arm64'].each { arch ->
-        def sentinel = file("remix-runtime/${arch}/.local-sdk-source")
-        sources[arch] = sentinel.exists()
-                ? [type: 'local', detail: sentinel.text.trim()]
-                : [type: 'managed', detail: '']
-    }
-
-    def uniqueTypes = sources.values().collect { it.type }.unique()
-    if (uniqueTypes.size() == 1) return  // homogeneous, all good
-
-    // Mixed: build an actionable error.
-    def localArches = sources.findAll { k, v -> v.type == 'local' }.collect { k, v -> k }
-    def managedArches = sources.findAll { k, v -> v.type == 'managed' }.collect { k, v -> k }
-
-    def msg = new StringBuilder()
-    msg.append("\nERROR: fat JAR requires both platforms from the same source.\n")
-    sources.each { arch, info ->
-        if (info.type == 'local') {
-            def line1 = info.detail.readLines().find { it.startsWith('source:') } ?: 'source: (unknown)'
-            def line2 = info.detail.readLines().find { it.startsWith('staged_at_utc:') } ?: ''
-            msg.append("  remix-runtime/${arch}/   staged locally  (${line1.trim()} ${line2.trim()})\n")
-        } else {
-            msg.append("  remix-runtime/${arch}/   managed source  (no .local-sdk-source)\n")
-        }
-    }
-    msg.append("\nTo proceed, choose one:\n")
-    msg.append("  (a) Build a single-platform JAR from an architecture you have staged:\n")
-    localArches.each { msg.append("        .\\gradlew.bat package -Parch=${it}\n") }
-    msg.append("  (b) Stage the remaining platform(s) the same way, then build again:\n")
-    managedArches.each {
-        msg.append("        .\\tools\\rtx.bat sdk local --arch ${it} --path <runtime dir>\n")
-    }
-    msg.append("      docs/GETTING_STARTED.md#get-a-runtime says where to get one.\n")
-    msg.append("  (c) Restore the managed source for ${localArches.join(', ')}:\n")
-    localArches.each {
-        msg.append("        .\\tools\\rtx.bat sdk packman --arch ${it}\n")
-    }
-
-    throw new GradleException(msg.toString())
-}
-
-// Shared exclusion rules for both setupRuntime and packageJar.
-//   - Strip dxvk PDBs (~100MB), keep remixbridge.pdb (small, useful for debugging)
-//   - Drop NvRemixBridge.exe / .pdb (32-bit game bridge, unused in MC Java;
-//     avoids naming confusion with remixbridge.dll, our JNI shim)
-ext.sdkExclusions = { details ->
-    def name = details.name
-    if (name == 'NvRemixBridge.exe' || name == 'NvRemixBridge.pdb') return true
-    if (name.endsWith('.pdb') && name != 'remixbridge.pdb') return true
-    return false
-}
-
-base {
-    archivesName = 'rtx-remix-renderer'
-}
-def projectArchiveName = base.archivesName.get()
-
-repositories {
-    mavenCentral()
-    maven {
-        name = 'Fabric'
-        url = 'https://maven.fabricmc.net/'
-    }
-}
-
-// Minecraft 1.21.x requires Java 21
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-    withSourcesJar()
-}
-
-// Compile the integrated Java wrapper alongside the mod.
-sourceSets {
-    main {
-        java {
-            srcDir 'rtxremix-java/src'
-        }
-    }
-}
-
-loom {
-    accessWidenerPath = file("src/main/resources/rtx-remix-renderer.accesswidener")
-
-    // Loom 1.15+ disabled the mixin annotation processor by default. We use
-    // mixins extensively (see src/main/resources/rtx-remix-renderer.mixins.json),
-    // so explicitly opt back into the legacy AP via the `mixin` extension's
-    // useLegacyMixinAp flag. The previous defaultRefmapName setting is no
-    // longer needed. Without it, Loom derives the refmap name from the
-    // project; our mixins.json doesn't reference the refmap by literal name,
-    // so the auto-derived name works fine.
-    mixin {
-        useLegacyMixinAp = true
-    }
-
-    runs {
-        client {
-            // Keep in sync with RECOMMENDED_JVM_ARGS in packaging/installer.ps1.
-            // Minecraft Launcher 1.21.1 defaults for supported Windows arches:
-            // version metadata supplies HeapDumpPath; the profile supplies G1.
-            vmArgs "-Xmx2G", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC",
-                   "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20",
-                   "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M",
-                   "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump"
-            if (benchmarkJfrPath.isPresent()) {
-                def jfrPath = benchmarkJfrPath.get().replace('\\', '/')
-                // maxsize=0 lifts JDK 21's 250 MB default disk cap so a long
-                // recording keeps its earliest frames.
-                def jfrRecording = "name=rtx-benchmark,settings=profile,disk=true,dumponexit=false,maxsize=0"
-                if (benchmarkJfrThrowables.get().toBoolean()) {
-                    jfrRecording += ",jdk.JavaExceptionThrow#enabled=true,jdk.JavaExceptionThrow#stackTrace=true"
-                    jfrRecording += ",jdk.JavaErrorThrow#enabled=true,jdk.JavaErrorThrow#stackTrace=true"
-                }
-                vmArgs "-Drtxremix.benchmark.jfrPath=${jfrPath}",
-                       "-Drtxremix.profile.javaPhases=true",
-                       "-Drtxremix.profile.tracyJavaMaxDepth=${benchmarkTracyJavaMaxDepth.get()}",
-                       "-XX:FlightRecorderOptions=stackdepth=256",
-                       "-XX:StartFlightRecording=${jfrRecording}"
-            }
-            if (benchmarkQuickPlayWorld.isPresent()) {
-                programArgs "--quickPlaySingleplayer", benchmarkQuickPlayWorld.get()
-            }
-            // Optional --username passthrough for runClient.
-            if (project.hasProperty('mcUsername')) {
-                programArgs "--username", project.property('mcUsername')
-            }
-            // Set Remix's graphics preset for this runClient launch only:
-            // `gradlew runClient -PrtxPreset=high`.
-            if (project.hasProperty('rtxPreset')) {
-                vmArgs "-Drtxremix.preset=${project.property('rtxPreset')}"
-            }
-            // Join a multiplayer server directly on launch (debugging aid):
-            // `gradlew runClient -PmcQuickPlayServer=localhost:25565`
-            if (project.hasProperty('mcQuickPlayServer')) {
-                programArgs "--quickPlayMultiplayer", project.property('mcQuickPlayServer')
-            }
-            runDir "run"
-        }
-    }
-}
-
-// Fabric API (keep in sync with FABRIC_API_VERSION in packaging/installer.ps1,
-// which is what gets installed at runtime on the user's machine). One literal
-// serves both the compile dependency and stageFabricApi.
-def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.116.10+1.21.1"
-def fabricLoaderVersion = "0.16.5"
-
-configurations {
-    fabricTestRuntime {
-        extendsFrom testRuntimeClasspath
-    }
-}
-
-dependencies {
-    // Minecraft and Fabric
-    minecraft "com.mojang:minecraft:1.21.1"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
-
-    modImplementation fabricApiCoordinate
-
-    // Testing
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    fabricTestRuntime "net.fabricmc:fabric-loader-junit:${fabricLoaderVersion}"
-}
-
-// Indigo needs Minecraft registries and Fabric's runtime access transformations.
-// Keep those separate from the plain JVM tests, which inspect untransformed classes.
-def fabricTest = tasks.register('fabricTest', Test) {
-    group = 'verification'
-    description = 'Runs renderer integration tests under Fabric Loader.'
-    testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath - configurations.testRuntimeClasspath +
-            configurations.fabricTestRuntime
-    useJUnitPlatform {
-        includeTags 'fabric'
-    }
-    systemProperty 'fabric.side', 'client'
-}
-
-test {
-    dependsOn fabricTest
-    useJUnitPlatform {
-        excludeTags 'fabric'
-    }
-    // Pin the per-frame install cap so tests don't depend on the CPU count
-    systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
-}
-
-def gitBranch = providers.exec { commandLine 'git', 'rev-parse', '--abbrev-ref', 'HEAD' }
-        .standardOutput.asText.map { it.trim() }
-
-processResources {
-    // Repository-only asset notes contain relative links, not runtime resources.
-    exclude 'README.md'
-    inputs.property "version", resolvedBuildVersion
-    inputs.property "gitShortHash", gitShortHash
-    inputs.property "gitBranch", gitBranch
-
-    filesMatching("fabric.mod.json") {
-        expand "version": resolvedBuildVersion
-    }
-    filesMatching("benchmark.properties") {
-        expand "gitCommit": gitShortHash.get(), "gitBranch": gitBranch.get()
-    }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = "UTF-8"
-    options.release = 21
-}
-
-def currentRuntimeArch = System.getProperty("os.arch") == "aarch64" ? "arm64" : "win64"
+def baseVersion = targetState.mod.version
+def minecraftVersion = targetState.minecraft.version
+def archProperty = providers.gradleProperty('arch').orNull
+def buildArches = resolveRuntimeArches(archProperty)
+def currentRuntimeArch = System.getProperty('os.arch') == 'aarch64' ? 'arm64' : 'win64'
 def runtimeArch = archProperty ?: currentRuntimeArch
-def runtimeSdkDir = "remix-runtime/${runtimeArch}"
-def runtimeBridgeDir = "build/native/${runtimeArch}"
 
-// Fetch only the runtime consumed by each task. Existing directories, especially
-// local snapshots, belong to the developer; Gradle never replaces or updates them.
+group = targetState.mod.group
+version = runtimePackageVersion(projectDir, baseVersion, archProperty)
+def resolvedBuildVersion = version.toString()
+
+ext.sharedBuildArches = buildArches
+ext.sharedArchProperty = archProperty
+ext.sharedBuildVersion = resolvedBuildVersion
+
 def runtimeFetchServices = objects.newInstance(RuntimeFetchServices)
 def runtimeManifest = file('packman/remix-sdk.packman.xml')
 def packmanDirectory = file('packman')
-def runtimeFetchDirectory = layout.projectDirectory.asFile
 def fetchRuntimeSdkTasks = ['win64', 'arm64'].collectEntries { arch ->
     def targetDir = file("remix-runtime/${arch}")
-    def fetchTask = tasks.register(arch == 'win64' ? 'fetchRuntimeSdkWin64' : 'fetchRuntimeSdkArm64') {
+    def taskName = arch == 'win64' ? 'fetchRuntimeSdkWin64' : 'fetchRuntimeSdkArm64'
+    [(arch): tasks.register(taskName) {
         description = "Fetches the pinned ${arch} runtime when it is not staged"
         group = 'build'
         onlyIf {
@@ -297,62 +47,117 @@ def fetchRuntimeSdkTasks = ['win64', 'arm64'].collectEntries { arch ->
         }
         doLast {
             def projectXml = new groovy.xml.XmlParser().parse(runtimeManifest)
-            def dependency = projectXml.dependency.find { it.attribute('name') == "remix-sdk-${arch}" }
-            if (dependency == null) {
-                throw new GradleException("Dependency 'remix-sdk-${arch}' not found in ${runtimeManifest}")
+            def dependency = projectXml.dependency.find {
+                it.attribute('name') == "remix-sdk-${arch}"
             }
-            // Packman resolves linkPath relative to its input manifest. Keep the
-            // staging path lexical so an existing junction is never its cache target.
+            if (dependency == null) {
+                throw new GradleException(
+                        "Dependency 'remix-sdk-${arch}' not found in ${runtimeManifest}")
+            }
             dependency.attributes()['linkPath'] = targetDir.absolutePath.replace('\\', '/')
             def filtered = new Node(null, 'project', [toolsVersion: '7.6'])
             filtered.append(dependency)
-            def temporaryManifest = File.createTempFile('.packman-fetch-', '.tmp.xml', runtimeFetchDirectory)
+            def temporaryManifest = File.createTempFile('.packman-fetch-', '.tmp.xml', projectDir)
             try {
-                temporaryManifest.setText(groovy.xml.XmlUtil.serialize(filtered), 'UTF-8')
+                temporaryManifest.setText(
+                        groovy.xml.XmlUtil.serialize(filtered), 'UTF-8')
                 logger.lifecycle("Pulling remix-sdk-${arch} -> ${targetDir}")
                 runtimeFetchServices.execOperations.exec {
                     workingDir packmanDirectory
-                    commandLine 'cmd', '/d', '/c', new File(packmanDirectory, 'packman.cmd').absolutePath,
+                    commandLine 'cmd', '/d', '/c',
+                            new File(packmanDirectory, 'packman.cmd').absolutePath,
                             'pull', temporaryManifest.absolutePath, '-p', 'windows-x86_64'
                 }
             } finally {
                 temporaryManifest.delete()
             }
         }
-    }
-    [(arch): fetchTask]
+    }]
 }
 
-// Dev run/ keeps full SDK contents including PDBs so debugger sessions against
-// a locally-built (possibly debug-flavor) dxvk can resolve symbols. packageJar
-// still strips SDK PDBs for distribution. Bridge copies inside the SDK directory
-// stay excluded so the freshly-built build/native/{arch} copy wins.
-def syncRuntimeSdkTask = tasks.register('syncRuntimeSdk', Sync) {
-    dependsOn fetchRuntimeSdkTasks[runtimeArch]
-    dependsOn runtimeArch == "arm64" ? 'compileNativeArm64' : 'compileNativeWin64'
+def compileNativeTasks = [
+    win64: tasks.register('compileNativeWin64', Exec) {
+        description = 'Compiles remixbridge.dll for x64 (Windows x86_64)'
+        group = 'build'
+        workingDir file('rtxremix-java/native')
+        commandLine 'cmd', '/c',
+                file('rtxremix-java/native/build_native.bat').absolutePath, 'x64'
+        inputs.files file('rtxremix-java/native/build_native.bat'),
+                file('rtxremix-java/native/remixbridge.cpp'),
+                file('rtxremix-java/native/include/remix_c.h')
+        outputs.files file('build/native/win64/remixbridge.dll'),
+                file('build/native/win64/remixbridge.pdb')
+    },
+    arm64: tasks.register('compileNativeArm64', Exec) {
+        description = 'Compiles remixbridge.dll for arm64 (Windows ARM64, cross-compiled)'
+        group = 'build'
+        workingDir file('rtxremix-java/native')
+        commandLine 'cmd', '/c',
+                file('rtxremix-java/native/build_native.bat').absolutePath, 'arm64'
+        inputs.files file('rtxremix-java/native/build_native.bat'),
+                file('rtxremix-java/native/remixbridge.cpp'),
+                file('rtxremix-java/native/include/remix_c.h')
+        outputs.files file('build/native/arm64/remixbridge.dll'),
+                file('build/native/arm64/remixbridge.pdb')
+    }
+]
+
+def runtimeTexturesDir = 'remix-runtime/textures'
+def fetchRuntimeTexturesTask = tasks.register('fetchRuntimeTextures', Exec) {
+    description = 'Pulls the runtime textures pinned in packman/textures.packman.xml'
+    group = 'build setup'
+    def manifest = file('packman/textures.packman.xml')
+    inputs.file(manifest)
+    workingDir file('packman')
+    commandLine 'cmd', '/d', '/c', '.\\packman.cmd', 'pull', manifest.absolutePath
+    def legacyLink = file('packaging/textures').toPath()
+    def texturesDir = file(runtimeTexturesDir)
     doFirst {
-        // Sync treats a missing `from` dir as empty and would silently strip
-        // run/remix-sdk down to just the bridge DLL. Fail with the fix instead.
-        if (!file(runtimeSdkDir).directory) {
-            throw new GradleException(
-                "Remix SDK directory '${runtimeSdkDir}' is missing. To use a local runtime override:\n" +
-                "  .\\tools\\rtx.bat sdk local --arch ${runtimeArch} --path <dir>\n" +
-                "docs/GETTING_STARTED.md#get-a-runtime describes local staging.")
+        def noFollow = java.nio.file.LinkOption.NOFOLLOW_LINKS
+        if (java.nio.file.Files.exists(legacyLink, noFollow)
+                && java.nio.file.Files.readAttributes(
+                        legacyLink,
+                        java.nio.file.attribute.BasicFileAttributes,
+                        noFollow).isOther()) {
+            java.nio.file.Files.delete(legacyLink)
+            logger.lifecycle(
+                    'Removed the old runtime-textures junction at packaging/textures')
         }
     }
-    from(runtimeSdkDir) {
+    doLast {
+        def missing = runtimeTextureFiles.findAll { name ->
+            def texture = new File(texturesDir, name)
+            !texture.isFile() || texture.length() == 0
+        }
+        if (!missing.isEmpty()) {
+            def cache = texturesDir.exists()
+                    ? texturesDir.toPath().toRealPath().toString()
+                    : texturesDir.path
+            throw new GradleException(
+                    "The runtime textures at ${cache} are missing ${missing.join(', ')}. " +
+                    'Delete that folder and build again, and Packman downloads the package afresh.')
+        }
+    }
+}
+
+def syncRuntimeSdkTask = tasks.register('syncRuntimeSdk', Sync) {
+    dependsOn fetchRuntimeSdkTasks[runtimeArch], compileNativeTasks[runtimeArch]
+    doFirst {
+        if (!file("remix-runtime/${runtimeArch}").directory) {
+            throw new GradleException(
+                    "Remix SDK directory 'remix-runtime/${runtimeArch}' is missing. " +
+                    "Stage it with .\\tools\\rtx.bat sdk local --arch ${runtimeArch} --path <dir>.")
+        }
+    }
+    from("remix-runtime/${runtimeArch}") {
         exclude 'remixbridge.dll', 'remixbridge.pdb'
     }
-    from(runtimeBridgeDir) {
+    from("build/native/${runtimeArch}") {
         include 'remixbridge.dll', 'remixbridge.pdb'
     }
     into 'run/remix-sdk'
 }
 
-// A plain task rather than Copy: a Copy into 'run' declares the whole run directory as
-// its output, so Gradle fingerprinted every file under it (saves, logs, the runtime's
-// open session files) on each build, and a file a still-exiting client held open
-// failed the build with "Failed to create MD5 hash".
 def copyRuntimeConfigTask = tasks.register('copyRuntimeConfig') {
     def source = file('packaging/rtx.conf')
     def target = file('run/rtx.conf')
@@ -360,61 +165,9 @@ def copyRuntimeConfigTask = tasks.register('copyRuntimeConfig') {
     outputs.file(target)
     doLast {
         target.parentFile.mkdirs()
-        java.nio.file.Files.copy(source.toPath(), target.toPath(),
+        java.nio.file.Files.copy(
+                source.toPath(), target.toPath(),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-    }
-}
-
-// Runtime DDS assets are loaded from MinecraftClient.runDirectory; stage them
-// for runClient so development uses the production texture paths. They live
-// in Packman, not git: remix-runtime/textures/ is the junction packman creates
-// from packman/textures.packman.xml, and a pull at the pinned version is a
-// local no-op once the package is in the shared cache. Like the runtime
-// junctions beside it, it sits where git has never tracked a file, so no
-// checkout can write or delete through it into the cache.
-def runtimeTexturesDir = 'remix-runtime/textures'
-// The files the mod loads from <gameDir>/textures/ (SkyRenderer and
-// BlockTextureManager), which the distributable JAR carries for
-// NativeExtractor and the installer's uninstall removes.
-def runtimeTextureFiles = ['overcast_thunderstorm_bc6u.dds', 'water_normals_flipbook.dds']
-def fetchRuntimeTexturesTask = tasks.register('fetchRuntimeTextures', Exec) {
-    description = 'Pulls the runtime textures pinned in packman/textures.packman.xml'
-    group = 'build setup'
-    def manifest = file('packman/textures.packman.xml')
-    inputs.file(manifest)
-    // A relative script path from its own folder: cmd /c strips the outer
-    // quotes of a quoted script path, which splits a checkout path containing
-    // spaces, and cmd skips the current folder for a bare name when
-    // NoDefaultCurrentDirectoryInExePath is set.
-    workingDir file('packman')
-    commandLine 'cmd', '/d', '/c', '.\\packman.cmd', 'pull', manifest.absolutePath
-    def legacyLink = file('packaging/textures').toPath()
-    def texturesDir = file(runtimeTexturesDir)
-    doFirst {
-        // Earlier builds linked packaging/textures/, which older commits track,
-        // so checking one out wrote and deleted files in the shared cache.
-        // Remove that junction, which never touches its target; leave a real
-        // directory alone.
-        def noFollow = java.nio.file.LinkOption.NOFOLLOW_LINKS
-        if (java.nio.file.Files.exists(legacyLink, noFollow)
-                && java.nio.file.Files.readAttributes(legacyLink,
-                        java.nio.file.attribute.BasicFileAttributes, noFollow).isOther()) {
-            java.nio.file.Files.delete(legacyLink)
-            logger.lifecycle('Removed the old runtime-textures junction at packaging/textures')
-        }
-    }
-    doLast {
-        // Packman trusts its install marker, so a cache entry that has lost its
-        // files still pulls cleanly.
-        def missing = runtimeTextureFiles.findAll { name ->
-            def texture = new File(texturesDir, name)
-            !texture.isFile() || texture.length() == 0
-        }
-        if (!missing.isEmpty()) {
-            def cache = texturesDir.exists() ? texturesDir.toPath().toRealPath().toString() : texturesDir.path
-            throw new GradleException("The runtime textures at ${cache} are missing ${missing.join(', ')}. " +
-                    'Delete that folder and build again, and Packman downloads the package afresh.')
-        }
     }
 }
 
@@ -424,18 +177,6 @@ def syncRuntimeTexturesTask = tasks.register('syncRuntimeTextures', Sync) {
     into 'run/textures'
 }
 
-def migrateDevelopmentResourcePacksTask = tasks.register('migrateDevelopmentResourcePacks', Exec) {
-    commandLine 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-            '-File', file('packaging/migrate_resource_packs.ps1').absolutePath,
-            '-McDir', file('run').absolutePath, '-LegacyPackName', 'rtx-remix'
-}
-
-// The mod acquires its conf option-layers from
-// <gameDir>/rtx-remix/mods/minecraft-logic/confs/ at runtime; sync the conf
-// payload there for dev runs. The runtime also writes logs/ and captures/
-// under run/rtx-remix, and the Toolkit may save other mods under mods/;
-// preserve those, but keep our payload dir fully Sync-owned so stale files
-// never linger.
 def syncRuntimeRemixModsTask = tasks.register('syncRuntimeRemixMods', Sync) {
     from 'packaging/rtx-remix'
     into 'run/rtx-remix'
@@ -451,228 +192,39 @@ tasks.register('setupRuntime') {
     description = 'Syncs SDK, configs, textures, and Remix mods into run/ for local dev'
     group = 'build'
     dependsOn syncRuntimeSdkTask, copyRuntimeConfigTask, syncRuntimeTexturesTask,
-            syncRuntimeRemixModsTask, migrateDevelopmentResourcePacksTask
+            syncRuntimeRemixModsTask
 }
 
-tasks.named('classes') {
-    dependsOn 'setupRuntime'
-}
-
-// A development launcher instance loads mods as a player's install does, so it
-// needs the published intermediary jar, not Loom's remapped copy. A detached,
-// non-transitive configuration resolves exactly the pinned coordinate and keeps
-// this task free of the native build and runtime staging.
-tasks.register('stageFabricApi', Copy) {
-    description = 'Copies the pinned Fabric API jar to build/dev/ for development launcher instances'
+tasks.register('build') {
+    description = 'Builds every declared loader for the selected Minecraft target'
     group = 'build'
-    from configurations.detachedConfiguration(dependencies.create(fabricApiCoordinate)).tap { transitive = false }
-    into layout.buildDirectory.dir('dev')
-    rename { 'fabric-api.jar' }
+    dependsOn declaredLoaders.collect { "${it.projectPath}:build" }
 }
 
-// build_native.bat writes the bridge to build/native/{win64|arm64}/, NOT into
-// remix-runtime/{arch}/ (a managed SDK directory is a junction into a shared cache,
-// so writing there would mutate every workspace pointing at it).
-// setupRuntime/packageJar below layer the bridge on top of the SDK at copy time.
-tasks.register('compileNativeWin64', Exec) {
-    description = 'Compiles remixbridge.dll for x64 (Windows x86_64)'
-    group = 'build'
-    workingDir file('rtxremix-java/native')
-    commandLine 'cmd', '/c', file('rtxremix-java/native/build_native.bat').absolutePath, 'x64'
-    inputs.files file('rtxremix-java/native/build_native.bat'),
-                 file('rtxremix-java/native/remixbridge.cpp'),
-                 file('rtxremix-java/native/include/remix_c.h')
-    outputs.files file('build/native/win64/remixbridge.dll'),
-                  file('build/native/win64/remixbridge.pdb')
-}
-
-tasks.register('compileNativeArm64', Exec) {
-    description = 'Compiles remixbridge.dll for arm64 (Windows ARM64, cross-compiled)'
-    group = 'build'
-    workingDir file('rtxremix-java/native')
-    commandLine 'cmd', '/c', file('rtxremix-java/native/build_native.bat').absolutePath, 'arm64'
-    inputs.files file('rtxremix-java/native/build_native.bat'),
-                 file('rtxremix-java/native/remixbridge.cpp'),
-                 file('rtxremix-java/native/include/remix_c.h')
-    outputs.files file('build/native/arm64/remixbridge.dll'),
-                  file('build/native/arm64/remixbridge.pdb')
-}
-
-jar {
-    from("LICENSE") {
-        rename { "${it}_${projectArchiveName}" }
-    }
-    from("NOTICE") {
-        rename { "${it}_${projectArchiveName}" }
-    }
-    from("THIRD_PARTY_NOTICES.md") {
-        rename { "THIRD_PARTY_NOTICES_${projectArchiveName}.md" }
-    }
-}
-
-// `build` leaves Loom's remapped lightweight JAR in build/libs for fast dev
-// iteration. packageJar starts with that already-remapped JAR and adds only the
-// selected native payload, writing the distributable JAR to build/distributions.
-// Packaging therefore depends on an explicit task instead of guessing intent
-// from Gradle's command-line task names (`package` versus `:package`).
-def remapJarTask = tasks.named('remapJar')
-def packageJarTask = tasks.register('packageJar', Zip) {
-    description = 'Assembles the remapped distributable JAR with the selected platform SDKs bundled'
-    group = 'build'
-    dependsOn remapJarTask
-    dependsOn buildArches.collect { fetchRuntimeSdkTasks[it] }
-    if (buildArches.contains('win64')) dependsOn 'compileNativeWin64'
-    if (buildArches.contains('arm64')) dependsOn 'compileNativeArm64'
-
-    archiveBaseName.set(projectArchiveName)
-    archiveVersion.set(resolvedBuildVersion)
-    archiveExtension.set('jar')
-    destinationDirectory.set(layout.buildDirectory.dir('distributions'))
-    duplicatesStrategy = DuplicatesStrategy.FAIL
-    preserveFileTimestamps = false
-    reproducibleFileOrder = true
-
-    from({ zipTree(remapJarTask.get().archiveFile.get().asFile) })
-
-    doFirst {
-        checkPackageSourceHomogeneity()
-    }
-
-    // Layer the per-arch SDK and our locally-built bridge into a single
-    // native/remix-sdk-{arch}/ subtree inside the JAR. The explicit remixbridge.*
-    // excludes keep a stale copy inside an SDK directory from winning over the
-    // freshly-built per-arch bridge.
-    if (buildArches.contains('win64')) {
-        from("remix-runtime/win64") {
-            into("native/remix-sdk-win64")
-            exclude sdkExclusions
-            exclude 'remixbridge.dll', 'remixbridge.pdb'
-        }
-        from("build/native/win64") {
-            into("native/remix-sdk-win64")
-            include "remixbridge.dll", "remixbridge.pdb"
-        }
-    }
-    if (buildArches.contains('arm64')) {
-        from("remix-runtime/arm64") {
-            into("native/remix-sdk-arm64")
-            exclude sdkExclusions
-            exclude 'remixbridge.dll', 'remixbridge.pdb'
-        }
-        from("build/native/arm64") {
-            into("native/remix-sdk-arm64")
-            include "remixbridge.dll", "remixbridge.pdb"
-        }
-    }
-
-    from("packaging/rtx.conf") {
-        into("native")
-    }
-    from("packaging/rtx-remix") {
-        into("native/rtx-remix")
-    }
-    // License texts for the redistributed runtime payload, under the same path
-    // THIRD_PARTY_NOTICES.md links to. Kept outside native/ so NativeExtractor's
-    // payload layout is unchanged.
-    from("packaging/licenses") {
-        into("packaging/licenses")
-    }
-    // The runtime textures the mod loads from <gameDir>/textures/.
-    // NativeExtractor writes them there, so a JAR that a launcher installs on
-    // its own, with no installer beside it, is complete.
-    dependsOn fetchRuntimeTexturesTask
-    from(runtimeTexturesDir) {
-        into("native/textures")
-        include runtimeTextureFiles
-    }
-}
-
-def packageJarArchive = packageJarTask.flatMap { it.archiveFile }
-def remixModsPayloadDir = file('packaging/rtx-remix')
-def licensesPayloadDir = file('packaging/licenses')
-def verifyPackageJarTask = tasks.register('verifyPackageJar') {
-    description = 'Verifies the distributable JAR contains exactly the selected native payloads, the runtime textures, and the license texts'
+tasks.register('test') {
+    description = 'Runs every declared loader test suite for the selected Minecraft target'
     group = 'verification'
-    dependsOn packageJarTask
-    inputs.file(packageJarArchive)
-    inputs.dir(remixModsPayloadDir)
-    inputs.dir(licensesPayloadDir)
-
-    doLast {
-        def archive = packageJarArchive.get().asFile
-        def zip = new java.util.zip.ZipFile(archive)
-        try {
-            // NativeExtractor refuses to extract without the shipped payload history.
-            def required = ['META-INF/MANIFEST.MF', 'fabric.mod.json', 'native/rtx.conf',
-                            'rtx-remix-shipped-payload.sha256']
-            buildArches.each { arch ->
-                required.add("native/remix-sdk-${arch}/d3d9.dll")
-                required.add("native/remix-sdk-${arch}/remixbridge.dll")
-                required.add("native/remix-sdk-${arch}/remixbridge.pdb")
-            }
-            runtimeTextureFiles.each { name ->
-                required.add("native/textures/${name}")
-            }
-            def payloadEntries = { File dir, String jarPrefix ->
-                fileTree(dir).files.collect { payloadFile ->
-                    jarPrefix + dir.toPath().relativize(payloadFile.toPath()).toString().replace('\\', '/')
-                }
-            }
-            required.addAll(payloadEntries(remixModsPayloadDir, 'native/rtx-remix/'))
-            required.addAll(payloadEntries(licensesPayloadDir, 'packaging/licenses/'))
-            def missing = required.findAll { zip.getEntry(it) == null }
-            if (!missing.isEmpty()) {
-                throw new GradleException(
-                    "Distributable JAR ${archive} is missing required entries: ${missing.join(', ')}")
-            }
-
-            def entryNames = zip.entries().collect { it.name }
-            if (entryNames.contains('README.md')) {
-                throw new GradleException('Distributable JAR must not contain repository resource notes')
-            }
-            def unexpectedArches = ['win64', 'arm64'].findAll { !buildArches.contains(it) }
-            unexpectedArches.each { arch ->
-                def prefix = "native/remix-sdk-${arch}/"
-                if (entryNames.any { it.startsWith(prefix) }) {
-                    throw new GradleException("Distributable JAR unexpectedly contains ${prefix}")
-                }
-            }
-            // The runtime is built against OpenUSD without Python support. An
-            // interpreter or the USD Python bindings in the payload would be unused
-            // code that binary vulnerability scanners flag against the release.
-            def pythonEntry = ~/(?i)native\/remix-sdk-[^\/]+\/(.*\/)?([^\/]*python[^\/]*\.dll|[^\/]*\.(pyd|pyc)|python\d*(\.\d+)?\/.*)/
-            def pythonOffender = entryNames.find { it ==~ pythonEntry }
-            if (pythonOffender != null) {
-                throw new GradleException(
-                    "Distributable JAR must not contain a Python runtime: ${pythonOffender}")
-            }
-        } finally {
-            zip.close()
-        }
-    }
+    dependsOn declaredLoaders.collect { "${it.projectPath}:test" }
 }
 
 tasks.register('package') {
-    description = 'Builds a distributable JAR with the selected platform SDKs bundled'
+    description = 'Builds and verifies every declared loader artifact for the selected Minecraft target'
     group = 'build'
-    dependsOn 'build', verifyPackageJarTask
+    dependsOn declaredLoaders.collect { "${it.projectPath}:package" }
 }
 
-// --- Release content -----------------------------------------------------
-// The RTX Remix Materials resource pack and the RTX Remix Showcase World, which
-// the release carries. Both are the Packman packages tools/config.json pins for
-// development launches and benchmarks, so there is one pin and players and
-// developers see the same content. Only release staging depends on these tasks:
-// build, test and package never download the world.
+tasks.register('clean', Delete) {
+    delete layout.buildDirectory
+    dependsOn declaredLoaders.collect { "${it.projectPath}:clean" }
+}
+
+// Release content uses the same Packman pins as development and benchmarks.
 def releaseContentConfigFile = file('tools/config.json')
 def releaseContentConfig = new groovy.json.JsonSlurper().parse(releaseContentConfigFile)
 def materialsVersion = releaseContentConfig.resourcePack.version
 def worldVersion = releaseContentConfig.world.version
-// The links stay under remix-runtime/, where git has never tracked a file, so a
-// checkout cannot write or delete through them into the shared package cache.
 def artPackDir = 'remix-runtime/art-pack'
 def worldDir = 'remix-runtime/world'
-// What Minecraft's pack list shows under the pack's name.
 def materialsDescription = 'LabPBR textures by NVIDIA for RTX Remix'
 
 def fetchReleaseContentTask = tasks.register('fetchReleaseContent') {
@@ -680,60 +232,50 @@ def fetchReleaseContentTask = tasks.register('fetchReleaseContent') {
     group = 'build setup'
     inputs.file(releaseContentConfigFile)
     doFirst {
-        // installer.ps1 finds each zip by name, so a pin its patterns do not match
-        // would build a zip the installer silently ignores.
         if (!(materialsVersion ==~ /\d+\.\d+\.\d+/) || !(worldVersion ==~ /v?\d+\.\d+\.\d+/)) {
             throw new GradleException(
-                "tools/config.json pins resourcePack.version '${materialsVersion}' and world.version " +
-                "'${worldVersion}'. The installer finds the zips by name, so they must read 1.2.3 and " +
-                'v1.2.3 (the v is optional).')
+                    "tools/config.json pins resourcePack.version '${materialsVersion}' and world.version " +
+                    "'${worldVersion}'. Installer-compatible versions must read 1.2.3 or v1.2.3.")
         }
     }
     doLast {
         def manifest = new Node(null, 'project', [toolsVersion: '7.6'])
         [
-            [name: 'art-pack', link: artPackDir, pkg: releaseContentConfig.resourcePack.package,
-                    version: materialsVersion],
-            [name: 'world', link: worldDir, pkg: "rtx_remix_minecraft_world_${releaseContentConfig.world.name}",
-                    version: worldVersion],
+                [name: 'art-pack', link: artPackDir, pkg: releaseContentConfig.resourcePack.package,
+                        version: materialsVersion],
+                [name: 'world', link: worldDir,
+                        pkg: "rtx_remix_minecraft_world_${releaseContentConfig.world.name}",
+                        version: worldVersion],
         ].each { pin ->
-            // An absolute link path, as the runtime fetch gives, so Packman never
-            // resolves it through an existing junction into the cache.
             def dependency = new Node(manifest, 'dependency',
                     [name: pin.name, linkPath: file(pin.link).absolutePath.replace('\\', '/')])
             new Node(dependency, 'package', [name: pin.pkg, version: pin.version])
         }
-        def temporaryManifest = File.createTempFile('.packman-fetch-', '.tmp.xml', runtimeFetchDirectory)
+        def temporaryManifest = File.createTempFile('.packman-fetch-', '.tmp.xml', projectDir)
         try {
             temporaryManifest.setText(groovy.xml.XmlUtil.serialize(manifest), 'UTF-8')
-            logger.lifecycle("Pulling the Materials pack ${materialsVersion} and the showcase world ${worldVersion}")
             runtimeFetchServices.execOperations.exec {
-                // A relative script path from its own folder, as fetchRuntimeTextures
-                // runs it: cmd /c splits a quoted script path that contains spaces.
                 workingDir packmanDirectory
-                commandLine 'cmd', '/d', '/c', '.\\packman.cmd', 'pull', temporaryManifest.absolutePath
+                commandLine 'cmd', '/d', '/c', '.\\packman.cmd', 'pull', temporaryManifest.absolutePath,
+                        '-p', 'windows-x86_64'
             }
         } finally {
             temporaryManifest.delete()
         }
-        // Minecraft lists a pack only when pack.mcmeta sits at the ZIP's root, and
-        // opens a save only when its folder holds a level.dat.
         [[dir: artPackDir, required: 'pack.mcmeta', what: 'pack'],
-                [dir: worldDir, required: 'world/level.dat', what: 'world']].each { pin ->
+         [dir: worldDir, required: 'world/level.dat', what: 'world']].each { pin ->
             def root = file(pin.dir)
             if (!new File(root, pin.required).isFile()) {
                 def cache = root.exists() ? root.toPath().toRealPath().toString() : root.path
-                throw new GradleException("The ${pin.what} at ${cache} has no ${pin.required}. " +
-                        'Delete that folder and build again, and Packman downloads the package afresh.')
+                throw new GradleException(
+                        "The ${pin.what} at ${cache} has no ${pin.required}. Delete it and build again.")
             }
         }
     }
 }
 
-// The zip's pack.mcmeta carries the description above, whatever the pinned
-// pack's own says, and keeps the pack_format the pack's authors set.
 def materialsPackMetaTask = tasks.register('materialsPackMeta') {
-    description = 'Writes the pack.mcmeta the Materials zip carries'
+    description = 'Writes the pack.mcmeta carried by the Materials archive'
     group = 'build'
     dependsOn fetchReleaseContentTask
     def source = file("${artPackDir}/pack.mcmeta")
@@ -746,22 +288,20 @@ def materialsPackMetaTask = tasks.register('materialsPackMeta') {
         meta.pack.description = materialsDescription
         def output = target.get().asFile
         output.parentFile.mkdirs()
-        output.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(meta)) + '\n', 'UTF-8')
+        output.setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(meta)) + '\n',
+                'UTF-8')
     }
 }
 
-// Minecraft loads a zipped pack without unpacking it. The README and license
-// sit beside pack.mcmeta, which must be at the root for the pack to be listed.
 def materialsArchiveTask = tasks.register('materialsArchive', Zip) {
-    description = 'Zips the pinned pack as the RTX Remix Materials resource pack'
+    description = 'Zips the pinned RTX Remix Materials resource pack'
     group = 'build'
     dependsOn fetchReleaseContentTask
     from(materialsPackMetaTask)
     from(artPackDir) {
         exclude '.packman*'
         exclude 'pack.mcmeta'
-        // The pack's README describes PDF guides the package does not carry, so
-        // the zip keeps the release's own README, with the license beside it.
         exclude 'README.txt'
         exclude 'LICENSE.txt'
     }
@@ -778,11 +318,8 @@ def materialsArchiveTask = tasks.register('materialsArchive', Zip) {
     reproducibleFileOrder = true
 }
 
-// The save folder keeps the name a player sees in Minecraft's world list. Only
-// what a first visit needs goes in: the session lock, player data, stats,
-// advancements, datapacks, the previous level.dat and Paper's files stay behind.
 def worldArchiveTask = tasks.register('worldArchive', Zip) {
-    description = 'Zips the pinned world as the RTX Remix Showcase World save'
+    description = 'Zips the pinned RTX Remix Showcase World save'
     group = 'build'
     dependsOn fetchReleaseContentTask
     from("${worldDir}/world") {
@@ -804,17 +341,24 @@ def worldArchiveTask = tasks.register('worldArchive', Zip) {
     reproducibleFileOrder = true
 }
 
+def loaderArchives = declaredLoaders.collectEntries { loader ->
+    def releaseArchiveBaseName =
+            "${targetState.mod.id}-${loader.id}-mc${targetState.minecraft.version}"
+    [(loader.id): layout.projectDirectory.file(
+            "${loader.module}/build/distributions/" +
+            "${releaseArchiveBaseName}-${resolvedBuildVersion}.jar")]
+}
 def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
-    description = 'Stages the verified JAR, the pack and world zips, and the installer in build/release'
+    description = 'Stages the selected Minecraft target JARs, release content, and installer'
     group = 'build'
-    dependsOn 'package'
+    dependsOn declaredLoaders.collect { "${it.projectPath}:verifyPackageJar" }
     into layout.buildDirectory.dir('release')
     duplicatesStrategy = DuplicatesStrategy.FAIL
-
-    from(packageJarArchive) {
-        into 'mods'
+    declaredLoaders.each { loader ->
+        from(loaderArchives[loader.id]) {
+            into "mods/${loader.id}"
+        }
     }
-    // Both zips stay whole. The installer unpacks the ones a player chooses.
     from(materialsArchiveTask) {
         into 'resourcepacks'
     }
@@ -823,23 +367,22 @@ def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
     }
     from 'packaging/install.bat', 'packaging/installer.ps1',
             'packaging/migrate_resource_packs.ps1', 'packaging/INSTALLER_REFERENCE.md'
+    from 'project-state.json'
     from('packaging/INSTALL.md') {
         rename { 'README.md' }
     }
-    // The notices link their license texts by repository path, so the texts
-    // keep that path here as they do inside the JAR.
     from 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'
     from('packaging/licenses') {
         into 'packaging/licenses'
     }
 }
 
-// The classifier keeps the bundle's name apart from the JAR's in the release.
 def releaseArchiveTask = tasks.register('releaseArchive', Zip) {
-    description = 'Builds the installer bundle: JAR, pack and world zips, and installer, with the selected platform SDKs'
+    description = 'Builds the complete multi-loader installer bundle'
     group = 'build'
+    dependsOn stageReleaseArchiveTask
     from(stageReleaseArchiveTask)
-    archiveBaseName.set(projectArchiveName)
+    archiveBaseName.set("rtx-remix-renderer-mc${minecraftVersion}")
     archiveVersion.set(resolvedBuildVersion)
     archiveClassifier.set('installer')
     destinationDirectory.set(layout.buildDirectory.dir('distributions'))
@@ -848,16 +391,17 @@ def releaseArchiveTask = tasks.register('releaseArchive', Zip) {
     reproducibleFileOrder = true
 }
 
-// The four files a GitHub release carries, and nothing else, so the workflow
-// uploads build/release-assets/* without a list of names to keep in step.
-// Sync removes a file left behind by a previous version.
 tasks.register('stageReleaseAssets', Sync) {
-    description = 'Stages the four release files in build/release-assets'
+    description = 'Stages the files published by a GitHub release'
     group = 'build'
+    // Release publication is gated by each loader's conventional package
+    // lifecycle, which runs compilation, tests, and payload verification.
+    dependsOn declaredLoaders.collect { it.gradle['package'] }
     into layout.buildDirectory.dir('release-assets')
     duplicatesStrategy = DuplicatesStrategy.FAIL
-
-    from(packageJarArchive)
+    declaredLoaders.each { loader ->
+        from(loaderArchives[loader.id])
+    }
     from(materialsArchiveTask)
     from(worldArchiveTask)
     from(releaseArchiveTask)

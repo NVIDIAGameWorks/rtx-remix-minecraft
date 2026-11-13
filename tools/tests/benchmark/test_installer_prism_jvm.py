@@ -22,11 +22,13 @@ from typing import Any
 
 import pytest
 
+from rtx_tools import loader_registry
 from rtx_tools.benchmark import util
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs the installer")
 
 INSTALLER = util.PROJECT_DIR / "packaging" / "installer.ps1"
+PROJECT_STATE = loader_registry.load_registry()
 # Prism's global MinMemAlloc, and its global MaxMemAlloc on a machine with 6 GiB of RAM or more
 # (Application::Application in launcher/Application.cpp, SysInfo::defaultMaxJvmMem in launcher/SysInfo.cpp).
 PRISM_DEFAULT_MIN_MIB = 512
@@ -42,7 +44,7 @@ PRISM_DEFAULT_MAX_MIB = 4096
 # RemoveInstance removes the instance from the Prism data directory -Dest as Uninstall does.
 HARNESS = r"""
 param([string]$Installer, [string]$Loaded, [string]$Cfg, [string]$Answer, [switch]$Unattended,
-      [string]$Action, [string]$ManagedJdk, [string]$Dest)
+      [string]$Action, [string]$ManagedJdk, [string]$Dest, [string]$Loader)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
 $entryPoint = $ast.EndBlock.Statements[-1]
 if ($entryPoint -isnot [System.Management.Automation.Language.TryStatementAst]) {
@@ -63,7 +65,10 @@ if ($env:PRISM_TEST_NEXT_JVM_ARGS) {
 }
 switch ($Action) {
     'Sync' { Sync-JvmArgs -For Prism -PrismCfg $Cfg -Unattended:$Unattended }
-    'SyncMicrosoft' { Sync-JvmArgs -For Microsoft -Unattended:$Unattended }
+    'SyncMicrosoft' {
+        Sync-JvmArgs -For Microsoft -ModLoader $(if ($Loader) { $Loader } else { 'Fabric' }) `
+            -Unattended:$Unattended
+    }
     'JavaPin' {
         function Test-HostIsArm64 { return $true }
         $script:MANAGED_JDK_DIR = $ManagedJdk
@@ -124,7 +129,7 @@ def prism_form(jvm_args: str) -> str:
 
 RECOMMENDED = installer_literal("RECOMMENDED_JVM_ARGS")
 RECOMMENDED_FOR_PRISM = prism_form(RECOMMENDED)
-MS_PROFILE_KEY = f"fabric-loader-{installer_literal('MC_VERSION')}"
+MS_PROFILE_KEY = f"fabric-loader-{PROJECT_STATE.minecraft_version}"
 
 
 def heap_mib(jvm_args: list[str]) -> int:
@@ -815,6 +820,36 @@ def test_microsoft_launcher_profile_with_the_full_recommended_args_is_left_alone
     assert profile["javaArgs"] == RECOMMENDED
     assert "already match" in output
     assert PROMPTED not in output
+
+
+def test_microsoft_forge_profile_gets_jvm_args_without_touching_fabric(tmp_path: Path):
+    app_data = tmp_path / "AppData"
+    profiles_path = app_data / ".minecraft" / "launcher_profiles.json"
+    mc_version = PROJECT_STATE.minecraft_version
+    forge_release = PROJECT_STATE.get("forge").version
+    forge_key = "existing-custom-forge-profile"
+    forge_version = f"{mc_version}-forge-{forge_release}"
+    profiles = {
+        "profiles": {
+            MS_PROFILE_KEY: {
+                "lastVersionId": (
+                    f"fabric-loader-{PROJECT_STATE.get('fabric').version}-{PROJECT_STATE.minecraft_version}"
+                ),
+                "javaArgs": "-Dfabric=kept",
+            },
+            forge_key: {"lastVersionId": forge_version, "name": "Forge"},
+        },
+        "version": 3,
+    }
+    profiles_path.parent.mkdir(parents=True)
+    profiles_path.write_text(json.dumps(profiles), encoding="utf-8")
+    env = {**os.environ, "APPDATA": str(app_data)}
+
+    run_harness(tmp_path, "-Action", "SyncMicrosoft", "-Loader", "Forge", "-Unattended", env=env)
+
+    written = json.loads(profiles_path.read_text(encoding="utf-8"))["profiles"]
+    assert written[forge_key]["javaArgs"] == RECOMMENDED
+    assert written[MS_PROFILE_KEY]["javaArgs"] == "-Dfabric=kept"
 
 
 def test_replacing_microsoft_launcher_args_gives_the_full_recommended_args(sync_microsoft: SyncMicrosoft):

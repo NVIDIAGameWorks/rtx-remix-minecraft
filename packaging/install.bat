@@ -6,8 +6,9 @@ REM Thin launcher: delegates to installer.ps1. All arguments forward through.
 REM
 REM   install.bat                                                          -> interactive TUI
 REM   install.bat -Mode Install                                             -> forced mode, interactive
-REM   install.bat -Mode Install -Unattended -Launcher Prism                 -> headless (CI), the mod only
-REM   install.bat -Mode Install -Unattended -Launcher Prism -ArtPack Install -World Install
+REM   install.bat -Mode Install -Unattended -Launcher Prism -ModLoader Fabric
+REM                                                                         -> headless (CI), the mod only
+REM   install.bat -Mode Install -Unattended -Launcher Prism -ModLoader Fabric -ArtPack Install -World Install
 REM                                                                         -> headless, with the pack and the world
 REM   install.bat -Mode Export -Unattended -OutputPath out.zip              -> headless export
 REM   install.bat -Mode Uninstall -Unattended -AcknowledgeDataLoss          -> headless uninstall

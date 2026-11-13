@@ -1,4 +1,5 @@
 {
+    "modLoader": "fabric",
     "sdk": {
         "autoRestage": true,
         "tracyRemote": "rtx-remix-external"

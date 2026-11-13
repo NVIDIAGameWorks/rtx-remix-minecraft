@@ -156,22 +156,26 @@ Section builds, chunk loads, lighting updates, and resource reloads share that
 pool. With Remix capture inline in section builds, a burst of workers contends
 with the render thread for CPU time, so the mod bounds the pool.
 
-`WorkerPoolCap` chooses the smaller of 8 and logical CPUs minus one, with a
-minimum of one. It must run at pre-launch because `net.minecraft.util.Util`
-creates the pool in a static initializer. The section-builder cap alone does
-not limit the other work sharing that pool.
+`WorkerPoolPolicy` chooses the smaller of 8 and logical CPUs minus one, with a
+minimum of one. `RemixMixinPlugin` applies it while the shared mixin
+configuration loads, before `net.minecraft.util.Util` creates the pool in its
+static initializer. The section-builder cap alone does not limit the other work
+sharing that pool.
 
 The cap is only applied when the property is unset, so `-Dmax.bg.threads=N`
-opts out and keeps your value. `WorkerPoolCap` logs which of the two happened.
+opts out and keeps your value.
 
 ## Gradle Pass-Throughs
 
-`gradlew` accepts these `-P` properties. Architecture selection applies to any
-task; the rest apply to `runClient`, Fabric's standard Gradle task, and not to
-clients the developer tools launch.
+The repository's root `gradlew` accepts these `-P` properties. Architecture
+selection applies to every selected loader's build and package tasks; the
+runtime options apply to Fabric's selected `runClient` task and not to other
+loaders or to clients the developer tools launch.
 
 | Property | Effect |
 |---|---|
+| `-PmcVersion=<version>` | Select a Minecraft target from `project-state.json` |
+| `-Ploader=<loader-id>` | Configure and build only one loader for the selected Minecraft target |
 | `-Parch=win64` or `-Parch=arm64` | Build and package one architecture instead of both |
 | `-PrtxPreset=<low|medium|high|ultra>` | Sets `rtxremix.preset`, which selects Remix's graphics tier for that session only |
 | `-PmcQuickPlayServer=<host:port>` | Join a server on launch |
@@ -180,13 +184,14 @@ clients the developer tools launch.
 | `-PbenchmarkJfrThrowables=true` | Adds exception and error throw events to that recording |
 | `-PbenchmarkQuickPlayWorld=<name>` | Loads a single-player world on launch |
 
-`mod_version` lives in `gradle.properties`; the build appends a timestamp, the
-short commit hash, and a dirty marker to it.
+`mod.version` lives in `project-state.json`; the build appends a
+timestamp, the short commit hash, and a dirty marker to it.
 
 ## JVM Arguments
 
 A development client and a fresh install share the unconditional tuning
-arguments in `loom.runs.client.vmArgs` in [build.gradle](../build.gradle) and
+arguments in `loom.runs.client.vmArgs` in
+[versions/1.21.1/fabric/build.gradle](../versions/1.21.1/fabric/build.gradle) and
 `RECOMMENDED_JVM_ARGS` in
 [packaging/installer.ps1](../packaging/installer.ps1). The developer tools
 read `RECOMMENDED_JVM_ARGS` for every launch. Keep those unconditional

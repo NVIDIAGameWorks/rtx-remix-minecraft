@@ -1,0 +1,204 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+apply from: rootProject.file('packaging/runtime-payload.gradle')
+
+def state = gradle.ext.targetState
+def modulePath = rootProject.relativePath(project.projectDir).replace('\\', '/')
+def loaderEntry = state.loaders.find { loaderId, candidate ->
+    candidate.projectPath == project.path && candidate.module == modulePath
+}
+if (loaderEntry == null) {
+    throw new GradleException(
+            "Project ${project.path} at ${modulePath} has no matching loader declaration " +
+            'in project-state.json')
+}
+def loader = loaderEntry.value
+def minecraftModule = state.minecraft.module
+if (!minecraftModule || !rootProject.file(minecraftModule).directory) {
+    throw new GradleException(
+            "Minecraft ${state.minecraft.version} module '${minecraftModule}' is missing")
+}
+
+ext.loaderState = loader
+ext.minecraftVersion = state.minecraft.version
+ext.javaTarget = state.minecraft.javaTarget.intValue()
+ext.repoRoot = rootProject.projectDir
+ext.buildArches = rootProject.ext.sharedBuildArches
+ext.archProperty = rootProject.ext.sharedArchProperty
+ext.resolvedBuildVersion = rootProject.ext.sharedBuildVersion
+
+group = state.mod.group
+version = rootProject.version
+
+base {
+    archivesName = loader.archiveBaseName
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(javaTarget)
+    }
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir rootProject.file("${minecraftModule}/main/java")
+            srcDir rootProject.file('renderer-core/src')
+            srcDir rootProject.file('rtxremix-java/src')
+        }
+        resources {
+            srcDir rootProject.file("${minecraftModule}/main/resources")
+            srcDir rootProject.file('renderer-core/main/resources')
+        }
+    }
+    test {
+        java {
+            srcDir rootProject.file("${minecraftModule}/test/java")
+            srcDir rootProject.file('renderer-core/test')
+        }
+        resources {
+            srcDir rootProject.file("${minecraftModule}/test/resources")
+        }
+    }
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = javaTarget
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    workingDir = repoRoot
+    // Keep terrain publication tests independent of the runner's CPU count.
+    systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
+}
+
+// Compiling a runnable target must also leave the native bridge and pinned
+// runtime ready for the authenticated launcher workflow.
+tasks.named('classes') {
+    dependsOn ':setupRuntime'
+}
+
+// The public repository launches through Prism so Minecraft ownership is
+// authenticated by Microsoft's normal launcher flow. Gradle's development
+// client bypasses that flow and is reserved for NVIDIA's private CI checkout.
+tasks.matching { it.name == 'runClient' }.configureEach {
+    setDependsOn([])
+    doFirst {
+        throw new GradleException(
+                'runClient is intentionally unavailable in the public repository. ' +
+                'Use tools\\rtx.bat launch with an authenticated Prism profile.')
+    }
+}
+
+def gitShortHash = providers.exec {
+    commandLine 'git', 'rev-parse', '--short=7', 'HEAD'
+}.standardOutput.asText.map { it.trim() }
+def gitBranch = providers.exec {
+    commandLine 'git', 'rev-parse', '--abbrev-ref', 'HEAD'
+}.standardOutput.asText.map { it.trim() }
+
+processResources {
+    exclude 'README.md'
+    inputs.property 'modVersion', resolvedBuildVersion
+    inputs.property 'minecraftVersion', minecraftVersion
+    inputs.property 'javaTarget', javaTarget
+    inputs.property 'loaderVersion', loader.loader.version
+    inputs.property 'loaderVersionRange', loader.loader.versionRange
+    inputs.property 'gitShortHash', gitShortHash
+    inputs.property 'gitBranch', gitBranch
+
+    filesMatching(loader.metadataFile) {
+        expand(
+                version: resolvedBuildVersion,
+                minecraftVersion: minecraftVersion,
+                minecraftVersionRange: state.minecraft.versionRange,
+                javaTarget: javaTarget,
+                loaderVersion: loader.loader.version,
+                loaderVersionRange: loader.loader.versionRange,
+                apiVersion: loader.api?.version,
+                apiVersionRange: loader.api?.versionRange,
+                file: [jarVersion: '${file.jarVersion}'])
+    }
+    filesMatching('benchmark.properties') {
+        expand 'gitCommit': gitShortHash.get(), 'gitBranch': gitBranch.get()
+    }
+}
+
+jar {
+    from(rootProject.file('LICENSE')) {
+        rename { "${it}_${loader.archiveBaseName}" }
+    }
+    from(rootProject.file('NOTICE')) {
+        rename { "${it}_${loader.archiveBaseName}" }
+    }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md')) {
+        rename { "THIRD_PARTY_NOTICES_${loader.archiveBaseName}.md" }
+    }
+}
+
+def packageSourceTask = tasks.named(loader.packageSourceTask)
+def packageJarTask = tasks.register('packageJar', Zip) {
+    description = "Assembles the ${loader.displayName} distributable JAR with the selected runtime payload"
+    group = 'build'
+    dependsOn packageSourceTask
+    dependsOn buildArches.collect {
+        it == 'win64' ? ':fetchRuntimeSdkWin64' : ':fetchRuntimeSdkArm64'
+    }
+    if (buildArches.contains('win64')) dependsOn ':compileNativeWin64'
+    if (buildArches.contains('arm64')) dependsOn ':compileNativeArm64'
+    dependsOn ':fetchRuntimeTextures'
+
+    archiveBaseName.set(
+            "${state.mod.id}-${loaderEntry.key}-mc${state.minecraft.version}")
+    archiveVersion.set(resolvedBuildVersion)
+    archiveExtension.set('jar')
+    destinationDirectory.set(layout.buildDirectory.dir('distributions'))
+    configureReproducibleRuntimeArchive(delegate)
+
+    from({ zipTree(packageSourceTask.get().archiveFile.get().asFile) })
+    with runtimePayloadSpec(repoRoot, buildArches)
+
+    doFirst {
+        checkRuntimeSourceHomogeneity(repoRoot, buildArches)
+    }
+}
+
+def packageJarArchive = packageJarTask.flatMap { it.archiveFile }
+def verifyPackageJarTask = tasks.register('verifyPackageJar') {
+    description = "Verifies the ${loader.displayName} distributable runtime payload"
+    group = 'verification'
+    dependsOn packageJarTask
+    inputs.file(packageJarArchive)
+    inputs.dir(rootProject.file('packaging/rtx-remix'))
+    inputs.dir(rootProject.file('packaging/licenses'))
+
+    doLast {
+        verifyRuntimePayloadArchive(
+                packageJarArchive.get().asFile, repoRoot, buildArches, [loader.metadataFile])
+    }
+}
+
+ext.packageJarArchive = packageJarArchive
+ext.verifyPackageJarTask = verifyPackageJarTask
+
+tasks.register('package') {
+    description = "Builds and verifies the ${loader.displayName} distributable"
+    group = 'build'
+    dependsOn 'build', verifyPackageJarTask
+}

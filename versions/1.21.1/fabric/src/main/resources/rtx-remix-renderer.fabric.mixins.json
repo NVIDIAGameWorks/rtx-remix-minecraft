@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.nvidia.rtxremix.fabric.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "rtx-remix-renderer-refmap.json",
+  "mixins": [
+    "CopperBeaconBlockEntityFabricMixin"
+  ],
+  "client": [
+    "IndigoMeshFabricMixin",
+    "MultipartBakedModelFabricMixin",
+    "WeightedBakedModelFabricMixin",
+    "WindowFabricMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

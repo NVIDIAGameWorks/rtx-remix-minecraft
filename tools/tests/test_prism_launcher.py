@@ -13,11 +13,13 @@ from pathlib import Path
 import pytest
 from conftest import recommended_heap_mib, write_jdk
 
-from rtx_tools import client, install, prism, runtime_compat, winproc
+from rtx_tools import client, install, loader_registry, prism, runtime_compat, winproc
 from rtx_tools import config as tools_config
 from rtx_tools.benchmark import runner, util
 from rtx_tools.client import LaunchBlocked, LaunchRequest
-from rtx_tools.prism_launcher import PrismGame, PrismLauncher
+from rtx_tools.prism_launcher import PrismGame, PrismLauncher, _window_size
+
+PROJECT_STATE = loader_registry.load_registry()
 
 ALEX = prism.PrismAccount(kind="MSA", name="Alex", owns_minecraft=True, active=True)
 BOB = prism.PrismAccount(kind="MSA", name="Bob", owns_minecraft=True, active=False)
@@ -133,7 +135,8 @@ class FakePrism:
 class FakeGradle:
     args: list[str] = field(default_factory=list)
     cwd: Path | None = None
-    installs: list[tuple[Path, Path | None, str | None]] = field(default_factory=list)
+    commands: list[tuple[list[str], Path | None]] = field(default_factory=list)
+    installs: list[tuple[Path, Path | None, str | None, str, Path | None]] = field(default_factory=list)
     install_result: int = 0
 
 
@@ -174,19 +177,24 @@ def fake_gradle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGradle:
     project = tmp_path / "project"
     (project / "packaging").mkdir(parents=True)
     shutil.copy2(util.PROJECT_DIR / "packaging" / "installer.ps1", project / "packaging" / "installer.ps1")
-    jar = project / "build" / "dev" / "fabric-api.jar"
+    fabric = PROJECT_STATE.get("fabric")
+    jar = project / fabric.module / "build" / "dev" / "fabric-api.jar"
     jar.parent.mkdir(parents=True)
     jar.write_bytes(b"pinned fabric api")
+    mod_jar = project / fabric.development_jar_dir / "rtx-remix-renderer-0.1.jar"
+    mod_jar.parent.mkdir(parents=True)
+    mod_jar.write_bytes(b"fabric mod")
     monkeypatch.setattr(util, "PROJECT_DIR", project)
     fake = FakeGradle()
 
     def run(args, **kwargs):
         fake.args = [str(arg) for arg in args]
         fake.cwd = kwargs.get("cwd")
+        fake.commands.append((fake.args, fake.cwd))
         return subprocess.CompletedProcess(fake.args, 0)
 
-    def install_development_build(project_dir, *, game_dir=None, arch=None):
-        fake.installs.append((project_dir, game_dir, arch))
+    def install_development_build(project_dir, *, game_dir=None, arch=None, mod_loader="fabric", mod_jar=None):
+        fake.installs.append((project_dir, game_dir, arch, mod_loader, mod_jar))
         return fake.install_result
 
     monkeypatch.setattr(util, "run", run)
@@ -344,7 +352,9 @@ def test_check_reports_blockers_in_order(launcher, monkeypatch):
 def test_check_and_start_need_a_jdk_21(launcher, fake_prism, monkeypatch, tmp_path, java_home):
     home = None if java_home is None else write_jdk(tmp_path / "jdk-17", version=java_home)
     monkeypatch.setattr(runner, "detect_java_home", lambda: home)
-    message = re.escape(f"Minecraft {prism.installer_constant('MC_VERSION')} in Prism needs a 64-bit JDK 21 for win64")
+    message = re.escape(
+        f"Minecraft {PROJECT_STATE.minecraft_version} in Prism needs a 64-bit JDK {PROJECT_STATE.java_target} for win64"
+    )
     with pytest.raises(client.LaunchBlocked, match=message) as at_check:
         launcher.check()
     assert "JAVA_HOME" in str(at_check.value)
@@ -419,9 +429,7 @@ def test_installed_prism_launches_the_checkout_specific_instance(launcher, fake_
 def recommended_instance_args() -> list[str]:
     """The recommended JVM arguments as the instance's JvmArgs holds them: without the heap limits, which Prism takes
     only through its memory settings."""
-    return [
-        arg for arg in prism.installer_constant("RECOMMENDED_JVM_ARGS").split() if not arg.startswith(("-Xmx", "-Xms"))
-    ]
+    return [arg for arg in prism.recommended_jvm_args() if not arg.startswith(("-Xmx", "-Xms"))]
 
 
 def test_start_writes_jvm_args_and_launches_the_signed_in_profile(launcher, fake_prism):
@@ -464,30 +472,63 @@ def test_start_without_a_preset_or_recording_adds_neither(launcher, fake_prism):
     assert "--world" not in fake_prism.argv and fake_prism.argv[-2:] == ["--profile", "Alex"]
 
 
-def test_interactive_start_can_cancel_an_incompatible_runtime(launcher, fake_prism):
-    launcher._runtime_probe = runtime_compat.ProbeResult(runtime_compat.INCOMPATIBLE_VERSION)
-    launcher.confirm_incompatible_runtime = lambda: False
-
-    with pytest.raises(LaunchBlocked, match="Launch cancelled"):
-        launcher.start(LaunchRequest(arch="win64", env={}))
-
-    assert fake_prism.process is None
-
-
-def test_interactive_start_can_continue_with_an_incompatible_runtime(launcher, fake_prism):
-    launcher._runtime_probe = runtime_compat.ProbeResult(runtime_compat.INCOMPATIBLE_VERSION)
-    launcher.confirm_incompatible_runtime = lambda: True
+@pytest.mark.parametrize("loader_id", ["forge", "neoforge"])
+def test_start_writes_the_selected_loader_component(launcher, fake_prism, loader_id):
+    launcher.config = {"modLoader": loader_id}
 
     launcher.start(LaunchRequest(arch="win64", env={}))
 
-    assert fake_prism.process is not None
+    declared = PROJECT_STATE.get(loader_id)
+    pack = util.read_json(launcher.game_dir.parent / "mmc-pack.json")
+    assert pack["components"][1] == {
+        "cachedName": declared.prism.name,
+        "uid": declared.prism.uid,
+        "version": declared.prism.version,
+    }
 
 
-def test_automated_start_does_not_prompt_for_an_incompatible_runtime(launcher, fake_prism):
+def test_loader_environment_override_wins_for_start(launcher, fake_prism, monkeypatch):
+    launcher.config = {"modLoader": "fabric"}
+    monkeypatch.setenv("RTXREMIX_MOD_LOADER", "forge")
+
+    launcher.start(LaunchRequest(arch="win64", env={}))
+
+    pack = util.read_json(launcher.game_dir.parent / "mmc-pack.json")
+    assert pack["components"][1]["uid"] == "net.minecraftforge"
+
+
+def test_prepare_cancels_before_installing_an_incompatible_runtime(launcher, fake_gradle, monkeypatch):
+    monkeypatch.setattr(
+        runtime_compat,
+        "warn_if_incompatible",
+        lambda project, arch: runtime_compat.ProbeResult(runtime_compat.INCOMPATIBLE_VERSION),
+    )
+    launcher.confirm_incompatible_runtime = lambda: False
+
+    with pytest.raises(LaunchBlocked, match="Launch cancelled"):
+        launcher.prepare("win64", build=False)
+
+    assert fake_gradle.installs == []
+
+
+def test_prepare_can_continue_with_an_incompatible_runtime(launcher, fake_gradle, monkeypatch):
+    monkeypatch.setattr(
+        runtime_compat,
+        "warn_if_incompatible",
+        lambda project, arch: runtime_compat.ProbeResult(runtime_compat.INCOMPATIBLE_VERSION),
+    )
+    launcher.confirm_incompatible_runtime = lambda: True
+
+    launcher.prepare("win64", build=False)
+
+    assert len(fake_gradle.installs) == 1
+
+
+def test_start_does_not_repeat_the_prepare_runtime_prompt(launcher, fake_prism):
     launcher._runtime_probe = runtime_compat.ProbeResult(runtime_compat.INCOMPATIBLE_VERSION)
     launcher.confirm_incompatible_runtime = lambda: pytest.fail("prompted")
 
-    launcher.start(LaunchRequest(arch="win64", env={}, stdout=io.StringIO(), stderr=io.StringIO()))
+    launcher.start(LaunchRequest(arch="win64", env={}))
 
     assert fake_prism.process is not None
 
@@ -597,7 +638,7 @@ def write_old(path: Path, text: str = "A fatal error has been detected by the Ja
 
 
 def client_jar(launcher: PrismLauncher) -> Path:
-    version = prism.installer_constant("MC_VERSION")
+    version = PROJECT_STATE.minecraft_version
     return (
         launcher.data_dir / "libraries" / "com" / "mojang" / "minecraft" / version / f"minecraft-{version}-client.jar"
     )
@@ -855,31 +896,101 @@ def test_prepare_installs_fabric_api_and_prunes_other_versions(launcher, fake_gr
     stale.parent.mkdir(parents=True)
     stale.write_bytes(b"x")
     launcher.prepare("win64", build=False)
-    assert fake_gradle.args[-2:] == ["stageFabricApi", "--quiet"]
+    assert fake_gradle.args[1:3] == ["setupRuntime", *PROJECT_STATE.get("fabric").prepare_tasks]
     assert not stale.exists()
-    assert (launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar").exists()
+    assert (launcher.game_dir / "mods" / f"fabric-api-{PROJECT_STATE.get('fabric').api_version}.jar").exists()
+
+
+def test_window_size_uses_positive_render_overrides():
+    assert _window_size({"render": {"overrideWidth": 1920, "overrideHeight": 1080}}) == (1920, 1080)
+    assert _window_size({"render": {"overrideWidth": 0, "overrideHeight": 1080}}) is None
 
 
 def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gradle, monkeypatch):
     probes = []
     monkeypatch.setattr(runtime_compat, "warn_if_incompatible", lambda project, arch: probes.append((project, arch)))
+    monkeypatch.setattr(launcher, "_java", lambda arch: Path("C:/jdk-arm64/bin/javaw.exe"))
     launcher.prepare("arm64", build=True)
     project = util.PROJECT_DIR
+    fabric = PROJECT_STATE.get("fabric")
     assert fake_gradle.args == [
         str(project / "gradlew.bat"),
-        "build",
+        "setupRuntime",
+        *fabric.prepare_tasks,
+        fabric.build_task,
         "-x",
-        "test",
-        "stageFabricApi",
+        fabric.test_task,
+        *PROJECT_STATE.gradle_arguments("fabric"),
         "-Parch=arm64",
         "--console=plain",
         "--quiet",
     ]
     assert fake_gradle.cwd == project
     assert probes == [(project, "arm64")]
-    assert fake_gradle.installs == [(project, launcher.game_dir, "arm64")]
-    installed = launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
+    assert fake_gradle.installs == [
+        (
+            project,
+            launcher.game_dir,
+            "arm64",
+            "fabric",
+            project / fabric.development_jar_dir / "rtx-remix-renderer-0.1.jar",
+        )
+    ]
+    installed = launcher.game_dir / "mods" / f"fabric-api-{PROJECT_STATE.get('fabric').api_version}.jar"
     assert installed.read_bytes() == b"pinned fabric api"
+
+
+@pytest.mark.parametrize("loader_id", ["forge", "neoforge"])
+@pytest.mark.parametrize("build", [False, True])
+def test_prepare_selects_non_fabric_build_and_removes_fabric_api(launcher, fake_gradle, build, loader_id):
+    project = util.PROJECT_DIR
+    declared = PROJECT_STATE.get(loader_id)
+    mod_jar = project / declared.development_jar_dir / declared.development_jar_pattern.replace("*", "0.1")
+    mod_jar.parent.mkdir(parents=True)
+    mod_jar.write_bytes(f"{loader_id} mod".encode())
+    fabric_api = launcher.game_dir / "mods/fabric-api-old.jar"
+    fabric_api.parent.mkdir(parents=True)
+    fabric_api.write_bytes(b"fabric api")
+    launcher.config = {"modLoader": loader_id}
+
+    launcher.prepare("win64", build=build)
+
+    build_tasks = [declared.build_task, "-x", declared.test_task] if build else []
+    expected = [
+        (
+            [
+                str(project / "gradlew.bat"),
+                "setupRuntime",
+                *declared.prepare_tasks,
+                *build_tasks,
+                *PROJECT_STATE.gradle_arguments(loader_id),
+                "-Parch=win64",
+                "--console=plain",
+                "--quiet",
+            ],
+            project,
+        )
+    ]
+    assert fake_gradle.commands == expected
+    assert fake_gradle.installs == [(project, launcher.game_dir, "win64", loader_id, mod_jar)]
+    assert not fabric_api.exists()
+    pack = util.read_json(launcher.game_dir.parent / "mmc-pack.json")
+    assert pack["components"][1] == {
+        "cachedName": declared.prism.name,
+        "uid": declared.prism.uid,
+        "version": declared.prism.version,
+    }
+
+
+@pytest.mark.parametrize("loader_id", ["forge", "neoforge"])
+def test_prepare_non_fabric_without_a_built_jar_suggests_building(launcher, fake_gradle, loader_id):
+    launcher.config = {"modLoader": loader_id}
+
+    display_name = PROJECT_STATE.get(loader_id).display_name
+    with pytest.raises(LaunchBlocked, match=rf"No {display_name} mod JAR exists.*without --no-build"):
+        launcher.prepare("win64", build=False)
+
+    assert fake_gradle.installs == []
 
 
 def test_prepare_blocks_when_the_install_fails(launcher, fake_gradle):
@@ -889,8 +1000,13 @@ def test_prepare_blocks_when_the_install_fails(launcher, fake_gradle):
 
 
 def test_prepare_without_the_staged_fabric_api_says_how_to_stage_it(launcher, fake_gradle):
-    (util.PROJECT_DIR / "build" / "dev" / "fabric-api.jar").unlink()
-    with pytest.raises(client.LaunchBlocked, match=r"Run gradlew\.bat stageFabricApi"):
+    fabric = PROJECT_STATE.get("fabric")
+    (util.PROJECT_DIR / fabric.module / "build" / "dev" / "fabric-api.jar").unlink()
+    target_args = " ".join(PROJECT_STATE.gradle_arguments("fabric"))
+    with pytest.raises(
+        client.LaunchBlocked,
+        match=rf"Run gradlew\.bat {re.escape(fabric.prepare_tasks[0])} {re.escape(target_args)}",
+    ):
         launcher.prepare("win64", build=False)
     assert fake_gradle.installs == []
 
@@ -899,7 +1015,14 @@ def test_prepare_blocks_naming_an_old_fabric_api_it_cannot_remove(launcher, fake
     stale = launcher.game_dir / "mods" / "fabric-api-0.1.jar"
     stale.parent.mkdir(parents=True)
     stale.write_bytes(b"x")
-    refuse_unlink(monkeypatch, stale)
+    replace = Path.replace
+
+    def guarded(path, target):
+        if path == stale:
+            raise PermissionError("The file is in use")
+        return replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", guarded)
     with pytest.raises(client.LaunchBlocked, match=re.escape(f"Cannot update {stale} (The file is in use")):
         launcher.prepare("win64", build=False)
     assert fake_gradle.installs == []
@@ -911,7 +1034,7 @@ def test_prepare_blocks_naming_a_fabric_api_it_cannot_write(launcher, fake_gradl
         raise OSError("CopyFile2 failed")
 
     monkeypatch.setattr(shutil, "copy2", fails)
-    target = launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
+    target = launcher.game_dir / "mods" / f"fabric-api-{PROJECT_STATE.get('fabric').api_version}.jar"
     with pytest.raises(client.LaunchBlocked, match=re.escape(f"Cannot update {target} (CopyFile2 failed)")):
         launcher.prepare("win64", build=False)
     assert fake_gradle.installs == []

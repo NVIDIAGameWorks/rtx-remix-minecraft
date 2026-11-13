@@ -11,6 +11,7 @@ made, because only the mod's steps prepare a launcher."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import zipfile
 from collections.abc import Callable
@@ -45,6 +46,7 @@ STEP = re.compile(r"^\[(\d+)/(\d+)\] \S+ (.+)$")
 # they were called. The last line is what the step returned, as JSON, or what it threw.
 HARNESS = r"""
 param([string]$Installer, [string]$Loaded, [string]$Dist, [string]$UserDir, [string]$Action, [string]$Launcher,
+      [string]$ModLoader = 'Fabric',
       [switch]$Unattended, [string]$Picks, [string]$Mod, [string]$ArtPack, [string]$World, [string]$PrismDataDir)
 $env:APPDATA = Join-Path $UserDir 'Roaming'
 $env:LOCALAPPDATA = Join-Path $UserDir 'Local'
@@ -58,6 +60,8 @@ $body = $ast.Extent.Text.Substring($start, $entryPoint.Extent.StartOffset - $sta
 [IO.File]::WriteAllText($Loaded, $body, [Text.UTF8Encoding]::new($true))
 . $Loaded
 $script:SCRIPT_DIR = $Dist
+$env:RTXREMIX_PROJECT_STATE = Join-Path $Dist 'project-state.json'
+Initialize-LoaderCatalog
 $script:answers = @($Picks -split ',' | Where-Object { $_ })
 $script:answered = 0
 function Invoke-Menu {
@@ -89,19 +93,22 @@ function Get-DetectedState {
 }
 function Test-PathLengthBudget { param([string]$PrismDataDir) }
 function Initialize-Prism {
-    param([pscustomobject]$State, [switch]$Unattended)
+    param([pscustomobject]$State, [switch]$Unattended, [string]$ModLoader)
     Write-Host 'Called: Initialize-Prism'
     $instance = Join-Path $State.PrismDataDir "instances\$($script:PRISM_INSTANCE_NAME)"
     $null = New-Item -ItemType Directory -Force -Path (Join-Path $instance '.minecraft')
     return $instance
 }
 function Wait-MinecraftLauncherClosed { Write-Host 'Called: Wait-MinecraftLauncherClosed' }
-function Resolve-JavaForFabricInstaller { Write-Host 'Called: Resolve-JavaForFabricInstaller' }
+function Resolve-JavaForLoaderInstaller {
+    param([string]$ModLoader)
+    Write-Host 'Called: Resolve-JavaForLoaderInstaller'
+}
 function Initialize-MicrosoftLauncher {
-    param([string]$JavaExe, [switch]$Unattended)
+    param([string]$JavaExe, [switch]$Unattended, [string]$ModLoader)
     Write-Host 'Called: Initialize-MicrosoftLauncher'
 }
-function Install-ModFiles { param([string]$McDir) Write-Host 'Called: Install-ModFiles' }
+function Install-ModFiles { param([string]$McDir, [string]$ModLoader) Write-Host 'Called: Install-ModFiles' }
 function Install-FabricApi { param([string]$McDir, [string]$Launcher) Write-Host 'Called: Install-FabricApi' }
 function Start-InstalledLauncher {
     param([string]$Launcher, [string]$PrismDataDir)
@@ -114,8 +121,11 @@ try {
                 -ModChoice $Mod -ArtPackChoice $ArtPack -WorldChoice $World
         }
         'ContentOnly' { Get-ContentOnlyMcDir -Launcher $Launcher -PrismDataDir $PrismDataDir }
-        'Run' { Invoke-InstallOrUpgrade -PreferredLauncher $Launcher -Unattended:$Unattended -Mode 'Install' }
-        'Uninstall' { Invoke-Uninstall -PreferredLauncher $Launcher }
+        'Run' {
+            Invoke-InstallOrUpgrade -PreferredLauncher $Launcher -PreferredModLoader $ModLoader `
+                -Unattended:$Unattended -Mode 'Install'
+        }
+        'Uninstall' { Invoke-Uninstall -PreferredLauncher $Launcher -PreferredModLoader $ModLoader }
         default { throw "Unknown action: $Action" }
     })
     Write-Host ('Returned: ' + (ConvertTo-Json -InputObject $returned -Compress))
@@ -197,9 +207,10 @@ def files(folder: Path) -> list[str]:
 @pytest.fixture
 def dist(tmp_path: Path) -> Path:
     path = tmp_path / "dist"
-    for folder in ("mods", "resourcepacks", "saves"):
+    for folder in ("mods/fabric", "resourcepacks", "saves"):
         (path / folder).mkdir(parents=True)
-    (path / "mods" / JAR).write_bytes(b"jar")
+    (path / "mods" / "fabric" / JAR).write_bytes(b"jar")
+    shutil.copy2(util.PROJECT_DIR / "project-state.json", path / "project-state.json")
     (path / "resourcepacks" / PACK).write_bytes(PACK_BYTES)
     write_zip(path / "saves" / WORLD_ZIP, {f"{WORLD}/level.dat": b"level"})
     return path
@@ -363,7 +374,7 @@ def test_continue_is_disabled_with_nothing_ticked(run: Run):
     [
         (f"saves/{WORLD_ZIP}", "RTX Remix Showcase World", 2),
         (f"resourcepacks/{PACK}", "RTX Remix Materials", 1),
-        (f"mods/{JAR}", "RTX Remix Renderer", 0),
+        (f"mods/fabric/{JAR}", "RTX Remix Renderer", 0),
     ],
 )
 def test_an_item_missing_from_the_bundle_is_disabled_and_unticked(
@@ -463,7 +474,14 @@ def test_an_unattended_run_installs_the_mod_and_nothing_else_by_default(run: Run
     output = result.stdout
     for called in ("Initialize-Prism", "Install-ModFiles", "Install-FabricApi"):
         assert f"Called: {called}" in output
-    assert [(n, total) for n, total, _ in steps(output)] == [(1, 5), (2, 5), (3, 5), (4, 5), (5, 5)]
+    assert [(n, total) for n, total, _ in steps(output)] == [
+        (1, 6),
+        (2, 6),
+        (3, 6),
+        (4, 6),
+        (5, 6),
+        (6, 6),
+    ]
     mc_dir = prism / "instances" / INSTANCE / ".minecraft"
     assert files(mc_dir / "resourcepacks") == []
     assert files(mc_dir / "saves") == []
