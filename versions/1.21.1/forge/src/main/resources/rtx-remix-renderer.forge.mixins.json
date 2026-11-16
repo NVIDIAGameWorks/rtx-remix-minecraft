@@ -5,6 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "refmap": "rtx-remix-renderer-refmap.json",
   "client": [
+    "ForgeInternalHandlerAccessor",
+    "MinecraftServerForgeMixin",
     "MultipartBakedModelForgeMixin",
     "WeightedBakedModelForgeMixin",
     "WorldRendererForgeMixin"
