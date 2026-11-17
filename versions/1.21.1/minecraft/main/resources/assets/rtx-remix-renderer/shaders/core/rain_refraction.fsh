@@ -86,7 +86,13 @@ void main() {
         vec2(0.0),
         vec2(1.0));
 
-    vec3 sourceColor = texture(Sampler1, screenUv).rgb;
+    // Zero alpha marks a frame Remix has not written. The image then still
+    // holds the previous host frame, so there is nothing to refract.
+    vec4 source = texture(Sampler1, screenUv);
+    if (source.a == 0.0) {
+        discard;
+    }
+    vec3 sourceColor = source.rgb;
     vec3 refractedColor = texture(Sampler1, refractedUv).rgb;
 
     vec3 reflectedDirection = reflect(incident, lensNormal);

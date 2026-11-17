@@ -157,8 +157,8 @@ public final class GlInterop {
      *
      * <p>Remix writes opaque output into the same image, so zero alpha marks a
      * frame Remix has not written, for example while it compiles shaders.
-     * {@link TextureOverlay} leaves such a frame undrawn; drawing it would
-     * composite the previous host frame into the next one.
+     * {@link TextureOverlay} and the rain shader leave such a frame undrawn;
+     * drawing it would composite the previous host frame into the next one.
      */
     public void copyFromFramebuffer(int sourceFbo) {
         drainStaleGlErrors();
