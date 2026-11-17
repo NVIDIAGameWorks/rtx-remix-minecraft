@@ -4,8 +4,9 @@
  */
 package com.nvidia.rtxremix.forge;
 
-import com.nvidia.rtxremix.forge.mixin.ForgeInternalHandlerAccessor;
 import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -26,14 +27,28 @@ import net.minecraftforge.common.loot.LootModifierManager;
  * does no extra work here.
  */
 public final class ForgeQuickPlayCompatibility {
+    private static final String INTERNAL_HANDLER =
+            "net.minecraftforge.common.ForgeInternalHandler";
+    private static final Field LOOT_MODIFIER_MANAGER_FIELD =
+            findStaticField(INTERNAL_HANDLER, LootModifierManager.class);
+
     private ForgeQuickPlayCompatibility() {
     }
 
     public static void ensureLootModifiersReady(MinecraftServer server) {
+        Field managerField = LOOT_MODIFIER_MANAGER_FIELD;
+        if (managerField == null) {
+            MinecraftRuntime.LOGGER.warn(
+                    "Forge Quick Play compatibility is unavailable because "
+                            + "Forge's loot-modifier storage did not match the "
+                            + "supported Forge 52.x structure");
+            return;
+        }
+        LootModifierManager existing = readManager(managerField);
         if (initializeIfMissing(
-                ForgeInternalHandlerAccessor.rtxremix$getLootModifierManager(),
+                existing,
                 () -> loadLootModifiers(server),
-                ForgeInternalHandlerAccessor::rtxremix$setLootModifierManager)) {
+                manager -> publishManager(managerField, manager))) {
             MinecraftRuntime.LOGGER.info(
                     "Forge loot modifiers initialized by compatibility loader");
         }
@@ -63,6 +78,47 @@ public final class ForgeQuickPlayCompatibility {
         server.managedBlock(reload::isDone);
         reload.join();
         return manager;
+    }
+
+    private static LootModifierManager readManager(Field field) {
+        try {
+            return (LootModifierManager) field.get(null);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Could not read Forge's loot-modifier manager", e);
+        }
+    }
+
+    private static void publishManager(Field field, LootModifierManager manager) {
+        try {
+            field.set(null, manager);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Could not publish Forge's loot-modifier manager", e);
+        }
+    }
+
+    static Field findStaticField(String ownerName, Class<?> fieldType) {
+        final Class<?> owner;
+        try {
+            owner = Class.forName(ownerName, false,
+                    ForgeQuickPlayCompatibility.class.getClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            return null;
+        }
+
+        Field match = null;
+        for (Field field : owner.getDeclaredFields()) {
+            if (field.getType() != fieldType
+                    || !Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+            if (match != null || !field.trySetAccessible()) {
+                return null;
+            }
+            match = field;
+        }
+        return match;
     }
 
     static <T> boolean initializeIfMissing(

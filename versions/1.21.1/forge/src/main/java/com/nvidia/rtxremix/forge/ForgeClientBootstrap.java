@@ -39,6 +39,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.GameShuttingDownEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
@@ -78,6 +79,7 @@ final class ForgeClientBootstrap {
         forgeBus.addListener(ForgeClientBootstrap::onShutdown);
         forgeBus.addListener(ForgeClientBootstrap::onChunkUnload);
         forgeBus.addListener(ForgeClientBootstrap::onChunkLoad);
+        forgeBus.addListener(ForgeClientBootstrap::onServerStarted);
         RUNTIME.finishSetup();
     }
 
@@ -233,5 +235,9 @@ final class ForgeClientBootstrap {
             return;
         }
         RUNTIME.onServerChunkLoad(event.getLevel().getServer(), chunk);
+    }
+
+    private static void onServerStarted(ServerStartedEvent event) {
+        ForgeQuickPlayCompatibility.ensureLootModifiersReady(event.getServer());
     }
 }

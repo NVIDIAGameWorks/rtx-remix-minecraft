@@ -278,17 +278,13 @@ class BuildConfigurationTests(unittest.TestCase):
             self.assertIn(f"rootProject.file('{name}')", jarjar.group(1))
             self.assertIn(f"'META-INF/{name}'", build)
 
-    def test_public_build_refuses_gradle_run_client(self):
+    def test_run_client_migrates_development_resource_packs(self):
         convention = LOADER_BUILD.read_text(encoding="utf-8")
+        self.assertIn("tasks.register('migrateDevelopmentResourcePacks', Exec)", convention)
+        self.assertIn("packaging/migrate_resource_packs.ps1", convention)
+        self.assertIn("rootProject.file('run').absolutePath", convention)
         self.assertIn("tasks.matching { it.name == 'runClient' }.configureEach", convention)
-        self.assertIn("setDependsOn([])", convention)
-        self.assertIn("runClient is intentionally unavailable in the public repository", convention)
-        self.assertIn("tools\\\\rtx.bat launch", convention)
-        for loader in PROJECT_STATE.loaders:
-            with self.subTest(loader=loader.id):
-                build = (REPO_ROOT / loader.module / "build.gradle").read_text(encoding="utf-8")
-                self.assertNotIn("migrateDevelopmentResourcePacks", build)
-                self.assertNotIn("dependsOn ':setupRuntime'", build)
+        self.assertIn("dependsOn migrateDevelopmentResourcePacksTask", convention)
 
     def test_compilation_prepares_the_runtime_for_authenticated_launches(self):
         convention = LOADER_BUILD.read_text(encoding="utf-8")

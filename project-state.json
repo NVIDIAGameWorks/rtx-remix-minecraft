@@ -96,7 +96,7 @@
           "loader": {
             "coordinate": "net.minecraftforge:forge",
             "version": "52.1.20",
-            "versionRange": "[52.1.20,)"
+            "versionRange": "[52.1,52.2)"
           },
           "metadataFile": "META-INF/mods.toml",
           "archiveBaseName": "rtx-remix-renderer-forge",

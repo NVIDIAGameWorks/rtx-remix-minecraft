@@ -77,8 +77,6 @@ class ForgeLoaderResourcesTest {
 
         assertEquals(
                 Set.of(
-                        "ForgeInternalHandlerAccessor",
-                        "MinecraftServerForgeMixin",
                         "MultipartBakedModelForgeMixin",
                         "WeightedBakedModelForgeMixin",
                         "WorldRendererForgeMixin"),

@@ -94,16 +94,18 @@ tasks.named('classes') {
     dependsOn ':setupRuntime'
 }
 
-// The public repository launches through Prism so Minecraft ownership is
-// authenticated by Microsoft's normal launcher flow. Gradle's development
-// client bypasses that flow and is reserved for NVIDIA's private CI checkout.
+def migrateDevelopmentResourcePacksTask =
+        tasks.register('migrateDevelopmentResourcePacks', Exec) {
+    commandLine 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', rootProject.file('packaging/migrate_resource_packs.ps1').absolutePath,
+            '-McDir', rootProject.file('run').absolutePath,
+            '-LegacyPackName', 'rtx-remix'
+}
+
+// Keep the loader plugins' standard development task usable without making it
+// part of the authenticated Prism-based tooling workflow.
 tasks.matching { it.name == 'runClient' }.configureEach {
-    setDependsOn([])
-    doFirst {
-        throw new GradleException(
-                'runClient is intentionally unavailable in the public repository. ' +
-                'Use tools\\rtx.bat launch with an authenticated Prism profile.')
-    }
+    dependsOn migrateDevelopmentResourcePacksTask
 }
 
 def gitShortHash = providers.exec {

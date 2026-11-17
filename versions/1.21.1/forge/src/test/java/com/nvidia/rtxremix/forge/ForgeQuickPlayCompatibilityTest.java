@@ -9,10 +9,34 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ForgeQuickPlayCompatibilityTest {
+    private static final class OneStaticManager {
+        private static Object manager;
+        private Object instanceManager;
+    }
+
+    private static final class AmbiguousManagers {
+        private static Object first;
+        private static Object second;
+    }
+
+    @Test
+    void findsOneStaticFieldByTypeWithoutDependingOnItsName() {
+        assertNotNull(ForgeQuickPlayCompatibility.findStaticField(
+                OneStaticManager.class.getName(), Object.class));
+    }
+
+    @Test
+    void rejectsAnAmbiguousInternalStructure() {
+        assertNull(ForgeQuickPlayCompatibility.findStaticField(
+                AmbiguousManagers.class.getName(), Object.class));
+    }
+
     @Test
     void existingManagerDoesNoWork() {
         Object existing = new Object();
