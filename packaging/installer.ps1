@@ -4507,7 +4507,7 @@ function Invoke-Uninstall {
             Write-Host "    - $($script:C_DIM)<mc>/mods/$($companion.DisplayName.ToLowerInvariant().Replace(' ', '-'))-$($companion.Version).jar$($script:C_RESET) (provider-managed companion dependency)"
         }
         Write-Host "    - $($script:C_DIM)<mc>/remix-sdk/, <mc>/rtx.conf, <mc>/.rtx-remix-version$($script:C_RESET)"
-        Write-Host "    - $($script:C_DIM)<mc>/textures/overcast_thunderstorm_bc6u.dds and any legacy water_normals_flipbook.dds$($script:C_RESET)"
+        Write-Host "    - $($script:C_DIM)<mc>/textures/overcast_thunderstorm_bc6u.dds$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RTX-Remix-Materials-*.zip$($script:C_RESET) (RTX Remix Materials, and its entry in options.txt)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RtxRemix-LabPBR/$($script:C_RESET) (if left by an earlier version)"
         Write-Host '  Preserved:'
@@ -4615,7 +4615,6 @@ function Remove-ModArtifacts {
             (Join-Path $McDir 'remix-sdk')
             (Join-Path $McDir 'rtx.conf')
             (Join-Path $McDir '.rtx-remix-version')
-            (Join-Path $McDir 'textures\water_normals_flipbook.dds')
             (Join-Path $McDir 'textures\overcast_thunderstorm_bc6u.dds')
             (Join-Path $McDir $script:LEGACY_RESOURCE_PACK_PATH)
         )) {

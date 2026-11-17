@@ -153,13 +153,12 @@ cd rtx-remix-minecraft
 .\tools\rtx.bat launch
 ```
 
-The two large runtime textures are not in git: the first build pulls them
+The large overcast runtime texture is not in git: the first build pulls it
 through Packman into `remix-runtime/textures/`, the same way the runtime is
-fetched, and later builds reuse the cached copy. The build checks that both
-files arrived. The pin lives in
-`packman/textures.packman.xml`. The water normals in the package are generated
-by `tools\rtx.bat textures water-normals`. The build automatically fetches
-`rtx_remix_minecraft_runtime_textures` version `1.1.0` through Packman.
+fetched, and later builds reuse the cached copy. The build checks that the
+required file arrived and stages only that declared file from the package.
+The pin lives in `packman/textures.packman.xml`. Animated water normals are
+generated directly in memory by the native bridge when the renderer starts.
 
 The Java wrapper and JNI bridge are tracked under `rtxremix-java/` and arrive
 with the clone; no recursive checkout or hook setup is needed.

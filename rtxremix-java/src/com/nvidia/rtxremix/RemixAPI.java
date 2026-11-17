@@ -353,7 +353,7 @@ public class RemixAPI {
             throw new IllegalArgumentException(
                     "Water-normal output capacity " + output.capacity() + " is less than " + size);
         }
-        double[] timings = new double[2];
+        double[] timings = new double[1];
         byte[] error = new byte[512];
         int result = RemixBridge.generateWaterNormals(output, seed, timings, error);
         if (result != 0) {

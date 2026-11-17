@@ -177,7 +177,9 @@ def copyRuntimeConfigTask = tasks.register('copyRuntimeConfig') {
 
 def syncRuntimeTexturesTask = tasks.register('syncRuntimeTextures', Sync) {
     dependsOn fetchRuntimeTexturesTask
-    from runtimeTexturesDir
+    from(runtimeTexturesDir) {
+        include runtimeTextureFiles
+    }
     into 'run/textures'
 }
 

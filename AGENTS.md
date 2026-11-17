@@ -136,9 +136,6 @@ every shipped version; a payload change appends its line and never removes
 one, and `ShippedPayloadHistoryTest` fails with the missing line. Deleting a
 shipped conf restores its default on the next launch. A present conf that fails to acquire still prevents renderer
 initialization; the error identifies the file.
-The former mod-owned `textures/water_normals_flipbook.dds` is an obsolete
-runtime payload: startup and development installation remove that exact path,
-while leaving every unrelated texture alone.
 
 Baseline LabPBR textures live in
 `versions/1.21.1/minecraft/main/resources/assets/` and load
@@ -439,10 +436,11 @@ The wrapper's source of truth, in order, is:
    are data holders, builders, constants, and handles.
 2. `rtxremix-java/native/remixbridge.cpp`: loads `d3d9.dll`, calls
    `remixapi_InitializeLibrary`, stores the native interface, and forwards calls.
-3. `rtxremix-java/native/include/remix_c.h`: the copied C API header.
-4. `rtxremix-java/native/build_native.bat`: the MSVC bridge build.
-5. `packman/remix-sdk.packman.xml`: the published runtime pins.
-6. SDK source management in `tools/src/rtx_tools/sdk.py` and fetching in `build.gradle`.
+3. `rtxremix-java/native/water_normals.{h,cpp}`: deterministic in-memory water-normal generation.
+4. `rtxremix-java/native/include/remix_c.h`: the copied C API header.
+5. `rtxremix-java/native/build_native.bat`: the MSVC bridge build.
+6. `packman/remix-sdk.packman.xml`: the published runtime pins.
+7. SDK source management in `tools/src/rtx_tools/sdk.py` and fetching in `build.gradle`.
 
 Declared loader modules compile the Java sources directly, while the neutral
 root builds `remixbridge.dll` into

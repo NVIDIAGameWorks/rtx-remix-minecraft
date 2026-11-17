@@ -486,45 +486,6 @@ def cmd_install(args) -> int:
     )
 
 
-def cmd_textures_water_normals(args) -> int:
-    seed = 225 if args.seed is None else args.seed
-    if args.native:
-        from . import native_water_normals
-
-        bridge = util.project_path(args.bridge)
-        texture = native_water_normals.generate(bridge, seed)
-        print(
-            f"Generated {len(texture.data)} raw RG8 bytes in memory through {bridge} "
-            f"in {texture.timings.generation_seconds:.3f}s"
-        )
-        if args.reference:
-            comparison = native_water_normals.compare(texture, util.project_path(args.reference))
-            rms = ", ".join(f"{value:.6f}" for value in comparison.pillow_rms)
-            print(
-                f"Reference comparison: raw SHA-256 {comparison.sha256}, "
-                f"DDS SHA-256 {comparison.reference_sha256}, "
-                f"Pillow RMS [{rms}], max {comparison.pillow_max}"
-            )
-            # BC5 is lossy; the raw source may differ from its decoded reference
-            # by one 8-bit quantization step, but never more.
-            return 0 if max(comparison.pillow_max) <= 1 else 1
-        return 0
-
-    # Only this command needs numpy, so the rest of the CLI starts without importing it.
-    from . import water_normals
-
-    out = util.project_path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    params = water_normals.WaterParams() if args.seed is None else water_normals.WaterParams(seed=args.seed)
-    stats = water_normals.write_flipbook(out, params)
-    print(f"Wrote {out}")
-    print(
-        f"RMS slope {stats.slope_rms:.4f}, largest encoded tilt {stats.encoded_max:.3f}, "
-        f"BC5 error {stats.encode_rms:.2f} steps RMS"
-    )
-    return 0
-
-
 def cmd_world_import(args) -> int:
     client.active()
     target = runner.import_world(args.source, name=args.name, replace=args.replace)
@@ -897,54 +858,6 @@ def build_parser() -> argparse.ArgumentParser:
         f"mod loader (default: RTXREMIX_MOD_LOADER, then tools config, then {default_loader})",
     )
     p.set_defaults(func=cmd_install)
-
-    p = sub.add_parser(
-        "textures",
-        help="generate texture assets and references",
-        description="Generates texture assets and developer reference outputs.",
-        formatter_class=HelpFormatter,
-    )
-    textures_sub = p.add_subparsers(dest="textures_command", required=True, metavar="textures-command")
-    tp = textures_sub.add_parser(
-        "water-normals",
-        help="generate the animated water normal flipbook",
-        description=(
-            "Generates 120 frames of a looping, tiling ocean surface packed 12 x 10 into\n"
-            "one texture. Python writes a BC5 reference DDS; --native retains raw RG8\n"
-            "pixels in memory and can compare them with --reference."
-        ),
-        epilog="""examples:
-  tools\\rtx.bat textures water-normals
-  tools\\rtx.bat textures water-normals --seed 7 --out build\\textures\\water_seed7.dds
-  tools\\rtx.bat textures water-normals --native --reference build\\textures\\water_normals_flipbook.dds
-""",
-        formatter_class=HelpFormatter,
-    )
-    tp.add_argument(
-        "--out",
-        default="build/textures/water_normals_flipbook.dds",
-        metavar="PATH",
-        help="Python reference output; unused with --native (default: %(default)s)",
-    )
-    tp.add_argument("--seed", type=int, default=None, metavar="N", help="surface seed (default: the shipped surface's)")
-    tp.add_argument(
-        "--native",
-        action="store_true",
-        help="generate through the already-built Win64 bridge DLL instead of the Python reference",
-    )
-    tp.add_argument(
-        "--bridge",
-        default="build/native/win64/remixbridge.dll",
-        metavar="PATH",
-        help="bridge DLL used with --native; a relative path starts at the repository root (default: %(default)s)",
-    )
-    tp.add_argument(
-        "--reference",
-        default=None,
-        metavar="DDS",
-        help="with --native, compare in-memory output against this DDS using SHA-256 and Pillow",
-    )
-    tp.set_defaults(func=cmd_textures_water_normals)
 
     p = sub.add_parser(
         "preset",

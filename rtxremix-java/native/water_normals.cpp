@@ -6,7 +6,6 @@
 #include "water_normals.h"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -106,8 +105,6 @@ struct FrameWorker {
     std::vector<Complex> transformed;
     std::vector<Complex> transposeScratch;
     Image image;
-    double slopeSquare = 0.0;
-    double encodedMax = 0.0;
 };
 
 std::uint64_t splitmix64(std::uint64_t seed, std::uint64_t index) {
@@ -353,9 +350,7 @@ void blockedTranspose(
 __declspec(noinline) void encodeOctahedralAvx2(
     const Complex* slopes,
     float* encoded,
-    std::size_t pixels,
-    double& slopeSquare,
-    double& encodedMax) {
+    std::size_t pixels) {
     const __m256 signMask = _mm256_set1_ps(-0.0f);
     const __m256 one = _mm256_set1_ps(1.0f);
     for (std::size_t i = 0; i < pixels; i += 4) {
@@ -366,16 +361,6 @@ __declspec(noinline) void encodeOctahedralAvx2(
         const __m256 denominator = _mm256_add_ps(_mm256_add_ps(absolute, swapped), one);
         const __m256 result = _mm256_xor_ps(_mm256_div_ps(values, denominator), signMask);
         _mm256_storeu_ps(encoded + 2 * i, result);
-
-        for (std::size_t pixel = i; pixel < i + 4; ++pixel) {
-            const float sx = slopes[pixel].real();
-            const float sy = slopes[pixel].imag();
-            slopeSquare += sx * sx + sy * sy;
-            encodedMax = std::max(
-                encodedMax,
-                static_cast<double>(std::max(
-                    std::abs(encoded[2 * pixel]), std::abs(encoded[2 * pixel + 1]))));
-        }
     }
     _mm256_zeroupper();
 }
@@ -383,9 +368,7 @@ __declspec(noinline) void encodeOctahedralAvx2(
 void encodeOctahedralNeon(
     const Complex* slopes,
     float* encoded,
-    std::size_t pixels,
-    double& slopeSquare,
-    double& encodedMax) {
+    std::size_t pixels) {
     const float32x4_t one = vdupq_n_f32(1.0f);
     for (std::size_t i = 0; i < pixels; i += 2) {
         const float* source = reinterpret_cast<const float*>(slopes + i);
@@ -394,16 +377,6 @@ void encodeOctahedralNeon(
         const float32x4_t swapped = vrev64q_f32(absolute);
         const float32x4_t denominator = vaddq_f32(vaddq_f32(absolute, swapped), one);
         vst1q_f32(encoded + 2 * i, vnegq_f32(vdivq_f32(values, denominator)));
-
-        for (std::size_t pixel = i; pixel < i + 2; ++pixel) {
-            const float sx = slopes[pixel].real();
-            const float sy = slopes[pixel].imag();
-            slopeSquare += sx * sx + sy * sy;
-            encodedMax = std::max(
-                encodedMax,
-                static_cast<double>(std::max(
-                    std::abs(encoded[2 * pixel]), std::abs(encoded[2 * pixel + 1]))));
-        }
     }
 }
 #endif
@@ -412,8 +385,6 @@ void frameEncoding(
     const Ocean& ocean,
     const FftPlan& fftPlan,
     int frame,
-    double& slopeSquare,
-    double& encodedMax,
     std::vector<Complex>& transformed,
     std::vector<Complex>& transposeScratch,
     Image& image) {
@@ -452,26 +423,22 @@ void frameEncoding(
 #if defined(_M_X64)
     if (hasWideSimd()) {
         encodeOctahedralAvx2(
-            transformed.data(), image.xy.data(), pixels, slopeSquare, encodedMax);
+            transformed.data(), image.xy.data(), pixels);
         return;
     }
 #elif defined(_M_ARM64)
     encodeOctahedralNeon(
-        transformed.data(), image.xy.data(), pixels, slopeSquare, encodedMax);
+        transformed.data(), image.xy.data(), pixels);
     return;
 #endif
     for (std::size_t i = 0; i < pixels; ++i) {
         const float sx = transformed[i].real();
         const float sy = transformed[i].imag();
-        slopeSquare += sx * sx + sy * sy;
         const float denominator = std::abs(sx) + std::abs(sy) + 1.0f;
         const float ox = -sx / denominator;
         const float oy = -sy / denominator;
         image.xy[2 * i] = ox;
         image.xy[2 * i + 1] = oy;
-        encodedMax = std::max(
-            encodedMax,
-            static_cast<double>(std::max(std::abs(ox), std::abs(oy))));
     }
 }
 
@@ -516,14 +483,6 @@ void writeFrameRg8(
         for (int value = 0; value < image.width * 2; ++value)
             destination[value] = roundedByte((source[value] * 0.5f + 0.5f) * 255.0f);
     }
-}
-
-void copyError(const std::string& source, char* destination, std::size_t capacity) {
-    if (!destination || capacity == 0)
-        return;
-    const std::size_t count = std::min(source.size(), capacity - 1);
-    std::memcpy(destination, source.data(), count);
-    destination[count] = '\0';
 }
 
 } // namespace
@@ -572,8 +531,6 @@ int generate(
                         ocean,
                         fftPlan,
                         frame,
-                        state.slopeSquare,
-                        state.encodedMax,
                         state.transformed,
                         state.transposeScratch,
                         state.image);
@@ -606,20 +563,9 @@ int generate(
         if (failure)
             std::rethrow_exception(failure);
 
-        double slopeSquare = 0.0;
-        double encodedMax = 0.0;
-        for (const FrameWorker& state : scratch) {
-            slopeSquare += state.slopeSquare;
-            encodedMax = std::max(encodedMax, state.encodedMax);
-        }
         const auto finished = std::chrono::steady_clock::now();
         if (stats) {
-            const double sampleCount =
-                static_cast<double>(kFrames) * kFrameSize * kFrameSize * 2.0;
-            stats->slopeRms = std::sqrt(slopeSquare / sampleCount);
-            stats->encodedMax = encodedMax;
             stats->generationSeconds = std::chrono::duration<double>(finished - started).count();
-            stats->elapsedSeconds = stats->generationSeconds;
         }
         if (error)
             error->clear();
@@ -640,30 +586,3 @@ int generate(
 }
 
 } // namespace water_normals
-
-REMIXBRIDGE_EXPORT std::size_t remixbridge_water_normals_texture_size() {
-    return water_normals::textureSize();
-}
-
-REMIXBRIDGE_EXPORT int remixbridge_generate_water_normals(
-    void* output,
-    std::size_t outputSize,
-    std::uint64_t seed,
-    double* timings,
-    std::size_t timingCount,
-    char* error,
-    std::size_t errorCapacity) {
-    std::string message;
-    water_normals::Stats stats{};
-    const int status = water_normals::generate(
-        static_cast<std::uint8_t*>(output), outputSize, seed, &stats, &message);
-    if (timings && timingCount > 0) {
-        const std::array<double, 2> values = {
-            stats.generationSeconds,
-            stats.elapsedSeconds,
-        };
-        std::copy_n(values.begin(), std::min(timingCount, values.size()), timings);
-    }
-    copyError(message, error, errorCapacity);
-    return status;
-}

@@ -459,9 +459,6 @@ class BuildConfigurationTests(unittest.TestCase):
             loaded.update(re.findall(r'"textures/([^"/]+\.dds)"', source.read_text(encoding="utf-8")))
         installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
         installed = set(re.findall(r"'textures\\([^'\\]+\.dds)'", installer))
-        # Uninstall also retires this asset from releases that predate
-        # in-memory water-normal generation; it is no longer installed.
-        installed.discard("water_normals_flipbook.dds")
         self.assertTrue(checked)
         self.assertEqual(checked, loaded)
         self.assertEqual(checked, installed)
@@ -472,6 +469,7 @@ class BuildConfigurationTests(unittest.TestCase):
 
         self.assertIn("tasks.register('syncRuntimeSdk', Sync)", build)
         self.assertIn("tasks.register('syncRuntimeTextures', Sync)", build)
+        self.assertIn("include runtimeTextureFiles", build)
         self.assertNotIn("tasks.register('syncDevelopmentResourcePack', Sync)", build)
 
     def test_runtime_config_copy_declares_only_its_own_output(self):

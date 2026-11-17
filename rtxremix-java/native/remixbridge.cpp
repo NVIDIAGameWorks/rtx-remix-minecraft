@@ -740,10 +740,9 @@ Java_com_nvidia_rtxremix_RemixBridge_generateWaterNormals(
         const jsize capacity = env->GetArrayLength(jTimings);
         const jdouble timings[] = {
             stats.generationSeconds,
-            stats.elapsedSeconds,
         };
         env->SetDoubleArrayRegion(
-            jTimings, 0, std::min<jsize>(capacity, 2), timings);
+            jTimings, 0, std::min<jsize>(capacity, 1), timings);
     }
     if (jError && !error.empty()) {
         const jsize capacity = env->GetArrayLength(jError);
