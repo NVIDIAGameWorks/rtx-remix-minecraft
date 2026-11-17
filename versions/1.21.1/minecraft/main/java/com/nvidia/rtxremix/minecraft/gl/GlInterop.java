@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.gl;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.nvidia.rtxremix.InteropInfo;
 import com.nvidia.rtxremix.RemixBridge;
 import com.nvidia.rtxremix.TextureFormat;
@@ -30,6 +31,7 @@ import static org.lwjgl.opengl.GL45.*;
 public final class GlInterop {
     private static final Logger LOGGER = LoggerFactory.getLogger(GlInterop.class);
     private static final int[] NO_BUFFERS = new int[0];
+    private static final float[] TRANSPARENT = {0.0f, 0.0f, 0.0f, 0.0f};
 
     private final InteropImage colorImage = new InteropImage(true);
     private final InteropImage depthImage = new InteropImage(false);
@@ -150,6 +152,14 @@ public final class GlInterop {
         glFlush();
     }
 
+    /**
+     * Copies the host frame into the shared color image and zeroes its alpha.
+     *
+     * <p>Remix writes opaque output into the same image, so zero alpha marks a
+     * frame Remix has not written, for example while it compiles shaders.
+     * {@link TextureOverlay} leaves such a frame undrawn; drawing it would
+     * composite the previous host frame into the next one.
+     */
     public void copyFromFramebuffer(int sourceFbo) {
         drainStaleGlErrors();
         if (!colorImage.available()) {
@@ -170,6 +180,14 @@ public final class GlInterop {
                 GL_COLOR_BUFFER_BIT,
                 GL_NEAREST);
         checkGlError("glBlitNamedFramebuffer");
+
+        // A blit ignores the color mask and a clear honors it, so the mask
+        // limits the clear to alpha. RenderSystem keeps vanilla's cached mask
+        // valid; all channels enabled is the state vanilla presents in.
+        RenderSystem.colorMask(false, false, false, true);
+        glClearNamedFramebufferfv(destinationFbo, GL_COLOR, 0, TRANSPARENT);
+        RenderSystem.colorMask(true, true, true, true);
+        checkGlError("glClearNamedFramebufferfv");
     }
 
     public int getTexture() {
