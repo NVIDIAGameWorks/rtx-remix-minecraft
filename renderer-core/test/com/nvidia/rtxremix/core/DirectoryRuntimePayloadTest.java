@@ -326,6 +326,39 @@ class DirectoryRuntimePayloadTest {
     }
 
     @Test
+    void aVersionChangeRemovesAnObsoleteRuntimeTextureOnly(@TempDir Path tmp) throws IOException {
+        Path nativeRoot = createNativePayload(tmp);
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        Path textures = Files.createDirectories(gameDir.resolve("textures"));
+        Path obsolete = textures.resolve("water_normals_flipbook.dds");
+        Path unrelated = textures.resolve("custom.dds");
+        Files.writeString(obsolete, "previously shipped water normals");
+        Files.writeString(unrelated, "author texture");
+        Files.writeString(gameDir.resolve(".rtx-remix-version"), "0.9|remix-sdk-win64");
+
+        DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64",
+                NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
+
+        assertFalse(Files.exists(obsolete));
+        assertEquals("author texture", Files.readString(unrelated));
+    }
+
+    @Test
+    void matchingMarkerStillRemovesAnObsoleteRuntimeTexture(@TempDir Path tmp) throws IOException {
+        Path nativeRoot = createNativePayload(tmp);
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64",
+                NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
+        Path obsolete = gameDir.resolve("textures/water_normals_flipbook.dds");
+        Files.writeString(obsolete, "previously shipped water normals");
+
+        DirectoryRuntimePayload.install(nativeRoot, gameDir, "1.0", "remix-sdk-win64",
+                NO_HISTORY, DirectoryRuntimePayload.Reporter.NONE, INLINE_CLEANUP);
+
+        assertFalse(Files.exists(obsolete));
+    }
+
+    @Test
     void aRenameBlockedByAnotherProgramSucceedsOnceItLetsGo() throws IOException {
         // A first launch writes the runtime and renames its staging directory
         // while an antivirus scanner still has the new DLLs open.

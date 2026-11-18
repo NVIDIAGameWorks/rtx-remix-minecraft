@@ -17,8 +17,8 @@ How to build and run the mod from source. If you only want to play, read
   workload (MSVC v143). Cross-building the ARM64 bridge additionally needs the
   MSVC ARM64 build tools for some installed toolset; `build_native.bat` uses
   the default toolset when it has them, otherwise the newest one that does.
-- **Git.** Everything is in the clone except the native runtime and the two
-  large runtime textures, which the build pulls through Packman on first use.
+- **Git.** Everything is in the clone except the native runtime and its large
+  runtime texture asset, which the build pulls through Packman on first use.
 - **uv 0.13 or newer and Python 3.15 or newer**, for the developer tools that
   launch the mod. The first `tools\rtx.bat` command installs
   [uv](https://docs.astral.sh/uv/) for your user when it is missing, and uv
