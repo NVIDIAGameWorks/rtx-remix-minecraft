@@ -11,6 +11,9 @@ config="rtx-remix-renderer.vanilla-section.mixins.json"
 [[mixins]]
 config="rtx-remix-renderer.forge.mixins.json"
 
+[[mixins]]
+config="rtx-remix-renderer.forge-quick-play.mixins.json"
+
 [[mods]]
 modId="rtx_remix_renderer"
 version="${file.jarVersion}"

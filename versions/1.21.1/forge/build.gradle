@@ -27,6 +27,14 @@ apply plugin: 'org.spongepowered.mixin'
 jarJar.enable()
 apply from: rootProject.file('gradle/loader-module.gradle')
 
+// Forge's development module must expose classes and resources from one root.
+// Separate roots make Forge's module layer lose Java type identity across them.
+sourceSets.each {
+    def dir = layout.buildDirectory.dir("sourceSets/$it.name")
+    it.output.resourcesDir = dir
+    it.java.destinationDirectory = dir
+}
+
 def forgeVersion = loaderState.loader.version
 def isSingleArchJar = archProperty != null
 logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
@@ -54,6 +62,7 @@ mixin {
     config 'rtx-remix-renderer.mixins.json'
     config 'rtx-remix-renderer.vanilla-section.mixins.json'
     config 'rtx-remix-renderer.forge.mixins.json'
+    config 'rtx-remix-renderer.forge-quick-play.mixins.json'
 }
 
 repositories {
@@ -91,7 +100,8 @@ jar {
             'Implementation-Version': resolvedBuildVersion,
             'MixinConfigs': 'rtx-remix-renderer.mixins.json,'
                     + 'rtx-remix-renderer.vanilla-section.mixins.json,'
-                    + 'rtx-remix-renderer.forge.mixins.json'
+                    + 'rtx-remix-renderer.forge.mixins.json,'
+                    + 'rtx-remix-renderer.forge-quick-play.mixins.json'
         )
     }
 }

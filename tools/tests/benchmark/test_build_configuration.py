@@ -283,6 +283,8 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("tasks.register('migrateDevelopmentResourcePacks', Exec)", convention)
         self.assertIn("packaging/migrate_resource_packs.ps1", convention)
         self.assertIn("rootProject.file('run').absolutePath", convention)
+        self.assertIn("'-MinecraftVersion', minecraftVersion", convention)
+        self.assertIn("'-ModLoader', loader.displayName", convention)
         self.assertIn("tasks.matching { it.name == 'runClient' }.configureEach", convention)
         self.assertIn("dependsOn migrateDevelopmentResourcePacksTask", convention)
 

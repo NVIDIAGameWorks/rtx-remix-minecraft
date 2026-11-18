@@ -38,9 +38,34 @@ class ForgeLoaderResourcesTest {
                 "Forge metadata must register the vanilla section compiler adapter");
         assertTrue(metadata.contains("config=\"rtx-remix-renderer.forge.mixins.json\""),
                 "Forge metadata must register the Forge mixins");
+        assertTrue(metadata.contains(
+                        "config=\"rtx-remix-renderer.forge-quick-play.mixins.json\""),
+                "Forge metadata must register the optional quick-play compatibility mixin");
         assertTrue(Files.isRegularFile(
                         RESOURCES.resolve("META-INF/accesstransformer.cfg")),
                 "the access transformer declared by the build must exist");
+    }
+
+    @Test
+    void forgeBuildRegistersEveryMixinConfigForProduction() throws Exception {
+        String build = Files.readString(FORGE.resolve("build.gradle"));
+        for (String config : Set.of(
+                "rtx-remix-renderer.mixins.json",
+                "rtx-remix-renderer.vanilla-section.mixins.json",
+                "rtx-remix-renderer.forge.mixins.json",
+                "rtx-remix-renderer.forge-quick-play.mixins.json")) {
+            assertEquals(2, occurrences(build, "'" + config + "'"),
+                    config + " must be registered with MixinGradle and in the JAR manifest");
+        }
+    }
+
+    @Test
+    void forgeDevelopmentRunUsesOneModuleOutputRoot() throws Exception {
+        String build = Files.readString(FORGE.resolve("build.gradle"));
+
+        assertTrue(build.contains("sourceSets.each {"));
+        assertTrue(build.contains("it.output.resourcesDir = dir"));
+        assertTrue(build.contains("it.java.destinationDirectory = dir"));
     }
 
     @Test
@@ -85,6 +110,27 @@ class ForgeLoaderResourcesTest {
     }
 
     @Test
+    void quickPlayCompatibilityMixinIsOptional() throws Exception {
+        JsonObject config = JsonParser.parseString(Files.readString(
+                RESOURCES.resolve("rtx-remix-renderer.forge-quick-play.mixins.json")))
+                .getAsJsonObject();
+
+        assertFalse(config.get("required").getAsBoolean());
+        assertEquals(0, config.getAsJsonObject("injectors")
+                .get("defaultRequire").getAsInt());
+        assertEquals(
+                Set.of("MinecraftServerForgeMixin"),
+                strings(config.getAsJsonArray("client")));
+
+        Path source = FORGE.resolve("src/main/java")
+                .resolve(config.get("package").getAsString().replace('.', '/'))
+                .resolve("MinecraftServerForgeMixin.java");
+        assertTrue(Files.isRegularFile(source));
+        assertTrue(Files.readString(source).contains("require = 0"),
+                "the optional config must not make a moved injection point fatal");
+    }
+
+    @Test
     void declaredLoaderSuppliesCanonicalServicesAndRuntimeResources() {
         assertTrue(MinecraftPlatform.Services.class.isAssignableFrom(
                 ForgePlatformServices.class));
@@ -115,6 +161,16 @@ class ForgeLoaderResourcesTest {
         Set<String> result = new HashSet<>();
         values.forEach(value -> result.add(value.getAsString()));
         return result;
+    }
+
+    private static int occurrences(String text, String value) {
+        int count = 0;
+        for (int offset = 0;
+                (offset = text.indexOf(value, offset)) >= 0;
+                offset += value.length()) {
+            count++;
+        }
+        return count;
     }
 
     private static void assertStrictMixinDefaults(JsonObject config) {
