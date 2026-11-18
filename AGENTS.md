@@ -258,7 +258,10 @@ atlas-level PBR, emissive, and luminance textures. Animated sprite uploads are
 batched and forwarded, which needs the upload hook, the patch types in the
 wrapper, and runtime support for updating a texture from memory. Glyph pages are
 mirrored on upload, because vanilla assembles them on the GPU and never keeps
-them on the CPU.
+them on the CPU. LabPBR sidecars are read from their files and filtered out of
+every atlas vanilla stitches: the runtime builds a full mip chain over the
+atlas copy it is given, and past a sprite's own size a mip texel averages the
+sprite with its neighbours.
 
 **Particles.** Slot preparation and CPU mesh snapshots run on a dedicated worker
 and are double buffered: the render thread publishes the previous frame's
@@ -322,6 +325,10 @@ diluting the sampler's candidate pool.
 - A local first-person light is submitted with a zero volumetric radiance scale,
   because the volumetric grid reuses the previous frame's radiance and a
   camera-locked emitter would smear into distant geometry (`LightManager`).
+- A LabPBR sidecar is never a sprite. An atlas copied to Remix holds base
+  colour only, so a sidecar stitched into it would tint its neighbours at
+  coarse mip levels; every consumer loads sidecars through
+  `LabPBRVariants` (`LabPBRSidecarFilter`, `SpriteSourceListMixin`).
 - Ordinary classes must not live in the mixin package (`MixinPackageBoundaryTest`).
 - A mixin that cancels vanilla work replays the GL, fog, and framebuffer state
   its target would have set (`WorldRendererMixin`).
