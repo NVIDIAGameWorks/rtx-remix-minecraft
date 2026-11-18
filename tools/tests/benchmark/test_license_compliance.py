@@ -16,6 +16,7 @@ Both failure modes are invisible to a human reviewer and recur on every merge,
 so they are asserted here instead.
 """
 
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -206,19 +207,20 @@ class AccessWidenerHeaderTests(unittest.TestCase):
     below it. That is easy to "fix" into a broken build during a header sweep.
     """
 
-    PATH = Path("src/main/resources/rtx-remix-renderer.accesswidener")
+    PATH = Path("versions/1.21.1/fabric/src/main/resources/rtx-remix-renderer.accesswidener")
 
     def test_format_header_is_still_the_first_line(self):
         lines = read_text(REPO_ROOT / self.PATH).splitlines()
-        self.assertTrue(
-            lines[0].startswith("accessWidener "),
+        self.assertRegex(
+            lines[0],
+            r"^accessWidener\s",
             "the accessWidener format header must remain line 1; Loom rejects anything above it",
         )
 
     def test_spdx_header_is_present_below_the_format_header(self):
         text = read_text(REPO_ROOT / self.PATH)
         self.assertIn(SPDX_LICENSE_LINE, text)
-        self.assertLess(text.index("accessWidener "), text.index("SPDX-License-Identifier"))
+        self.assertLess(text.index("accessWidener"), text.index("SPDX-License-Identifier"))
 
 
 class ContributionDocumentTests(unittest.TestCase):
@@ -304,6 +306,28 @@ class LicenseFileTests(unittest.TestCase):
         self.assertEqual(
             [], unreferenced, "license files under packaging/licenses/ that THIRD_PARTY_NOTICES.md does not reference"
         )
+
+    def test_bundled_mixinextras_is_attributed(self):
+        forge_build = read_text(REPO_ROOT / "versions/1.21.1/forge/build.gradle")
+        match = re.search(r"io\.github\.llamalad7:mixinextras-forge:([^'\"]+)", forge_build)
+        if match is None:
+            self.fail("expected the Forge module's bundled MixinExtras dependency")
+
+        notices = read_text(REPO_ROOT / "THIRD_PARTY_NOTICES.md")
+        self.assertIn(f"MixinExtras {match.group(1)}", notices)
+        self.assertIn("packaging/licenses/mixinextras/LICENSE.txt", notices)
+
+        license_text = read_text(REPO_ROOT / "packaging/licenses/mixinextras/LICENSE.txt")
+        self.assertIn("MIT License", license_text)
+        self.assertIn("Copyright (c) 2022-present LlamaLad7", license_text)
+
+    def test_declared_neoforge_runtime_dependency_is_in_notices(self):
+        project_state = read_text(REPO_ROOT / "project-state.json")
+        self.assertIn('"neoforge"', project_state)
+
+        notices = read_text(REPO_ROOT / "THIRD_PARTY_NOTICES.md")
+        self.assertIn("- NeoForge (NeoForged)", notices)
+        self.assertIn("GNU Lesser General Public License, version 2.1 only", notices)
 
 
 if __name__ == "__main__":

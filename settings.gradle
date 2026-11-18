@@ -4,14 +4,148 @@
  */
 
 pluginManagement {
+    def catalogFile = file('project-state.json')
+    def catalog = new groovy.json.JsonSlurper().parse(catalogFile)
+    if (catalog.schema != 'multi-version/v1') {
+        throw new GradleException(
+                "Unsupported project-state.json schema '${catalog.schema}'; expected multi-version/v1")
+    }
+    if (!(catalog.versions instanceof Map) || catalog.versions.isEmpty()) {
+        throw new GradleException('project-state.json versions must be a non-empty object')
+    }
+    def requestedVersion = settings.startParameter.projectProperties.mcVersion
+            ?: catalog.defaultMinecraftVersion
+    def versionState = catalog.versions[requestedVersion]
+    if (versionState == null) {
+        throw new GradleException(
+                "Unknown Minecraft version '${requestedVersion}'; declared versions: " +
+                catalog.versions.keySet().join(', '))
+    }
+    def requestedLoader = settings.startParameter.projectProperties.loader
+    def selectedLoaders = requestedLoader == null
+            ? versionState.loaders
+            : versionState.loaders.findAll { loaderId, ignored -> loaderId == requestedLoader }
+    if (selectedLoaders.isEmpty()) {
+        throw new GradleException(
+                "Unknown loader '${requestedLoader}' for Minecraft ${requestedVersion}; " +
+                "declared loaders: ${versionState.loaders.keySet().join(', ')}")
+    }
+    gradle.ext.projectCatalog = catalog
+    gradle.ext.minecraftVersionId = requestedVersion
+    gradle.ext.targetState = versionState + [
+            mod: catalog.mod,
+            versionId: requestedVersion,
+            loaders: selectedLoaders,
+    ]
+
     repositories {
-        maven {
-            name = 'Fabric'
-            url = 'https://maven.fabricmc.net/'
+        catalog.versions.values()
+                .collectMany { it.loaders.values() }
+                *.gradlePlugin*.repository
+                .findAll { it }
+                .unique()
+                .each { repositoryUrl ->
+            maven {
+                url = repositoryUrl
+            }
         }
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        selectedLoaders.values()
+                .toList()
+                .unique { it.gradlePlugin.id }
+                .each { loader ->
+            id loader.gradlePlugin.id version loader.gradlePlugin.version
+        }
+    }
 }
 
-rootProject.name = 'rtx-remix-renderer'
+def state = gradle.ext.targetState
+def requiredTopLevel = ['supportTier', 'defaultLoader', 'mod', 'minecraft', 'loaders']
+def missingTopLevel = requiredTopLevel.findAll { state[it] == null }
+if (!missingTopLevel.isEmpty()) {
+    throw new GradleException(
+            "Selected Minecraft state is missing required fields: ${missingTopLevel.join(', ')}")
+}
+if (!(state.mod.id ==~ /[a-z][a-z0-9-]*/)
+        || !(state.mod.group ==~ /[A-Za-z0-9_.-]+/)
+        || !(state.mod.version ==~ /\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/)) {
+    throw new GradleException('project-state.json mod identity or version is malformed')
+}
+if (!(state.minecraft.version ==~
+        /\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?/)
+        || !state.minecraft.versionRange) {
+    throw new GradleException(
+            'project-state.json minecraft.version or versionRange is malformed')
+}
+if (!(state.minecraft.javaTarget instanceof Number)
+        || state.minecraft.javaTarget.intValue() < 8) {
+    throw new GradleException('project-state.json minecraft.javaTarget must be a valid Java release')
+}
+if (!(state.minecraft.dataVersion instanceof Number)
+        || state.minecraft.dataVersion.intValue() <= 0
+        || !(state.minecraft.hostGraphicsBackend ==~ /[a-z][a-z0-9-]*/)) {
+    throw new GradleException(
+            'project-state.json must declare a positive dataVersion and hostGraphicsBackend slug')
+}
+def expectedMinecraftModule = "versions/${state.versionId}/minecraft"
+if (state.minecraft.module != expectedMinecraftModule) {
+    throw new GradleException(
+            "project-state.json minecraft.module must be '${expectedMinecraftModule}'")
+}
+def versionSupportTiers = ['primary', 'active', 'maintenance', 'archived'] as Set
+def loaderSupportTiers = ['active', 'maintenance', 'experimental', 'archived'] as Set
+if (!versionSupportTiers.contains(state.supportTier)) {
+    throw new GradleException(
+            "project-state.json version supportTier must be one of ${versionSupportTiers.join(', ')}")
+}
+if (!(state.loaders instanceof Map) || state.loaders.isEmpty()) {
+    throw new GradleException('project-state.json loaders must be a non-empty object')
+}
+def allVersionLoaders =
+        gradle.ext.projectCatalog.versions[gradle.ext.minecraftVersionId].loaders
+if (!allVersionLoaders.containsKey(state.defaultLoader)) {
+    throw new GradleException(
+            "project-state.json defaultLoader '${state.defaultLoader}' is not declared")
+}
+state.loaders.each { loaderId, loader ->
+    if (!(loaderId ==~ /[a-z][a-z0-9-]*/)) {
+        throw new GradleException(
+                "project-state.json loader key '${loaderId}' must be a lowercase slug")
+    }
+    ['displayName', 'module', 'provider', 'projectPath', 'supportTier',
+     'developmentArtifact', 'installedJar', 'builtinResourcePack', 'gradle', 'prism',
+     'gradlePlugin', 'loader', 'metadataFile', 'archiveBaseName',
+     'packageSourceTask'].each { field ->
+        if (!loader[field]) {
+            throw new GradleException(
+                    "project-state.json loader '${loaderId}' is missing ${field}")
+        }
+    }
+    if (!loaderSupportTiers.contains(loader.supportTier)) {
+        throw new GradleException(
+                "project-state.json loader '${loaderId}' supportTier must be one of " +
+                loaderSupportTiers.join(', '))
+    }
+    if (loader.projectPath != ":${loader.module.replace('/', ':')}") {
+        throw new GradleException(
+                "Loader '${loaderId}' projectPath does not match module '${loader.module}'")
+    }
+    def expectedLoaderModule = "versions/${state.versionId}/${loaderId}"
+    if (loader.module != expectedLoaderModule) {
+        throw new GradleException(
+                "Loader '${loaderId}' module must be '${expectedLoaderModule}'")
+    }
+}
+def projectPaths = state.loaders.values()*.projectPath
+def modules = state.loaders.values()*.module
+if (projectPaths.toSet().size() != projectPaths.size()
+        || modules.toSet().size() != modules.size()) {
+    throw new GradleException(
+            'project-state.json loader projectPath and module values must be unique')
+}
+
+rootProject.name = state.mod.id
+include state.loaders.collect { loaderId, loader -> loader.projectPath } as String[]

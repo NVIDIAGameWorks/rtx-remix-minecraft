@@ -21,9 +21,10 @@ Three areas have had less attention than the rest:
   conflict with anything that changes rendering or the chunk pipeline.
 - **A full playthrough.** Blocks, mobs, dimensions, and situations the showcase
   never reaches have had less care, and some will look wrong or run slowly.
-- **Other versions.** It targets Minecraft 1.21.1 only, chosen because that is
-  where the modding community is today. Ports to newer versions are something
-  we hope the community takes on.
+- **Other versions.** The complete renderer targets Minecraft 1.21.1, chosen
+  because that is where the modding community is today. The repository keeps
+  each Minecraft target under `versions/<version>/`; 1.21.1 currently declares
+  Fabric, Forge, and NeoForge without copying the canonical renderer.
 
 We hope the community helps fill it out. If something breaks,
 [report it](docs/PLAYING.md#reporting-a-bug); if you can fix it, see
@@ -31,19 +32,22 @@ We hope the community helps fill it out. If something breaks,
 
 ## Download
 
-Download the installer bundle, `rtx-remix-renderer-<version>-installer.zip`,
+Download the installer bundle,
+`rtx-remix-renderer-mc<minecraft-version>-<mod-version>-installer.zip`,
 from the
 [Releases page](https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest).
-It holds the mod, the
+It holds one self-contained JAR for each loader declared by the release
+(currently Fabric, Forge, and NeoForge), the
 [RTX Remix Materials pack and the RTX Remix Showcase World](#showcase-world-and-materials-pack),
-and the installer that sets them up.
+and the installer that sets them up. The installer asks which loader to use;
+JARs are under `mods/<loader-id>/` for manual installation.
 
 ## Install in four steps
 
 1. Extract the installer bundle.
 2. Double-click `install.bat` and follow the menu. Pick a launcher, keep
    RTX Remix Renderer, RTX Remix Materials, and RTX Remix Showcase World
-   ticked, and press Enter on Continue.
+   ticked, choose a loader offered by the release, and press Enter on Continue.
 3. Sign in, and launch the **NVIDIA RTX Remix for Minecraft** profile from
    your launcher.
 4. Open Singleplayer and choose **NVIDIA RTX Demo**.
@@ -60,7 +64,9 @@ The step-by-step version, with launcher advice and troubleshooting, is in
 - An internet connection while the installer runs.
 - 16 GB of system memory is recommended.
 
-Java 21, Fabric, and the RTX Remix runtime are installed for you.
+Java 21, the selected mod loader, and the RTX Remix runtime are installed for
+you by the release installer. Fabric API is installed only when you choose
+Fabric; Forge and NeoForge do not use it.
 
 Building and running from source has its own
 [prerequisites](docs/GETTING_STARTED.md#prerequisites), including Prism
@@ -140,6 +146,7 @@ To add either by hand, take `RTX-Remix-Materials-<version>.zip` or
 | Record a camera flythrough | [Camera Paths](docs/CAMERA_PATHS.md) |
 | Install, repair, or uninstall in detail | [packaging/INSTALL.md](packaging/INSTALL.md) |
 | Build and run from source | [Getting Started](docs/GETTING_STARTED.md) |
+| Understand loader and version ownership | [Multi-Loader Architecture](docs/MULTI_LOADER_ARCHITECTURE.md) |
 | Tune the developer knobs behind the renderer | [Tuning](docs/TUNING.md) |
 | Diagnose a rendering or native integration problem | [Rendering Diagnostics](docs/RENDERING_DIAGNOSTICS.md) |
 | Contribute a change | [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -151,11 +158,13 @@ To add either by hand, take `RTX-Remix-Materials-<version>.zip` or
 
 | Path | Purpose |
 |---|---|
-| `src/` | Mod implementation and JVM tests |
+| `renderer-core/` | Loader-neutral renderer behavior, resources, frame ordering, and core tests |
+| `versions/<version>/minecraft/` | Capture, game integration, UI, and tests shared by that Minecraft target |
+| `versions/<version>/<loader>/` | Thin declared loader adapter for that Minecraft target |
 | `rtxremix-java/` | Minecraft-agnostic Java facade and JNI bridge over the RTX Remix C API |
 | `tools/` | Developer launcher, benchmarks, profiling, SDK staging, and development installation |
 | `packman/` | Packman bootstrap and runtime package pins |
-| `packaging/` | Public installer, runtime defaults, and distribution payload |
+| `packaging/` | Multi-loader release installer, runtime defaults, and distribution payload |
 | `docs/` | Player, authoring, and source-build guides |
 
 NVIDIA maintains some release and CI tooling outside this repository. It is
@@ -173,6 +182,16 @@ each commit with `git commit -s` to certify it under the
 no Contributor License Agreement to sign. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for the full guidelines.
 
+Renderer behavior lives in `renderer-core/`, and version-specific Minecraft
+integration lives under `versions/<version>/minecraft/`. Loader modules
+declared by `project-state.json` only register events, translate signatures,
+and provide genuine loader differences. The neutral root enumerates that
+catalog for build, test, package, and release tasks; Minecraft 1.21.1 currently
+declares Fabric, Forge, and NeoForge. See
+[Multi-Loader Architecture](docs/MULTI_LOADER_ARCHITECTURE.md) for the
+approachable overview and [AGENTS.md](AGENTS.md) for detailed invariants and
+validation rules.
+
 ## License
 
 This project is licensed under the Apache License, Version 2.0 (`Apache-2.0`).
@@ -188,8 +207,3 @@ MICROSOFT. Minecraft is a trademark of Mojang Synergies AB.
 
 NVIDIA, GeForce, and RTX are trademarks and/or registered trademarks of NVIDIA
 Corporation in the U.S. and other countries.
-
-## Experimental Forge 1.12.2
-
-The [Forge module](forge-1.12.2/README.md) provides a separate Windows x64 build.
-Its guide describes the implemented rendering features and current limitations.

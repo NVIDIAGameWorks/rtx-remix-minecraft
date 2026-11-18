@@ -8,10 +8,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from rtx_tools import cli
+from rtx_tools import cli, install, loader_registry
 from rtx_tools.benchmark import util
 
 pytestmark = pytest.mark.usefixtures("isolated_tools_config")
+PROJECT_STATE = loader_registry.load_registry()
+FABRIC_API_VERSION = PROJECT_STATE.get("fabric").api_version
+assert FABRIC_API_VERSION is not None
 
 
 def write_file(path: Path, content: bytes) -> None:
@@ -38,10 +41,15 @@ def installation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, migration: Moc
     monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "AMD64")
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
 
+    fabric_dir = PROJECT_STATE.get("fabric").development_jar_dir
+    forge_dir = PROJECT_STATE.get("forge").development_jar_dir
+    neoforge_dir = PROJECT_STATE.get("neoforge").development_jar_dir
     files = {
-        "build/libs/rtx-remix-renderer-0.1.jar": b"newest mod",
-        "build/libs/rtx-remix-renderer-9.9.jar": b"older mod",
-        "build/libs/rtx-remix-renderer-9.9-SOURCES.jar": b"sources only",
+        f"{fabric_dir}/rtx-remix-renderer-0.1.jar": b"newest mod",
+        f"{fabric_dir}/rtx-remix-renderer-9.9.jar": b"older mod",
+        f"{fabric_dir}/rtx-remix-renderer-9.9-SOURCES.jar": b"sources only",
+        f"{forge_dir}/rtx-remix-renderer-forge-0.1-all.jar": b"forge mod",
+        f"{neoforge_dir}/rtx-remix-renderer-neoforge-0.1.jar": b"neoforge mod",
         "packaging/rtx.conf": b"runtime defaults",
         "packaging/rtx-remix/mods/minecraft-logic/weather/rain.conf": b"shipped rain",
         "remix-runtime/textures/overcast_thunderstorm_bc6u.dds": b"overcast texture",
@@ -55,7 +63,7 @@ def installation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, migration: Moc
         files[f"build/native/{arch}/remixbridge.dll"] = f"{arch} bridge".encode()
     for name, content in files.items():
         write_file(project / name, content)
-    jars = project / "build/libs"
+    jars = project / fabric_dir
     for name, timestamp in (
         ("rtx-remix-renderer-9.9.jar", 1_000),
         ("rtx-remix-renderer-0.1.jar", 2_000),
@@ -69,12 +77,41 @@ def run_install(game: Path, *args: str) -> int:
     return cli.main(["install", "--game-dir", str(game), *args])
 
 
+@pytest.mark.parametrize("mod_loader", PROJECT_STATE.ids)
+def test_development_mod_jar_selects_the_loader_and_excludes_sources(
+    tmp_path: Path,
+    mod_loader: str,
+):
+    loader = PROJECT_STATE.get(mod_loader)
+    old = tmp_path / loader.development_jar_dir / loader.development_jar_pattern.replace("*", "old")
+    selected = tmp_path / loader.development_jar_dir / loader.development_jar_pattern.replace("*", "selected")
+    sources = tmp_path / loader.development_jar_dir / "rtx-remix-renderer-sources.jar"
+    for path, timestamp in ((old, 1_000), (selected, 2_000), (sources, 3_000)):
+        write_file(path, path.name.encode())
+        os.utime(path, (timestamp, timestamp))
+
+    assert install.development_mod_jar(tmp_path, mod_loader) == selected
+
+
+def test_development_mod_jar_never_selects_newer_thin_forge_artifact(
+    tmp_path: Path,
+):
+    directory = PROJECT_STATE.get("forge").development_jar_dir
+    runnable = tmp_path / directory / "rtx-remix-renderer-forge-older-all.jar"
+    thin = tmp_path / directory / "rtx-remix-renderer-forge-newer.jar"
+    for path, timestamp in ((runnable, 1_000), (thin, 2_000)):
+        write_file(path, path.name.encode())
+        os.utime(path, (timestamp, timestamp))
+
+    assert install.development_mod_jar(tmp_path, "forge") == runnable
+
+
 @pytest.mark.parametrize("arch", ["win64", "arm64"])
 def test_install_stages_complete_development_payload(installation, capsys, arch):
     project, game = installation
     existing = {
         "mods/rtx-remix-renderer-old.jar": b"old mod",
-        "mods/fabric-api-0.116.10+1.21.1.jar": b"fabric api",
+        f"mods/fabric-api-{FABRIC_API_VERSION}.jar": b"fabric api",
         "mods/another-mod.jar": b"another mod",
         "remix-sdk/stale.dll": b"stale SDK",
         "rtx-remix/mods/minecraft-logic/weather/rain.conf": b"edited shipped rain",
@@ -90,8 +127,8 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
     assert run_install(game, "--arch", arch) == 0
 
     expected = {
-        "mods/rtx-remix-renderer.jar": b"newest mod",
-        "mods/fabric-api-0.116.10+1.21.1.jar": b"fabric api",
+        "mods/rtx-remix-renderer-fabric.jar": b"newest mod",
+        f"mods/fabric-api-{FABRIC_API_VERSION}.jar": b"fabric api",
         "mods/another-mod.jar": b"another mod",
         "remix-sdk/d3d9.dll": f"{arch} runtime".encode(),
         "remix-sdk/dxvk.conf": b"runtime config",
@@ -137,11 +174,109 @@ def test_install_invokes_resource_pack_migration(installation, migration):
             game,
             "-LegacyPackName",
             "rtx-remix-labpbr",
+            "-ModLoader",
+            "Fabric",
         ],
         cwd=project,
         check=False,
     )
     assert not (game / "resourcepacks").exists()
+
+
+@pytest.mark.parametrize(
+    ("loader_id", "installed_jar", "content"),
+    [
+        ("forge", "rtx-remix-renderer-forge.jar", b"forge mod"),
+        ("neoforge", "rtx-remix-renderer-neoforge.jar", b"neoforge mod"),
+    ],
+)
+def test_install_selects_non_fabric_artifact_and_migration_pack(
+    installation, migration, capsys, loader_id, installed_jar, content
+):
+    _, game = installation
+
+    assert run_install(game, "--loader", loader_id) == 0
+
+    loader = PROJECT_STATE.get(loader_id)
+    assert (game / "mods" / installed_jar).read_bytes() == content
+    assert migration.call_args.args[0][-2:] == ["-ModLoader", loader.display_name]
+    assert "fabric-api" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("cli_loader", "env_loader", "configured_loader", "expected"),
+    [
+        ("neoforge", "forge", "fabric", "neoforge"),
+        ("forge", "fabric", "fabric", "forge"),
+        (None, "neoforge", "fabric", "neoforge"),
+        (None, "forge", "fabric", "forge"),
+        (None, None, "neoforge", "neoforge"),
+        (None, None, "forge", "forge"),
+        (None, None, None, "fabric"),
+    ],
+)
+def test_install_uses_shared_loader_precedence(
+    installation,
+    isolated_tools_config,
+    monkeypatch,
+    cli_loader,
+    env_loader,
+    configured_loader,
+    expected,
+):
+    _, game = installation
+    if env_loader is None:
+        monkeypatch.delenv("RTXREMIX_MOD_LOADER", raising=False)
+    else:
+        monkeypatch.setenv("RTXREMIX_MOD_LOADER", env_loader)
+    if configured_loader is not None:
+        (isolated_tools_config.with_name("config.local.json")).write_text(
+            f'{{"modLoader":"{configured_loader}"}}',
+            encoding="utf-8",
+        )
+    stage = Mock(return_value=0)
+    monkeypatch.setattr(install, "install_development_build", stage)
+    args = ["install", "--game-dir", str(game)]
+    if cli_loader is not None:
+        args += ["--loader", cli_loader]
+
+    assert cli.main(args) == 0
+
+    assert stage.call_args.kwargs["mod_loader"] == expected
+
+
+@pytest.mark.parametrize(
+    ("loader_args", "expected"),
+    [(["-ModLoader", loader.display_name], loader.builtin_resource_pack) for loader in PROJECT_STATE.loaders],
+)
+def test_resource_pack_migration_selects_loader_builtin(tmp_path, loader_args, expected):
+    game = tmp_path / "game"
+    game.mkdir()
+    (game / "options.txt").write_text(
+        'resourcePacks:["file/user-pack","fabric","mod_resources","vanilla"]\n',
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(util.PROJECT_DIR / "packaging/migrate_resource_packs.ps1"),
+            "-McDir",
+            str(game),
+            "-LegacyPackName",
+            "rtx-remix-labpbr",
+            *loader_args,
+        ],
+        check=True,
+    )
+
+    assert (game / "options.txt").read_text(encoding="utf-8") == (
+        f'resourcePacks:["vanilla","{expected}","file/user-pack"]\n'
+    )
 
 
 @pytest.mark.parametrize("exit_code", [1, 7])
@@ -164,7 +299,9 @@ def test_install_warns_about_missing_fabric_api_without_installing_it(installati
 
     output = capsys.readouterr().out
     assert f"WARNING: no fabric-api jar in {game / 'mods'}." in output
-    assert "fabric-api >=0.116.10+1.21.1 (https://modrinth.com/mod/fabric-api)" in output
+    assert (
+        f"fabric-api {PROJECT_STATE.get('fabric').api_version_range} (https://modrinth.com/mod/fabric-api)"
+    ) in output
     assert list((game / "mods").glob("fabric-api-*.jar")) == []
 
 
@@ -186,7 +323,7 @@ def test_install_checks_prerequisites_before_changing_game(installation, migrati
     elif missing == "empty texture":
         (project / "remix-runtime/textures/overcast_thunderstorm_bc6u.dds").write_bytes(b"")
     else:
-        for jar in (project / "build/libs").glob("*.jar"):
+        for jar in (project / PROJECT_STATE.get("fabric").development_jar_dir).glob("*.jar"):
             if "-sources" not in jar.name.lower():
                 jar.unlink()
 
@@ -203,7 +340,8 @@ def test_install_checks_prerequisites_before_changing_game(installation, migrati
     elif missing == "bridge":
         assert "ERROR: JNI bridge not found" in output
         task = "compileNativeArm64" if arch == "arm64" else "compileNativeWin64"
-        assert f"Build it with .\\gradlew.bat {task}." in output
+        target_args = " ".join(PROJECT_STATE.gradle_arguments("fabric"))
+        assert f"Build it with .\\gradlew.bat {task} {target_args}." in output
     elif missing == "textures":
         assert "ERROR: runtime textures not found" in output
         assert "fetchRuntimeTextures" in output
@@ -214,7 +352,11 @@ def test_install_checks_prerequisites_before_changing_game(installation, migrati
         assert "overcast_thunderstorm_bc6u.dds" in output
         assert "fetchRuntimeTextures" in output
     else:
-        assert "ERROR: no mod jar found in build\\libs\\." in output
+        loader = PROJECT_STATE.get("fabric")
+        assert (
+            f"ERROR: no {loader.display_name} mod jar matching "
+            f"{loader.development_jar_dir}/{loader.development_jar_pattern}."
+        ) in output
 
 
 @pytest.mark.parametrize(
@@ -253,7 +395,7 @@ def test_install_defaults_to_appdata_minecraft(installation, monkeypatch, tmp_pa
     monkeypatch.setenv("APPDATA", str(appdata))
 
     assert cli.main(["install"]) == 0
-    assert (appdata / ".minecraft/mods/rtx-remix-renderer.jar").read_bytes() == b"newest mod"
+    assert (appdata / ".minecraft/mods/rtx-remix-renderer-fabric.jar").read_bytes() == b"newest mod"
 
 
 def test_install_requires_game_dir_when_appdata_is_unset(installation, monkeypatch, capsys):

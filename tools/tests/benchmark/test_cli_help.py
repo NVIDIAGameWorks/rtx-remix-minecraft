@@ -9,8 +9,9 @@ import unittest
 
 import pytest
 
+from rtx_tools import loader_registry
 from rtx_tools.benchmark import util
-from rtx_tools.cli import build_parser
+from rtx_tools.cli import _extract_minecraft_version, build_parser
 
 pytestmark = pytest.mark.usefixtures("isolated_tools_config")
 
@@ -27,8 +28,9 @@ class CliHelpTests(unittest.TestCase):
     def test_install_help_explains_development_payload_and_prerequisites(self):
         text = self.help_for("install")
 
-        self.assertIn("gradlew.bat build", text)
-        self.assertIn("Fabric Loader and Fabric API", text)
+        self.assertIn("selected loader's Gradle build task", text)
+        self.assertNotIn(r"forge\gradlew.bat", text)
+        self.assertIn("selected loader and its dependencies", text)
         self.assertIn("gameplay conf payload, and runtime textures", text)
         self.assertIn("Baseline PBR textures are built into the JAR", text)
         self.assertIn("packaging/migrate_resource_packs.ps1", text)
@@ -37,9 +39,29 @@ class CliHelpTests(unittest.TestCase):
         self.assertIn(r"%APPDATA%\.minecraft", text)
         self.assertIn("--game-dir", text)
         self.assertIn("--arch {win64,arm64}", text)
+        self.assertIn("--loader LOADER", text)
         self.assertIn("REMIX_BUILD", text)
         self.assertIn("REMIX_FORCE_SDK_COPY", text)
         self.assertIn("REMIX_ARCH, then host", text)
+        self.assertIn("RTXREMIX_MOD_LOADER, then tools config, then fabric", " ".join(text.split()))
+
+    def test_loader_commands_accept_every_catalog_loader(self):
+        parser = build_parser()
+        for command in ("launch", "run", "doctor", "install"):
+            for loader in loader_registry.load_registry().ids:
+                with self.subTest(command=command, loader=loader):
+                    args = parser.parse_args([command, "--loader", loader])
+                    self.assertEqual(loader, args.loader)
+
+    def test_minecraft_version_selector_is_position_independent(self):
+        self.assertEqual(
+            (["launch", "--loader", "fabric"], "1.21.1"),
+            _extract_minecraft_version(["launch", "--minecraft-version", "1.21.1", "--loader", "fabric"]),
+        )
+        self.assertEqual(
+            (["launch"], "1.21.1"),
+            _extract_minecraft_version(["--minecraft-version=1.21.1", "launch"]),
+        )
 
     def test_download_and_publish_commands_are_not_registered(self):
         parser = build_parser()
@@ -51,6 +73,13 @@ class CliHelpTests(unittest.TestCase):
             ):
                 parser.parse_args([*command, "--help"])
             self.assertEqual(raised.exception.code, 2)
+
+    def test_version_catalog_has_one_current_command_name(self):
+        self.assertIn("Reads and validates every Minecraft version", self.help_for("versions"))
+        parser = build_parser()
+        with self.assertRaises(SystemExit) as raised, contextlib.redirect_stderr(io.StringIO()):
+            parser.parse_args(["version-catalog"])
+        self.assertEqual(raised.exception.code, 2)
 
     def test_world_help_explains_launch_workflow(self):
         text = self.help_for("world", "launch")

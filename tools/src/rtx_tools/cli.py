@@ -6,12 +6,14 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import shutil
 import sys
 from pathlib import Path
 
-from . import client, diagnostics, install, launcher, prism, sdk
+from . import client, diagnostics, install, launcher, loader_registry, prism, sdk, target_status, version_catalog
+from . import config as tools_config
 from .benchmark import catalog, runner, screenshots, tracy, util
 
 
@@ -230,6 +232,7 @@ def cmd_annotate(args) -> int:
 
 
 def cmd_run(args) -> int:
+    tools_config.set_runtime_mod_loader(getattr(args, "loader", None))
     runner.set_runtime_resource_pack_override(getattr(args, "resource_pack", None))
     runner.set_runtime_preset_override(getattr(args, "preset", None))
     runner.run_benchmark(args)
@@ -267,6 +270,7 @@ def cmd_resource_pack_fetch(args) -> int:
 
 
 def cmd_doctor(args) -> int:
+    tools_config.set_runtime_mod_loader(getattr(args, "loader", None))
     report = runner.doctor_report(world=args.world, camera=args.camera, sdk_variant=args.sdk_variant)
     if args.json:
         print(json.dumps(report, indent=2))
@@ -429,6 +433,7 @@ def cmd_world_fetch(args) -> int:
 
 
 def cmd_world_launch(args) -> int:
+    tools_config.set_runtime_mod_loader(getattr(args, "loader", None))
     runner.set_runtime_resource_pack_override(getattr(args, "resource_pack", None))
     runner.launch_client_for_selection(
         world=args.world,
@@ -442,6 +447,7 @@ def cmd_world_launch(args) -> int:
 
 
 def cmd_launch(args) -> int:
+    tools_config.set_runtime_mod_loader(getattr(args, "loader", None))
     runner.set_runtime_preset_override(getattr(args, "preset", None))
     if args.world:
         runner.launch_with_resource_pack_override(
@@ -470,7 +476,14 @@ def cmd_prism_signin(args) -> int:
 
 
 def cmd_install(args) -> int:
-    return install.install_development_build(util.PROJECT_DIR, game_dir=args.game_dir, arch=args.arch)
+    tools_config.set_runtime_mod_loader(args.loader)
+    mod_loader = tools_config.mod_loader(tools_config.load_config())
+    return install.install_development_build(
+        util.PROJECT_DIR,
+        game_dir=args.game_dir,
+        arch=args.arch,
+        mod_loader=mod_loader,
+    )
 
 
 def cmd_textures_water_normals(args) -> int:
@@ -531,6 +544,7 @@ def cmd_screenshots_list(args) -> int:
 
 
 def cmd_screenshots_refresh(args) -> int:
+    tools_config.set_runtime_mod_loader(getattr(args, "loader", None))
     return screenshots.refresh(args.names, sdk_variant=args.sdk_variant, timeout_seconds=args.timeout)
 
 
@@ -554,6 +568,30 @@ def cmd_check(args) -> int:
     return 0
 
 
+def cmd_version_catalog(args) -> int:
+    report = version_catalog.report(util.PROJECT_DIR)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        version_catalog.print_report(report)
+    return 0
+
+
+def cmd_target_status(args) -> int:
+    registry = loader_registry.load_registry()
+    validation = target_status.run_validation(util.PROJECT_DIR, registry, args.run)
+    report = target_status.report(util.PROJECT_DIR, validation, minecraft_version=registry.minecraft_version)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        target_status.print_report(report)
+    states = [
+        report["automatedContracts"]["state"],
+        *(loader["build"]["state"] for loader in report["loaders"]),
+    ]
+    return 1 if "failed" in states else 0
+
+
 def cmd_diag_hang(args) -> int:
     client.active()
     return diagnostics.hang(pid=args.pid, print_output_root=args.print_output_root)
@@ -568,8 +606,27 @@ def cmd_diag_focus_torture(args) -> int:
     )
 
 
+def add_loader_argument(parser: argparse.ArgumentParser, help_text: str, *, default: str | None = None) -> None:
+    def catalog_loader(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            return loader_registry.load_registry().get(value).id
+        except loader_registry.ManifestError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+
+    parser.add_argument(
+        "--loader",
+        type=catalog_loader,
+        default=default,
+        metavar="LOADER",
+        help=help_text,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     ci_runs = configured_ci_runs()
+    default_loader = loader_registry.load_registry().default_id
     parser = argparse.ArgumentParser(
         prog=r"tools\rtx.bat",
         description="Launch, benchmark, and manage RTX Remix Minecraft developer assets.",
@@ -589,6 +646,14 @@ def build_parser() -> argparse.ArgumentParser:
 """,
         formatter_class=HelpFormatter,
     )
+    parser.add_argument(
+        "--minecraft-version",
+        metavar="VERSION",
+        help=(
+            "Minecraft target for this invocation; accepted before or after "
+            "the command (default: RTXREMIX_MINECRAFT_VERSION, then catalog default)"
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
 
     p = sub.add_parser("menu", help="open the developer dashboard or resolve a launch with --mode")
@@ -597,6 +662,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["menu", "play", "benchmark"],
         type=str.lower,
         help="skip the dashboard: menu launches to the main menu, play into the world, benchmark runs a benchmark",
+    )
+    add_loader_argument(
+        p,
+        "mod loader for the resolved launch or benchmark (default: dashboard/config selection)",
+        default="",
     )
     p.add_argument(
         "--sdk",
@@ -640,6 +710,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--ci", action="store_true", help="use CI defaults for run count, metadata, recording, and drain time"
+    )
+    add_loader_argument(
+        p,
+        "mod loader to build and benchmark (default: RTXREMIX_MOD_LOADER, then merged configuration)",
     )
     p.add_argument(
         "--runs",
@@ -726,6 +800,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=HelpFormatter,
     )
     p.add_argument("--world", default=None, metavar="WORLD", help="world to quick-play into; omit for the main menu")
+    add_loader_argument(
+        p,
+        "mod loader to build and launch (default: RTXREMIX_MOD_LOADER, then merged configuration)",
+    )
     p.add_argument(
         "--sdk-variant",
         choices=["release", "tracy"],
@@ -772,15 +850,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "install",
-        help="install a built development mod into an existing Fabric installation",
+        help="install a built development mod into an existing loader installation",
         description=(
-            "Installs the newest non-sources development JAR from build/libs, the\n"
+            "Installs the newest runnable development JAR for the selected loader, the\n"
             "staged runtime, JNI bridge, gameplay conf payload, and runtime textures.\n"
             "Baseline PBR textures are built into the JAR; packaging/migrate_resource_packs.ps1\n"
             "removes the retired generated baseline and preserves user-pack ordering.\n"
-            "Build first with gradlew.bat build.\n"
-            "The game directory must already have Fabric Loader and Fabric API;\n"
-            "a missing Fabric API JAR produces a warning. This does not launch the game."
+            "Build first with the selected loader's Gradle build task.\n"
+            "The game directory must already have the selected loader and its dependencies;\n"
+            "a missing Fabric API JAR produces a warning for Fabric. This does not launch the game."
         ),
         epilog=(
             "REMIX_BUILD overrides remix-runtime/<arch> with a custom runtime directory.\n"
@@ -791,6 +869,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--game-dir", type=Path, metavar="DIR", help=r"game directory (default: %%APPDATA%%\.minecraft)")
     p.add_argument("--arch", choices=["win64", "arm64"], help="target architecture (default: REMIX_ARCH, then host)")
+    add_loader_argument(
+        p,
+        f"mod loader (default: RTXREMIX_MOD_LOADER, then tools config, then {default_loader})",
+    )
     p.set_defaults(func=cmd_install)
 
     p = sub.add_parser(
@@ -869,6 +951,10 @@ def build_parser() -> argparse.ArgumentParser:
             "without fetching, staging, launching, or opening anything."
         ),
         formatter_class=HelpFormatter,
+    )
+    add_loader_argument(
+        p,
+        "mod loader whose launch configuration to inspect (default: environment, then merged configuration)",
     )
     p.add_argument(
         "--world",
@@ -1028,6 +1114,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="benchmark world name under tools/assets/worlds; defaults to the merged world.name setting",
     )
     wp.add_argument("--quiet", action="store_true", help="print less while starting the game")
+    add_loader_argument(
+        wp,
+        "mod loader to build and launch (default: RTXREMIX_MOD_LOADER, then merged configuration)",
+    )
     wp.add_argument(
         "--sdk-variant",
         choices=["release", "tracy"],
@@ -1164,6 +1254,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_screenshots_list)
     sp = shot_sub.add_parser("refresh", help="capture the shots and write build/screenshots")
     sp.add_argument("names", nargs="*", metavar="NAME", help="shots to capture; default every shot")
+    add_loader_argument(
+        sp,
+        "mod loader to build and capture with (default: RTXREMIX_MOD_LOADER, then merged configuration)",
+    )
     sp.add_argument(
         "--sdk-variant",
         choices=["release", "tracy"],
@@ -1360,7 +1454,65 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tests", action="store_true", help="also run benchmark, JFR-profiler, and launcher tests")
     p.set_defaults(func=cmd_check)
 
+    p = sub.add_parser(
+        "versions",
+        help="report Minecraft versions in this checkout",
+        description=(
+            "Reads and validates every Minecraft version and loader declared by "
+            "the current checkout's project-state.json."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p.add_argument("--json", action="store_true", help="emit the stable machine-readable report")
+    p.set_defaults(func=cmd_version_catalog)
+
+    p = sub.add_parser(
+        "target-status",
+        help="report selected target validation state",
+        description=(
+            "Reports catalog, development artifact, automated-contract, and live-run evidence "
+            "for one Minecraft version and all of its loaders. "
+            "--run performs a proportionate validation before reporting."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p.add_argument(
+        "--run",
+        choices=["none", "automated-contracts", "build"],
+        default="none",
+        help="validation to run first: tools tests or all catalog build/test tasks (default: none)",
+    )
+    p.add_argument("--json", action="store_true", help="emit the stable machine-readable report")
+    p.set_defaults(func=cmd_target_status)
+
     return parser
+
+
+def _extract_minecraft_version(argv: list[str]) -> tuple[list[str], str | None]:
+    """Accept the target selector on either side of the subcommand."""
+    remaining: list[str] = []
+    selected: str | None = None
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        if argument == "--minecraft-version":
+            if index + 1 >= len(argv):
+                raise ValueError("--minecraft-version requires a value")
+            value = argv[index + 1]
+            index += 2
+        elif argument.startswith("--minecraft-version="):
+            value = argument.partition("=")[2]
+            index += 1
+        else:
+            remaining.append(argument)
+            index += 1
+            continue
+        if not value:
+            raise ValueError("--minecraft-version requires a value")
+        if selected is not None and selected != value:
+            raise ValueError("--minecraft-version was supplied more than once with different values")
+        selected = value
+    return remaining, selected
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1368,11 +1520,22 @@ def main(argv: list[str] | None = None) -> int:
     # such as the benchmark machine-health expectations; a real environment
     # variable wins.
     util.load_env_file()
+    previous_minecraft_version = os.environ.get("RTXREMIX_MINECRAFT_VERSION")
+    selected_minecraft_version: str | None = None
     try:
-        parser = build_parser()
         argv = sys.argv[1:] if argv is None else argv
+        argv, selected_minecraft_version = _extract_minecraft_version(argv)
+        if selected_minecraft_version is not None:
+            os.environ["RTXREMIX_MINECRAFT_VERSION"] = selected_minecraft_version
+        parser = build_parser()
         args = parser.parse_args(argv or ["menu"])
         return args.func(args)
     except Exception as exc:
         print(f"error: {exc}")
         return 1
+    finally:
+        if selected_minecraft_version is not None:
+            if previous_minecraft_version is None:
+                os.environ.pop("RTXREMIX_MINECRAFT_VERSION", None)
+            else:
+                os.environ["RTXREMIX_MINECRAFT_VERSION"] = previous_minecraft_version

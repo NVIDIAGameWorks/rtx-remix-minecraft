@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""The release workflow: a Run workflow button that builds the four release files and drafts a release.
+"""The release workflow: a Run workflow button that builds target release files and drafts a release.
 
 The tools suite has no YAML library, so these checks read the workflow as text with regular expressions and
 line scans. They hold the properties that keep a release safe: nothing runs on a push, only the draft job can
@@ -15,6 +15,8 @@ from rtx_tools.benchmark import util
 WORKFLOWS = util.PROJECT_DIR / ".github" / "workflows"
 RELEASE = WORKFLOWS / "release.yml"
 BUILD = WORKFLOWS / "build.yml"
+CHECK = WORKFLOWS / "check.yml"
+VALIDATOR = util.PROJECT_DIR / ".github" / "scripts" / "validate-project-state.ps1"
 
 PIN = re.compile(r"^\s*(?:-\s+)?uses:\s*(?P<action>[\w./-]+)@(?P<sha>[0-9a-f]{40}) # v\d")
 
@@ -104,6 +106,46 @@ class ReleaseWorkflowTests(unittest.TestCase):
         for action in ("actions/checkout", "actions/setup-java"):
             self.assertEqual(build[action], release[action], action)
 
+    def test_ci_uses_the_manifest_target_matrix_on_main(self):
+        build = BUILD.read_text(encoding="utf-8")
+        check = CHECK.read_text(encoding="utf-8")
+
+        self.assertIn("validate-project-state.ps1", build)
+        self.assertIn("-GitHubOutput $env:GITHUB_OUTPUT", build)
+        self.assertIn("branches: [main]", build)
+        self.assertIn("fromJSON(needs.catalog.outputs.matrix)", build)
+        self.assertIn("TARGET_MINECRAFT_VERSION: ${{ matrix.minecraftVersion }}", build)
+        self.assertIn('"-PmcVersion=$env:TARGET_MINECRAFT_VERSION"', build)
+        self.assertIn('"-Ploader=$env:TARGET_LOADER"', build)
+        self.assertIn("validate-project-state.ps1", check)
+        self.assertIn("branches: [main]", check)
+        self.assertIn("fromJSON(needs.catalog.outputs.matrix)", check)
+        self.assertNotIn('"mc/**"', build + check)
+        self.assertRegex(build, r"(?m)^  build:\n    name: build$")
+        self.assertIn("needs: [catalog, targets]", build)
+        self.assertRegex(check, r"(?m)^  check:\n    name: check$")
+        self.assertIn("needs: [catalog, targets, tooling]", check)
+        for workflow in (build, check):
+            self.assertIn("if: always()", workflow)
+            self.assertIn("-ne 'success'", workflow)
+        for workflow in (build, check):
+            run_bodies = _run_bodies(workflow.splitlines())
+            self.assertEqual([], [body for body in run_bodies if "${{" in body])
+
+    def test_validator_uses_the_authoritative_keyed_manifest(self):
+        validator = VALIDATOR.read_text(encoding="utf-8")
+
+        self.assertIn("'multi-version/v1'", validator)
+        self.assertIn("defaultMinecraftVersion", validator)
+        self.assertIn("versions.PSObject.Properties", validator)
+        self.assertIn("defaultLoader", validator)
+        self.assertIn("loaders.PSObject.Properties", validator)
+        self.assertIn("entry id", validator)
+        self.assertIn("mcVersionGradleProperty", validator)
+        self.assertIn("ConvertTo-Json -Compress", validator)
+        self.assertNotIn("minecraft_version", validator)
+        self.assertNotIn("schemaVersion", validator)
+
     def test_only_the_draft_job_can_write(self):
         lines = _lines(RELEASE)
 
@@ -128,7 +170,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         # or a newline becomes code. Values reach a script through env: instead.
         bodies = _run_bodies(_lines(RELEASE))
 
-        self.assertEqual(4, len(bodies), bodies)
+        self.assertGreaterEqual(len(bodies), 4, bodies)
         self.assertEqual([], [body for body in bodies if "${{" in body])
 
     def test_the_run_script_scan_reads_inline_and_block_scripts(self):
@@ -160,30 +202,44 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("  build:", build)
         self.assertIn("    runs-on: windows-latest", build)
         self.assertEqual([], [line for line in build if re.match(r"^    if:", line)])
-        self.assertRegex(text, r'run: \'& "\$env:GITHUB_WORKSPACE\\gradlew\.bat" stageReleaseAssets\'')
+        self.assertRegex(
+            text,
+            r'run: \'& "\$env:GITHUB_WORKSPACE\\gradlew\.bat" stageReleaseAssets '
+            r'"-PmcVersion=\$env:PROJECT_MINECRAFT_VERSION"\'',
+        )
         self.assertNotIn("-Parch", "\n".join(_lines(RELEASE)))
+        self.assertIn("validate-project-state.ps1", text)
+        self.assertIn("-ReleaseAssetsDirectory", text)
         self.assertRegex(text, r"(?m)^          name: release-assets$")
         self.assertRegex(text, r"(?m)^          path: build/release-assets/\*$")
         self.assertRegex(text, r"(?m)^          if-no-files-found: error$")
         self.assertRegex(text, r"(?m)^          compression-level: 0$")
 
-    def test_the_version_comes_from_gradle_properties(self):
-        gradle = (util.PROJECT_DIR / "gradle.properties").read_text(encoding="utf-8")
+    def test_the_release_identity_comes_from_the_project_manifest(self):
         build = "\n".join(_job("build"))
         draft = "\n".join(_job("draft"))
 
-        self.assertRegex(gradle, r"(?m)^mod_version=.+$")
-        self.assertIn("'^mod_version=(.+)$' gradle.properties", build)
+        self.assertIn("$env:PROJECT_MOD_VERSION", build)
+        self.assertIn("$env:PROJECT_MINECRAFT_VERSION", build)
+        self.assertIn("$env:PROJECT_DEFAULT_MINECRAFT_VERSION", build)
+        self.assertNotIn("gradle.properties", build)
         self.assertIn("GITHUB_OUTPUT", build)
-        self.assertRegex(build, r"(?m)^      version: \$\{\{ steps\.version\.outputs\.version \}\}$")
-        self.assertRegex(draft, r"(?m)^      VERSION: \$\{\{ needs\.build\.outputs\.version \}\}$")
+        self.assertIn('"tag=$tag"', build)
+        self.assertIn('"title=$title"', build)
+        self.assertIn('"support_tier=$env:PROJECT_SUPPORT_TIER"', build)
+        self.assertIn("steps.project_state.outputs.javaTarget", build)
+        self.assertRegex(draft, r"(?m)^      RELEASE_TAG: \$\{\{ needs\.build\.outputs\.tag \}\}$")
 
     def test_the_draft_runs_only_from_main_and_only_when_asked(self):
         draft = _job("draft")
         text = "\n".join(draft)
 
         self.assertIn("    needs: build", draft)
-        self.assertIn("    if: inputs.create_draft && github.ref == 'refs/heads/main'", draft)
+        condition = next(line for line in draft if line.startswith("    if:"))
+        self.assertIn("inputs.create_draft", condition)
+        self.assertIn("needs.build.outputs.support_tier != 'archived'", condition)
+        self.assertIn("github.ref == 'refs/heads/main'", condition)
+        self.assertNotIn("refs/heads/mc/", condition)
         self.assertIn("    runs-on: ubuntu-latest", draft)
         self.assertRegex(text, r"(?m)^      GH_TOKEN: \$\{\{ github\.token \}\}$")
         self.assertRegex(text, r"(?m)^          name: release-assets$")
@@ -191,31 +247,31 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_the_draft_refuses_an_existing_release(self):
         draft = _job("draft")
         text = "\n".join(draft)
-        view = next(i for i, line in enumerate(draft) if 'gh release view "v$VERSION"' in line)
+        view = next(i for i, line in enumerate(draft) if 'gh release view "$RELEASE_TAG"' in line)
         listing = next(i for i, line in enumerate(draft) if "git ls-remote --tags" in line)
         step = next(i for i, line in enumerate(draft) if "name: Create the draft release" in line)
-        create = next(i for i, line in enumerate(draft) if 'gh release create "v$VERSION"' in line)
+        create = next(i for i, line in enumerate(draft) if 'gh release create "$RELEASE_TAG"' in line)
 
         self.assertIn('--repo "$GITHUB_REPOSITORY"', draft[view])
         self.assertTrue(draft[view].lstrip().startswith("if gh release view"), "exits when the release is found")
         self.assertIn("exit 1", [line.strip() for line in draft[view:listing]])
-        self.assertIn('"https://github.com/$GITHUB_REPOSITORY" "refs/tags/v$VERSION"', draft[listing])
+        self.assertIn('"https://github.com/$GITHUB_REPOSITORY" "refs/tags/$RELEASE_TAG"', draft[listing])
         self.assertIn("exit 1", [line.strip() for line in draft[listing:step]])
         self.assertLess(view, create)
         self.assertLess(listing, create)
         self.assertNotIn("--force", text)
 
-    def test_the_draft_is_created_with_the_four_files(self):
+    def test_the_draft_is_created_with_all_staged_files(self):
         draft = _job("draft")
         text = "\n".join(draft)
 
         self.assertIn('--repo "$GITHUB_REPOSITORY"', text)
         self.assertIn("--draft", text)
         self.assertIn('--target "$GITHUB_SHA"', text)
-        self.assertIn('--title "RTX Remix for Minecraft $VERSION"', text)
+        self.assertIn('--title "$RELEASE_TITLE"', text)
         self.assertIn('--notes "Write the release notes before publishing."', text)
         self.assertIn('"${files[@]}"', text)
-        self.assertRegex(text, r'\[ "\$\{#files\[@\]\}" -ne 4 \]')
+        self.assertNotIn("${#files[@]}", text)
 
 
 if __name__ == "__main__":

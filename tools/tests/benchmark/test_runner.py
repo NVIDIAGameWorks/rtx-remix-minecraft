@@ -21,8 +21,10 @@ from unittest.mock import Mock, call, patch
 import pytest
 from conftest import FakeLauncher, FakeProcess
 
-from rtx_tools import cli, client
+from rtx_tools import cli, client, loader_registry
 from rtx_tools.benchmark import runner, util
+
+PROJECT_STATE = loader_registry.load_registry()
 
 pytestmark = pytest.mark.usefixtures("isolated_tools_config")
 
@@ -247,6 +249,19 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(original["profiling"]["postResultExitDelaySeconds"], 10)
         self.assertIn("postResultExitDelayReason", config["profiling"])
 
+    def test_ci_config_skips_tracy_drain_for_release_runtime(self):
+        original = {
+            "profiling": {
+                "postResultExitDelaySeconds": 10,
+                "postResultProcessWaitSeconds": 180,
+            }
+        }
+        config = runner.config_for_run(original, ci=True, tracy_enabled=False)
+
+        self.assertEqual(config["profiling"]["postResultExitDelaySeconds"], 10)
+        self.assertEqual(config["profiling"]["postResultProcessWaitSeconds"], 180)
+        self.assertNotIn("tracyDrainWaitForIdle", config["profiling"])
+
     def test_ci_config_allows_depth_override(self):
         original = {"profiling": {"tracyJavaMaxDepth": 5}}
         with patch.dict(os.environ, {"BENCHMARK_CI_TRACY_JAVA_MAX_DEPTH": "0"}):
@@ -289,6 +304,14 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(config["warmupLap"])
         self.assertFalse(original["warmupLap"])
         self.assertNotIn("overrideWidth", original["render"])
+
+    def test_config_for_run_records_effective_loader_override(self):
+        original = {"modLoader": "fabric"}
+        with patch.dict(os.environ, {"RTXREMIX_MOD_LOADER": "forge"}):
+            config = runner.config_for_run(original, ci=True)
+
+        self.assertEqual(config["modLoader"], "forge")
+        self.assertEqual(original["modLoader"], "fabric")
 
     def test_post_result_process_wait_covers_profiler_delay(self):
         config = {"profiling": {"postResultExitDelaySeconds": 300, "postResultProcessWaitSeconds": 180}}
@@ -414,6 +437,24 @@ class RunnerTests(unittest.TestCase):
 
             options = (Path(tmp) / "options.txt").read_text(encoding="utf-8")
             self.assertIn('resourcePacks:["vanilla","fabric","file/world-demo-pbr"]', options)
+
+    def test_write_options_uses_forge_mod_resources(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner.util, "RUN_DIR", Path(tmp)):
+            runner.write_options({"modLoader": "forge", "render": {}})
+
+            options = (Path(tmp) / "options.txt").read_text(encoding="utf-8")
+            self.assertIn('resourcePacks:["vanilla","mod_resources"]', options)
+
+    def test_write_options_applies_loader_environment_override(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(runner.util, "RUN_DIR", Path(tmp)),
+            patch.dict(os.environ, {"RTXREMIX_MOD_LOADER": "forge"}),
+        ):
+            runner.write_options({"modLoader": "fabric", "render": {}})
+
+            options = (Path(tmp) / "options.txt").read_text(encoding="utf-8")
+            self.assertIn('resourcePacks:["vanilla","mod_resources"]', options)
 
     def test_fov_option_value_preserves_legacy_slider_values(self):
         self.assertEqual(runner.minecraft_fov_option_value(1.0), "1")
@@ -1291,6 +1332,45 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(plan["sdk"]["wouldFetch"])
         self.assertFalse((raw / "world").exists())
         self.assertFalse((run_dir / "saves").exists())
+
+    def test_benchmark_run_plan_names_the_forge_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bench = root / "benchmark"
+            project = root / "project"
+            self._write_benchmark_world(bench, "DemoWorld", "simple")
+            (bench / "config.json").write_text(
+                '{"modLoader": "forge", "world": {"name": "DemoWorld", "camera": "simple"}}',
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                world=None,
+                camera=None,
+                ci=False,
+                runs=0,
+                strip_entities=False,
+                sdk_variant="release",
+                no_build=False,
+                dry_run=True,
+            )
+            with (
+                patch.object(runner.util, "BENCHMARK_DIR", bench),
+                patch.object(runner.util, "ASSETS_DIR", bench),
+                patch.object(runner.util, "SHARED_CONFIG_PATH", bench / "config.json"),
+                patch.object(runner.util, "PROJECT_DIR", project),
+                patch.object(runner, "host_arch", return_value="win64"),
+            ):
+                plan = runner.benchmark_run_plan(args)
+
+        self.assertEqual(plan["modLoader"], "forge")
+        self.assertEqual(plan["minecraftVersion"], PROJECT_STATE.minecraft_version)
+        self.assertEqual(plan["build"]["project"], str(project))
+        forge = PROJECT_STATE.get("forge")
+        self.assertEqual(plan["build"]["task"], forge.package_task)
+        self.assertEqual(
+            plan["build"]["args"][:5],
+            [forge.package_task, "-x", forge.test_task, *PROJECT_STATE.gradle_arguments("forge")],
+        )
 
     def test_run_benchmark_dry_run_does_not_fetch_build_or_create_result(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3832,6 +3912,39 @@ def test_run_benchmark_installs_the_build_after_gradle_makes_it(
         runner.run_benchmark(args)
     assert [name for name, _, _ in order.mock_calls] == ["run_gradle_build", "prepare"]
     assert order.prepare.call_args == call("win64", build=False)
+
+
+@pytest.mark.parametrize(
+    ("mod_loader", "task"),
+    [(loader.id, loader.build_task) for loader in PROJECT_STATE.loaders],
+)
+def test_run_gradle_build_targets_selected_loader(
+    mod_loader: str, task: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    project = tmp_path / "checkout"
+    monkeypatch.setattr(util, "PROJECT_DIR", project)
+    run = Mock()
+    monkeypatch.setattr(util, "run", run)
+
+    runner.run_gradle_build("arm64", ci=True, mod_loader=mod_loader)
+
+    run.assert_called_once()
+    assert run.call_args.args[0][:2] == [str(project / "gradlew.bat"), task]
+    assert run.call_args.args[0][2:4] == ["-x", PROJECT_STATE.get(mod_loader).test_task]
+    assert run.call_args.kwargs["cwd"] == project
+    assert "-Parch=arm64" in run.call_args.args[0]
+
+
+@pytest.mark.parametrize("mod_loader", PROJECT_STATE.ids)
+def test_run_gradle_package_targets_selected_loader(mod_loader: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    project = tmp_path / "checkout"
+    monkeypatch.setattr(util, "PROJECT_DIR", project)
+    run = Mock()
+    monkeypatch.setattr(util, "run", run)
+
+    runner.run_gradle_build("win64", ci=False, mod_loader=mod_loader)
+
+    assert run.call_args.args[0][:2] == [str(project / "gradlew.bat"), PROJECT_STATE.get(mod_loader).package_task]
 
 
 def test_doctor_reports_launcher_status_without_opening_sign_in(fake_launcher: FakeLauncher):

@@ -75,7 +75,7 @@ switch ($Action) {
         $null = Select-Launcher -State $state
         Write-Host "Recorded before the instance: $(Test-Path -LiteralPath $script:PRISM_DATA_DIR_RECORD)"
         try {
-            $null = Initialize-Prism -State $state -Unattended
+            $null = Initialize-Prism -State $state -Unattended -ModLoader Fabric
         } catch {
             Write-Host "Threw: $($_.Exception.Message)"
         }

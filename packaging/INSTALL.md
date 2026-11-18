@@ -1,9 +1,10 @@
 # RTX Remix for Minecraft
 
-This archive installs a Fabric mod that renders Minecraft Java Edition 1.21.1
-through NVIDIA RTX Remix, with the RTX Remix Materials texture pack and the
-RTX Remix Showcase World it was made with. It sets up a launcher, Java,
-Fabric, the mod, and the RTX Remix runtime for you.
+This archive installs the Fabric, Forge, or NeoForge edition of a mod that renders
+Minecraft Java Edition 1.21.1 through NVIDIA RTX Remix, with the RTX Remix
+Materials texture pack and RTX Remix Showcase World it was made with. It sets
+up a launcher, Java, the selected loader, the matching mod, and the RTX Remix
+runtime for you.
 
 ## What You Need
 
@@ -19,7 +20,7 @@ Fabric, the mod, and the RTX Remix runtime for you.
 1. (Optional) Install the [Prism Launcher (link)](https://prismlauncher.org/download/windows/)
 
 2. Unzip the archive and **run** `install.bat`
-    * Choose 'Install' -> 'Prism Launcher' (this will set up the mod automatically)
+    * Choose 'Install' -> 'Prism Launcher' -> 'Fabric', 'Forge', or 'NeoForge' (this will set up the mod automatically)
     * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then press Enter on 'Continue'
 
 3. **Sign in** to your Microsoft account in Prism Launcher
@@ -39,12 +40,12 @@ Fabric, the mod, and the RTX Remix runtime for you.
 3. **Close** the launcher
 
 4. Unzip the archive and **run** `install.bat`
-    * Choose 'Install' -> 'Microsoft Launcher' (this will set up the mod automatically)
+    * Choose 'Install' -> 'Microsoft Launcher' -> 'Fabric', 'Forge', or 'NeoForge' (this will set up the mod automatically)
     * Keep all three items **ticked**: 'RTX Remix Renderer', 'RTX Remix Materials' and 'RTX Remix Showcase World', then press Enter on 'Continue'
     * *Note: this launcher shares one game folder with your normal Minecraft, so 'RTX Remix Materials' also changes how your normal game looks. Untick it to keep your normal look.*
 
 5. Play
-    * In Minecraft Launcher, on the 'Minecraft: Java Edition' tab: **choose** 'NVIDIA RTX Remix for Minecraft' from the installation list, and hit 'Play'
+    * In Minecraft Launcher, on the 'Minecraft: Java Edition' tab: **choose** the NVIDIA RTX Remix profile matching Fabric, Forge, or NeoForge, and hit 'Play'
     * In Minecraft, open 'Singleplayer' and **choose** 'NVIDIA RTX Demo'
     * *Note: on the very first launch, RTX Remix compiles its shaders before showing the world (one time only). See First Launch.*
 
@@ -68,20 +69,33 @@ breaks, report it (see below); that is how it gets fixed.
 |---|---|
 | `install.bat` | The installer. This is the one to run |
 | `installer.ps1` | The installer itself. `install.bat` is a thin wrapper around it |
+| `project-state.json` | The release's loader, version, and artifact catalog, consumed by the installer |
 | `README.md` | This file |
 | `INSTALLER_REFERENCE.md` | The installer modes, every flag, headless and CI use, and what the installer verifies before it downloads anything. |
-| `mods\` | The mod, RTX Remix Renderer, one JAR |
+| `mods\fabric\` | The verified, self-contained Fabric JAR |
+| `mods\forge\` | The verified, self-contained Forge JAR |
+| `mods\neoforge\` | The verified, self-contained NeoForge JAR |
 | `resourcepacks\` | RTX Remix Materials, the texture pack, one ZIP. The installer copies it as it is, and Minecraft loads it without unpacking |
 | `saves\` | RTX Remix Showcase World, one ZIP. The installer unpacks it into the game's `saves\NVIDIA RTX Demo\` |
 | `migrate_resource_packs.ps1` | Migrates legacy baseline packs and resource-pack ordering |
 | `LICENSE`, `NOTICE` | The project's Apache License 2.0 and its attribution notices |
 | `THIRD_PARTY_NOTICES.md`, `packaging\licenses\` | The third-party components the mod JAR carries, chiefly the RTX Remix runtime, and their license texts |
 
-The mod file name ends in the version, a build timestamp, and a short commit
-hash, which together identify the exact build. Keep the whole name for bug
-reports. A file name ending in `-win64` or `-arm64` carries one architecture;
-any other name carries both, and the matching runtime is unpacked on first
-launch.
+The packaged mod file name ends in the version, a build timestamp, and a short
+commit hash, which together identify the exact build. The installer copies it
+to the stable loader-specific name declared by `project-state.json`; `/rtx
+status` identifies the running build for bug reports. A packaged file name
+ending in `-win64` or `-arm64` carries one architecture; any other name carries
+both, and the matching runtime is unpacked on first launch.
+
+The installer reads `project-state.json` beside itself in a release bundle (or
+at the repository root when run from `packaging\`). It requires schema
+`multi-version/v1`; its keyed `versions` catalog owns Minecraft targets and
+each target's keyed `loaders` catalog owns display names, versions, artifacts,
+installed names, built-in resource packs, Gradle metadata, and Prism
+components. Loader-specific Microsoft setup and companion handling remain
+provider code in `installer.ps1`. A missing or invalid manifest, target, or
+provider declaration is a packaging error and stops before installation.
 
 ## Detailed installation
 
@@ -93,7 +107,8 @@ launch.
 3. The installer opens a menu and preselects the right action for what is
    already on your machine: Install, Upgrade, or Repair. Press Enter to accept
    it. Upgrade and Repair keep the launcher that already has the mod and skip
-   the launcher question; to use the other launcher, choose Install instead.
+   the launcher question; they also preserve an unambiguous installed loader.
+   To switch launcher or loader, choose Install instead.
 4. Answer the launcher question. With Prism and no Microsoft launcher on the
    machine, the installer uses Prism without asking. **Prism Launcher** is the
    recommended choice: the installer uses the Prism you already have, or
@@ -104,7 +119,9 @@ launch.
    `prismlauncher.exe`; later runs remember it. The **Microsoft launcher** is
    the official one you already use, and the mod then shares the same game
    folder and the same worlds as your normal play.
-5. Keep all three items ticked in the list that follows: RTX Remix Renderer,
+5. Choose Fabric, Forge, or NeoForge. The installer configures the selected loader,
+   installs the matching JAR, and installs Fabric API only for Fabric.
+6. Keep all three items ticked in the list that follows: RTX Remix Renderer,
    the mod; RTX Remix Materials, the texture pack the renderer was made with;
    and RTX Remix Showcase World, the world it was tuned against. The highlight
    starts on Continue: press Enter on it to install the ticked items. Enter on
@@ -115,20 +132,21 @@ launch.
    normal game's look alone. The world goes into `saves\NVIDIA RTX Demo`. A
    world already there under that name is kept as it is, and the installer
    says so.
-6. The installer opens the launcher when it finishes. If it cannot, open it
+7. The installer opens the launcher when it finishes. If it cannot, open it
    yourself. A Prism the installer downloaded has no Start menu entry: run
    `prismlauncher.exe` in `%LOCALAPPDATA%\RtxRemixMinecraft\PrismLauncher\`,
    the path the installer prints when it finishes. Sign in to your Microsoft
    account if you have not already. In Prism this is Accounts, then Manage
    Accounts, then Add Microsoft.
-7. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
-   Prism, or the profile of the same name in the Microsoft launcher.
-8. Open Singleplayer and choose **NVIDIA RTX Demo**, the showcase world.
+8. Start the game. Select the **NVIDIA RTX Remix for Minecraft** instance in
+   Prism. In the Microsoft launcher, select **NVIDIA RTX Remix for Minecraft**
+   for Fabric, **NVIDIA RTX Remix for Minecraft (Forge)** for Forge, or
+   **NVIDIA RTX Remix for Minecraft (NeoForge)** for NeoForge.
+9. Open Singleplayer and choose **NVIDIA RTX Demo**, the showcase world.
 
 `INSTALLER_REFERENCE.md` covers the rest: the modes, every flag, headless and
 CI use, and what the installer verifies before it downloads anything. To add
-the mod, the pack, or the world to a Fabric instance you already have instead,
-see
+the mod, pack, or world to an existing Fabric, Forge, or NeoForge instance instead, see
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/blob/main/docs/PLAYING.md#installing-without-the-installer>.
 
 ## First Launch
@@ -179,21 +197,24 @@ Download the new installer bundle,
 <https://github.com/NVIDIAGameWorks/rtx-remix-minecraft/releases/latest>,
 extract it, and run `install.bat` again. It
 preselects Upgrade and replaces the mod and its supporting files in the
-launcher that already has them. Launcher, Minecraft, Fabric, and other options
-are preserved. To install into the other launcher instead, choose Install.
+launcher that already has them. Launcher, Minecraft, and other options are
+preserved, including the installed loader when it is unambiguous. To switch
+launcher or loader instead, choose Install.
 
 Installing the mod also removes an old generated `RtxRemix-LabPBR` pack
 identified by its metadata and texture inventory, leaving other packs alone.
 In an existing `options.txt`, it changes only `resourcePacks`: vanilla first,
-Fabric next, then user packs in their existing order, without the retired
-baseline entry. Missing options files are not created for that.
+the selected loader's built-in resources next, then user packs in their
+existing order, without the retired baseline entry. Missing options files are
+not created for that.
 
 With RTX Remix Materials ticked, an installed copy,
 `resourcepacks\RTX-Remix-Materials-<version>.zip`, is replaced with the
 archive's, and its `resourcePacks` entry is renamed in place, so it stays on or
-off as you left it. A new pack is turned on just above Fabric's pack, below
-your own packs. That is the one case where the installer creates a missing
-`options.txt`, holding only the game version and the pack list.
+off as you left it. A new pack is turned on just above the selected loader's
+built-in resources, below your own packs. That is the one case where the
+installer creates a missing `options.txt`, holding only the game version and
+the pack list.
 
 The installer never replaces or changes `saves\NVIDIA RTX Demo`, since it may
 hold your progress. For a fresh copy of the showcase world, rename or delete
@@ -232,8 +253,9 @@ Everything is under the game folder, which is:
 The automated uninstall removes these:
 
 - `mods\rtx-remix-renderer-*.jar`
-- `mods\fabric-api-*.jar`, all of them in a Prism instance, and only the
-  version the mod pins in the Microsoft launcher's shared `mods\` folder
+- for a Fabric installation, `mods\fabric-api-*.jar`: all of them in a Prism
+  instance, and only the version the mod pins in the Microsoft launcher's
+  shared `mods\` folder
 - `remix-sdk\`
 - `rtx.conf`
 - `.rtx-remix-version`
@@ -276,12 +298,14 @@ if you are wiping it anyway.
 | The Prism download fails | Check the firewall and retry. The installer asks GitHub for the newest Prism release, and a shared network address can hit GitHub's anonymous rate limit. If GitHub reports a rate limit, wait before retrying |
 | `Download failed after 3 attempts from` followed by an Adoptium URL and the error details | The Adoptium API at `api.adoptium.net` has to be reachable. Check the firewall and re-run |
 | `Failed to extract JDK 21 archive:` followed by the error details | Check free disk space and the permissions on your temporary folder, then re-run the installer to download and extract a fresh archive |
-| The Fabric API download fails | `maven.fabricmc.net` has to be reachable. Check the firewall and re-run |
+| The Fabric API download fails | This applies only to Fabric. `maven.fabricmc.net` has to be reachable. Check the firewall and re-run |
 | The installer refuses to choose a launcher | Both Prism and the Microsoft launcher are installed and the run was headless. Pass `-Launcher Prism` or `-Launcher Microsoft` |
+| An unattended run says that `-MinecraftVersion` is required | Pass a version carried by the bundle, for example `-MinecraftVersion 1.21.1` |
 | `Install RTX Remix Renderer first` | RTX Remix Renderer was unticked, and the launcher has no RTX Remix game folder for the pack and the world to go into. Run the installer again with the mod ticked |
 | The RTX Remix Materials step says `Could not place` or `Could not remove the older` | Minecraft holds its resource packs open while it runs. Close it and run the installer again |
 | `Could not unpack the RTX Remix Showcase World` | Nothing of the world was left in `saves\`. Check the free space on that drive, or download the installer bundle again if the zip is damaged |
 | `Could not move the RTX Remix Showcase World` | Windows or antivirus software was still scanning the unpacked files. Nothing of the world was left in `saves\`. Run the installer again |
+| An unattended run says that `-ModLoader` is required | Pass the loader explicitly, for example `-ModLoader Fabric`, `-ModLoader Forge`, or `-ModLoader NeoForge` |
 
 Problems inside the game rather than inside the installer, such as a black
 screen or a flat-looking world, are covered by the player guide at
@@ -309,22 +333,23 @@ Rendering problems are hard to act on without specifics, so include all of
 the following:
 
 1. The mod file name, from the `mods\` folder. It identifies the exact build.
-2. Which launcher you used, Prism or Microsoft.
-3. Your GPU and driver version, from the NVIDIA app or `nvidia-smi`.
-4. Whether a laptop display is driven by the built-in graphics chip, from
+2. Which mod loader you selected: Fabric, Forge, or NeoForge.
+3. Which launcher you used, Prism or Microsoft.
+4. Your GPU and driver version, from the NVIDIA app or `nvidia-smi`.
+5. Whether a laptop display is driven by the built-in graphics chip, from
    Windows Settings, Display, Graphics.
-5. Your Windows architecture. Run `systeminfo | findstr "System Type"`, which
+6. Your Windows architecture. Run `systeminfo | findstr "System Type"`, which
    reports `x64-based PC` or `ARM64-based PC`.
-6. Which resource packs are on, from Options, Resource Packs.
-7. The output of `/rtx status`.
-8. `logs\latest.log` and `rtx-remix\logs\remix-dxvk.log` from the game
+7. Which resource packs are on, from Options, Resource Packs.
+8. The output of `/rtx status`.
+9. `logs\latest.log` and `rtx-remix\logs\remix-dxvk.log` from the game
    folder, attached rather than pasted.
-9. For a crash, a zip of whatever the game folder has of `crash-reports\`,
+10. For a crash, a zip of whatever the game folder has of `crash-reports\`,
    `crash\crash_report_*.txt`, and `hs_err_pid*.log`. Leave out the `.dmp`
    files in `crash\`. Those from version 0.1.0 can contain your Minecraft
    sign-in token, and so can full-detail dumps, which are opt-in for testing.
-10. A screenshot of the problem. `F2` saves one to the `screenshots\` folder.
-11. For a visual bug, a matching pair: take the shot, type `/rtx off`, take a
+11. A screenshot of the problem. `F2` saves one to the `screenshots\` folder.
+12. For a visual bug, a matching pair: take the shot, type `/rtx off`, take a
     second shot from the same spot, then `/rtx on`.
 
 The full guides, covering the settings screen, the commands, camera paths, and

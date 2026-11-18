@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Install a built development mod into an existing Fabric game directory."""
+"""Install a built development mod into an existing loader game directory."""
 
 from __future__ import annotations
 
@@ -9,10 +9,21 @@ import os
 import shutil
 from pathlib import Path
 
+from . import loader_registry
 from .benchmark import util
 
 # The runtime textures the mod loads from <gameDir>/textures/. build.gradle checks the same files after every pull.
 RUNTIME_TEXTURE_FILES = ("overcast_thunderstorm_bc6u.dds", "water_normals_flipbook.dds")
+
+
+def development_mod_jar(project_dir: Path, mod_loader: str) -> Path | None:
+    """The newest runnable development JAR for the selected loader."""
+    registry_dir = project_dir if (project_dir / loader_registry.MANIFEST_NAME).is_file() else None
+    loader = loader_registry.load_registry(registry_dir).get(mod_loader)
+    directory = loader.project_path(project_dir, loader.development_jar_dir)
+    pattern = loader.development_jar_pattern
+    jars = [jar for jar in directory.glob(pattern) if jar.is_file() and "-sources" not in jar.name.lower()]
+    return max(jars, key=lambda jar: jar.stat().st_mtime_ns, default=None)
 
 
 def runtime_source(project_dir: Path, arch: str) -> Path:
@@ -42,7 +53,14 @@ def _stage_runtime(source: Path, bridge: Path, destination: Path, arch: str) -> 
     shutil.copy2(bridge, destination / "remixbridge.dll")
 
 
-def install_development_build(project_dir: Path, *, game_dir: Path | None = None, arch: str | None = None) -> int:
+def install_development_build(
+    project_dir: Path,
+    *,
+    game_dir: Path | None = None,
+    arch: str | None = None,
+    mod_loader: str | None = None,
+    mod_jar: Path | None = None,
+) -> int:
     """Stage built artifacts, returning 1 on missing prerequisites or a failed migration.
 
     Relative game and REMIX_BUILD paths are anchored at the checkout. This does
@@ -56,6 +74,10 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
         print(f'ERROR: REMIX_ARCH must be win64 or arm64, got "{selected_arch}".')
         return 1
     selected_arch = selected_arch.lower()
+    registry = loader_registry.load_registry()
+    selected_loader = mod_loader or registry.default_id
+    loader = registry.get(selected_loader)
+    target_args = " ".join(registry.gradle_arguments(loader.id))
 
     if game_dir is None:
         appdata = os.environ.get("APPDATA")
@@ -73,21 +95,20 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
     if not bridge.is_file():
         task = "compileNativeArm64" if selected_arch == "arm64" else "compileNativeWin64"
         print(f'ERROR: JNI bridge not found at "{bridge}".')
-        print(f"       Build it with .\\gradlew.bat {task}.")
+        print(f"       Build it with .\\gradlew.bat {task} {target_args}.")
         return 1
-    jars = (
-        jar
-        for jar in (project_dir / "build" / "libs").glob("rtx-remix-renderer-*.jar")
-        if jar.is_file() and "-sources" not in jar.name.lower()
-    )
-    mod_jar = max(jars, key=lambda jar: jar.stat().st_mtime_ns, default=None)
     if mod_jar is None:
-        print("ERROR: no mod jar found in build\\libs\\.")
+        mod_jar = development_mod_jar(project_dir, selected_loader)
+    if mod_jar is None:
+        print(
+            f"ERROR: no {loader.display_name} mod jar matching "
+            f"{loader.development_jar_dir}/{loader.development_jar_pattern}."
+        )
         return 1
     textures = project_dir / "remix-runtime" / "textures"
     if not textures.is_dir():
         print(f'ERROR: runtime textures not found at "{textures}".')
-        print("       Pull them with .\\gradlew.bat fetchRuntimeTextures.")
+        print(f"       Pull them with .\\gradlew.bat fetchRuntimeTextures {target_args}.")
         return 1
     unusable = [
         name
@@ -96,19 +117,45 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
     ]
     if unusable:
         print(f'ERROR: runtime textures at "{textures}" are missing or empty: {", ".join(unusable)}.')
-        print("       Run .\\gradlew.bat fetchRuntimeTextures; when it reports the same files, delete the folder it")
+        print(
+            f"       Run .\\gradlew.bat fetchRuntimeTextures {target_args}; "
+            "when it reports the same files, delete the folder it"
+        )
         print("       names and run it again, and Packman downloads the package afresh.")
         return 1
 
     mods = game_dir / "mods"
     mods.mkdir(parents=True, exist_ok=True)
-    for previous in mods.glob("rtx-remix-renderer*.jar"):
-        if previous.is_file():
-            previous.unlink()
-    shutil.copy2(mod_jar, mods / "rtx-remix-renderer.jar")
-    if not any(mods.glob("fabric-api-*.jar")):
+    installed_name = loader.installed_jar
+    target = mods / installed_name
+    staged = target.with_name(target.name + ".new")
+    staged.unlink(missing_ok=True)
+    shutil.copy2(mod_jar, staged)
+    previous = [jar for jar in mods.glob("rtx-remix-renderer*.jar") if jar.is_file()]
+    rollbacks: list[tuple[Path, Path]] = []
+    installed = False
+    try:
+        for index, jar in enumerate(previous):
+            rollback = jar.with_name(f"{jar.name}.rollback-{index}")
+            rollback.unlink(missing_ok=True)
+            jar.replace(rollback)
+            rollbacks.append((jar, rollback))
+        staged.replace(target)
+        installed = True
+    except OSError:
+        if installed:
+            target.unlink(missing_ok=True)
+        for original, rollback in reversed(rollbacks):
+            if rollback.exists():
+                rollback.replace(original)
+        staged.unlink(missing_ok=True)
+        raise
+    for _, rollback in rollbacks:
+        rollback.unlink(missing_ok=True)
+    if loader.provider == "fabric" and not any(mods.glob("fabric-api-*.jar")):
         print(f"WARNING: no fabric-api jar in {mods}.")
-        print("         The mod requires fabric-api >=0.116.10+1.21.1 (https://modrinth.com/mod/fabric-api).")
+        requirement = loader.api_version_range or loader.api_version or "(version declared in project-state.json)"
+        print(f"         The mod requires fabric-api {requirement} (https://modrinth.com/mod/fabric-api).")
 
     _stage_runtime(source, bridge, game_dir / "remix-sdk", selected_arch)
     packaging = project_dir / "packaging"
@@ -128,6 +175,8 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
             game_dir,
             "-LegacyPackName",
             "rtx-remix-labpbr",
+            "-ModLoader",
+            loader.display_name,
         ],
         cwd=project_dir,
         check=False,

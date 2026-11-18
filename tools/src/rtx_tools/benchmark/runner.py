@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
 
-from .. import client
+from .. import client, loader_registry
 from .. import config as tools_config
 from .. import sdk as runtime_sdk
 from . import catalog, gitmeta, gpu_telemetry, machine, tracy, util
@@ -1332,8 +1332,8 @@ def configure_benchmark_selection(
     return selection
 
 
-def config_for_run(config: dict, *, ci: bool) -> dict:
-    if not ci:
+def config_for_run(config: dict, *, ci: bool, tracy_enabled: bool = True) -> dict:
+    if not ci or not tracy_enabled:
         return apply_env_config_overrides(config)
     config = copy.deepcopy(config)
     profiling = config.setdefault("profiling", {})
@@ -1387,6 +1387,8 @@ def env_bool(name: str) -> bool | None:
 
 
 def apply_env_config_overrides(config: dict) -> dict:
+    config["minecraftVersion"] = loader_registry.load_registry().minecraft_version
+    config["modLoader"] = tools_config.mod_loader(config)
     render = config.setdefault("render", {})
     profiling = config.setdefault("profiling", {})
     if (fullscreen := env_bool("BENCHMARK_RENDER_FULLSCREEN")) is not None:
@@ -1922,14 +1924,17 @@ def benchmark_run_plan(args) -> dict[str, Any]:
         camera_override=getattr(args, "camera", None),
         version_override=version_override,
     )
-    config = config_for_run(config, ci=ci)
     if getattr(args, "strip_entities", False):
         config["stripEntitiesOnStage"] = True
-    runs = getattr(args, "runs", 0) or (int(config.get("runs") or 3) if ci else 1)
     arch = host_arch()
     sdk_variant = getattr(args, "sdk_variant", "release")
     sdk = sdk_probe(sdk_variant, arch)
-    build_task = "build" if ci else "package"
+    config = config_for_run(config, ci=ci, tracy_enabled=bool(sdk.get("tracyEnabled")))
+    runs = getattr(args, "runs", 0) or (int(config.get("runs") or 3) if ci else 1)
+    mod_loader = tools_config.mod_loader(config)
+    registry = loader_registry.load_registry()
+    loader = registry.get(mod_loader)
+    build_task = loader.build_task if ci else loader.package_task
     resource_pack_files = resolve_resource_pack_files(config, selection)
     screenshots = _configured_screenshots(config)
     return {
@@ -1946,11 +1951,21 @@ def benchmark_run_plan(args) -> dict[str, Any]:
         "runs": runs,
         "ci": ci,
         "arch": arch,
+        "modLoader": mod_loader,
+        "minecraftVersion": registry.minecraft_version,
         "sdk": sdk,
         "build": {
             "enabled": not bool(getattr(args, "no_build", False)),
+            "project": str(util.PROJECT_DIR),
             "task": build_task,
-            "args": [build_task, "-x", "test", f"-Parch={arch}", "--quiet"],
+            "args": [
+                build_task,
+                "-x",
+                loader.test_task,
+                *registry.gradle_arguments(loader.id),
+                f"-Parch={arch}",
+                "--quiet",
+            ],
         },
         "stripEntitiesOnStage": strip_entities_on_stage(config),
         "resultDirPattern": str(util.RESULTS_DIR / "<timestamp>"),
@@ -2018,6 +2033,11 @@ def doctor_report(
         add("ok", "config", f"Loaded {util.BENCHMARK_DIR / 'config.json'}")
     except Exception as exc:
         add("error", "config", str(exc))
+    if config:
+        try:
+            add("ok", "mod loader", tools_config.mod_loader(config).title())
+        except Exception as exc:
+            add("error", "mod loader", str(exc))
 
     selection = None
     world_layout = ""
@@ -2547,9 +2567,14 @@ def write_options(config: dict, *, resource_pack_files: list[str] | None = None,
     fullscreen_resolution = fullscreen_resolution_option_value(override_width, override_height, pin_display=pin_display)
     if resource_pack_files is None:
         resource_pack_files = configured_resource_pack_names(config)
-    # The mod's built-in baseline rides in Fabric's pack, below every file/ pack.
-    # Fabric appends its pack above user packs if options.txt omits it.
-    resource_pack_options = ["vanilla", "fabric", *(f"file/{file_name}" for file_name in resource_pack_files)]
+    loader = tools_config.mod_loader(config)
+    # Keep the selected loader's built-in mod resources below every file/ pack.
+    loader_pack = loader_registry.load_registry().get(loader).builtin_resource_pack
+    resource_pack_options = [
+        "vanilla",
+        loader_pack,
+        *(f"file/{file_name}" for file_name in resource_pack_files),
+    ]
     values = {
         "enableVsync": "true" if render.get("vsync") else "false",
         "fullscreen": "true" if render.get("fullscreen") else "false",
@@ -3103,22 +3128,26 @@ def started_client(request: client.LaunchRequest) -> Iterator[client.GameProcess
             print(f"WARNING: the game client did not exit within {CLIENT_EXIT_WAIT_SECONDS}s.")
 
 
-def run_gradle_build(arch: str, ci: bool) -> None:
-    task = "build" if ci else "package"
+def run_gradle_build(arch: str, ci: bool, mod_loader: str | None = None) -> None:
+    registry = loader_registry.load_registry()
+    loader = registry.get(mod_loader or registry.default_id)
+    task = loader.build_task if ci else loader.package_task
     timeout_seconds = 900 if ci else 1200
+    project = util.PROJECT_DIR
     args = [
-        str(util.PROJECT_DIR / "gradlew.bat"),
+        str(project / "gradlew.bat"),
         task,
         "-x",
-        "test",
+        loader.test_task,
+        *registry.gradle_arguments(loader.id),
         f"-Parch={arch}",
         "--console=plain",
         "--quiet",
     ]
     started = time.time()
-    print(f"Running Gradle {task} for arch={arch} (timeout={timeout_seconds}s)...")
-    util.run(args, env=gradle_env(), timeout=timeout_seconds)
-    print(f"Gradle {task} finished in {time.time() - started:.1f}s.")
+    print(f"Running {loader.display_name} Gradle {task} for arch={arch} (timeout={timeout_seconds}s)...")
+    util.run(args, cwd=project, env=gradle_env(), timeout=timeout_seconds)
+    print(f"{loader.display_name} Gradle {task} finished in {time.time() - started:.1f}s.")
 
 
 def creation_flags() -> int:
@@ -4598,10 +4627,8 @@ def run_benchmark(args) -> Path | None:
     )
     # configure_benchmark_selection set config["worldVersion"] from the staged
     # marker / pin; config_for_run preserves it for the manifest + dashboard.
-    config = config_for_run(config, ci=args.ci)
     if getattr(args, "strip_entities", False):
         config["stripEntitiesOnStage"] = True
-    runs = args.runs or (int(config.get("runs") or 3) if args.ci else 1)
     arch = host_arch(getattr(args, "arch", None))
     verify_jvm_matches_arch(arch)
     started = dt.datetime.now().astimezone()
@@ -4624,10 +4651,12 @@ def run_benchmark(args) -> Path | None:
     sdk_dll = fetch_sdk(args.sdk_variant, arch, auto_restage=runtime_sdk.configured_sdk_auto_restage(config))
     tools = tracy_tools(sdk_dll, required=args.sdk_variant == "tracy")
     sdk = sdk_metadata(sdk_dll, args.sdk_variant)
+    config = config_for_run(config, ci=args.ci, tracy_enabled=bool(sdk.get("tracyEnabled")))
+    runs = args.runs or (int(config.get("runs") or 3) if args.ci else 1)
     write_sdk_version(sdk)
 
     if not args.no_build:
-        run_gradle_build(arch, ci=args.ci)
+        run_gradle_build(arch, ci=args.ci, mod_loader=tools_config.mod_loader(config))
     # The jar is built, by the step above or by the caller of --no-build; this installs it into the game directory.
     client.active().prepare(arch, build=False)
 

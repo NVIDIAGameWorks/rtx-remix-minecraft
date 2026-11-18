@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from . import client, install, prism, runtime_compat, winproc
+from . import client, install, loader_registry, prism, runtime_compat, winproc
 from . import config as tools_config
 from .benchmark import runner, util
 from .client import GameProcess, LaunchBlocked, LaunchRequest
@@ -39,6 +39,13 @@ TOOL_OPTIONS_WARNING = (
 )
 DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0)
 CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+
+def _mod_loader(config: dict) -> str:
+    try:
+        return tools_config.mod_loader(config)
+    except RuntimeError as exc:
+        raise LaunchBlocked(str(exc)) from exc
 
 
 def _end(process: GameProcess) -> None:
@@ -94,6 +101,17 @@ def _configured_jvm_args(config: dict) -> list[str]:
     if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
         raise LaunchBlocked("launch.jvmArgs in tools/config.local.json must be a list of strings.")
     return args
+
+
+def _window_size(config: dict) -> tuple[int, int] | None:
+    render = config.get("render")
+    if not isinstance(render, dict):
+        return None
+    width = render.get("overrideWidth")
+    height = render.get("overrideHeight")
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        return width, height
+    return None
 
 
 def _confirm_incompatible_runtime() -> bool:
@@ -246,28 +264,72 @@ class PrismLauncher:
         )
 
     def prepare(self, arch: str, *, build: bool) -> None:
-        self._layout(self._executable(self.config))
+        config = self.config
+        layout = self._layout(self._executable(config))
         project = util.PROJECT_DIR
-        gradle = [str(project / "gradlew.bat")]
+        mod_loader = _mod_loader(config)
+        registry = loader_registry.load_registry()
+        loader = registry.get(mod_loader)
+        tasks = ["setupRuntime", *loader.prepare_tasks]
         if build:
-            gradle += ["build", "-x", "test", "stageFabricApi", f"-Parch={arch}", "--console=plain", "--quiet"]
-        else:
-            gradle += ["stageFabricApi", "--quiet"]
-        util.run(gradle, cwd=project, env=runner.gradle_env())
+            tasks.extend([loader.build_task, "-x", loader.test_task])
+        util.run(
+            [
+                str(project / "gradlew.bat"),
+                *tasks,
+                *registry.gradle_arguments(loader.id),
+                f"-Parch={arch}",
+                "--console=plain",
+                "--quiet",
+            ],
+            cwd=project,
+            env=runner.gradle_env(),
+        )
+        mod_jar = install.development_mod_jar(project, mod_loader)
+        if mod_jar is None:
+            build_hint = "" if build else " Rerun without --no-build."
+            raise LaunchBlocked(f"No {loader.display_name} mod JAR exists.{build_hint}")
         self._runtime_probe = runtime_compat.warn_if_incompatible(project, arch)
-        # Before the install, which warns about a mods folder without Fabric API.
-        self._install_fabric_api(project / "build" / "dev" / "fabric-api.jar")
-        if install.install_development_build(project, game_dir=self.game_dir, arch=arch) != 0:
-            raise LaunchBlocked(f"Could not install the development build into {self.game_dir}; see the errors above.")
-
-    def start(self, request: LaunchRequest) -> GameProcess:
         if (
             self._runtime_probe is not None
             and self._runtime_probe.incompatible
-            and request.stdout is None
             and not self.confirm_incompatible_runtime()
         ):
             raise LaunchBlocked("Launch cancelled: stage a Remix runtime compatible with this checkout and try again.")
+        if loader.provider == "fabric":
+            # Before the install, which warns about a mods folder without Fabric API.
+            self._install_fabric_api(
+                loader.project_path(project, loader.module) / "build" / "dev" / "fabric-api.jar",
+                loader,
+            )
+        if (
+            install.install_development_build(
+                project,
+                game_dir=self.game_dir,
+                arch=arch,
+                mod_loader=mod_loader,
+                mod_jar=mod_jar,
+            )
+            != 0
+        ):
+            raise LaunchBlocked(f"Could not install the development build into {self.game_dir}; see the errors above.")
+        prism.write_instance(
+            layout.data_dir,
+            instances_dir=layout.instances_dir,
+            instance_id=layout.instance_id,
+            instance_name=layout.instance_name,
+            java=self._java(arch),
+            jvm_args=[
+                *prism.recommended_jvm_args(),
+                *_configured_jvm_args(config),
+            ],
+            mod_loader=mod_loader,
+            window_size=_window_size(config),
+        )
+        if loader.provider != "fabric":
+            self._remove_fabric_api()
+
+    def start(self, request: LaunchRequest) -> GameProcess:
         config = self.config
         exe = self._executable(config)
         layout = self._layout(exe)
@@ -279,7 +341,7 @@ class PrismLauncher:
         needles = _game_needles(self.game_dir.parent)
         self._refuse_a_running_game(needles)
         jvm_args = [
-            *prism.installer_constant("RECOMMENDED_JVM_ARGS").split(),
+            *prism.recommended_jvm_args(),
             *configured_jvm_args,
             *client.preset_jvm_args(request.preset),
         ]
@@ -298,6 +360,8 @@ class PrismLauncher:
             instance_name=layout.instance_name,
             java=java,
             jvm_args=jvm_args,
+            mod_loader=_mod_loader(config),
+            window_size=_window_size(config),
         )
         if not layout.uses_default_data_dir:
             prism.seed_launcher_config(layout.data_dir, java)
@@ -436,33 +500,70 @@ class PrismLauncher:
         detected = runner.detect_java_home()
         home = prism.find_game_jdk(arch, detected)
         if home is None:
+            registry = loader_registry.load_registry()
             raise LaunchBlocked(
-                f"Minecraft {prism.installer_constant('MC_VERSION')} in Prism needs a 64-bit JDK "
-                f"{prism.GAME_JAVA_MAJOR} for {arch}. The detected JDK ({detected or 'none'}) is not one, and none is "
+                f"Minecraft {registry.minecraft_version} in Prism needs a 64-bit JDK "
+                f"{registry.java_target} for {arch}. The detected JDK ({detected or 'none'}) is not one, and none is "
                 "in Gradle's toolchains or the Eclipse Adoptium, Microsoft, or Java folders under Program Files. "
-                f"Install a JDK {prism.GAME_JAVA_MAJOR} for {arch}, set JAVA_HOME to it, and run the command again."
+                f"Install a JDK {registry.java_target} for {arch}, set JAVA_HOME to it, and run the command again."
             )
         return home / "bin" / "javaw.exe"
 
-    def _install_fabric_api(self, jar: Path) -> None:
+    def _install_fabric_api(self, jar: Path, loader: loader_registry.Loader) -> None:
         if not jar.is_file():
+            registry = loader_registry.load_registry()
+            task = loader.prepare_tasks[0] if loader.prepare_tasks else loader.build_task
+            target_args = " ".join(registry.gradle_arguments(loader.id))
             raise LaunchBlocked(
-                f"{jar} is missing. Run gradlew.bat stageFabricApi in the checkout, which writes it, and fix any "
-                "errors it reports, then run the command again."
+                f"{jar} is missing. Run gradlew.bat {task} {target_args} in the checkout, which writes it, "
+                "and fix any errors it reports, then run the command again."
             )
         mods = self.game_dir / "mods"
-        target = mods / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
+        if loader.api_version is None:
+            raise LaunchBlocked(f"{loader.display_name} has no API version in project-state.json")
+        target = mods / f"fabric-api-{loader.api_version}.jar"
         path = mods
+        staged = target.with_name(target.name + ".new")
+        rollbacks: list[tuple[Path, Path]] = []
+        installed = False
         try:
             mods.mkdir(parents=True, exist_ok=True)
-            for path in [other for other in mods.glob("fabric-api-*.jar") if other != target]:
-                path.unlink()
             path = target
-            shutil.copy2(jar, target)
+            staged.unlink(missing_ok=True)
+            shutil.copy2(jar, staged)
+            for index, path in enumerate(mods.glob("fabric-api-*.jar")):
+                rollback = path.with_name(f"{path.name}.rollback-{index}")
+                rollback.unlink(missing_ok=True)
+                path.replace(rollback)
+                rollbacks.append((path, rollback))
+            staged.replace(target)
+            installed = True
         except OSError as exc:
+            if installed:
+                target.unlink(missing_ok=True)
+            for original, rollback in reversed(rollbacks):
+                if rollback.exists():
+                    rollback.replace(original)
+            staged.unlink(missing_ok=True)
             # shutil.copy2's CopyFile2 errors carry no strerror.
             raise LaunchBlocked(
                 f"Cannot update {path} ({exc.strerror or exc}). Close any Minecraft still running from this checkout "
+                "and run the command again."
+            ) from exc
+        for _, rollback in rollbacks:
+            rollback.unlink(missing_ok=True)
+
+    def _remove_fabric_api(self) -> None:
+        mods = self.game_dir / "mods"
+        if not mods.is_dir():
+            return
+        path = mods
+        try:
+            for path in mods.glob("fabric-api-*.jar"):
+                path.unlink()
+        except OSError as exc:
+            raise LaunchBlocked(
+                f"Cannot remove {path} ({exc.strerror or exc}). Close any Minecraft still running from this checkout "
                 "and run the command again."
             ) from exc
 
@@ -470,7 +571,7 @@ class PrismLauncher:
         """Whether Prism may still have Minecraft to download: until the game has run in this instance and Prism holds
         the pinned Minecraft's client jar (libraries/<group path>/<artifact>/<version>/, GradleSpecifier::toPath in
         launcher/minecraft/GradleSpecifier.h), a launch can first fetch the client, its libraries, and its assets."""
-        version = prism.installer_constant("MC_VERSION")
+        version = loader_registry.load_registry().minecraft_version
         jar = self.data_dir / "libraries" / "com" / "mojang" / "minecraft" / version / f"minecraft-{version}-client.jar"
         return not (jar.is_file() and (self.game_dir / "logs" / "latest.log").is_file())
 

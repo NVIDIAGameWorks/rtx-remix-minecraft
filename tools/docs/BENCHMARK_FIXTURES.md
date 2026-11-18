@@ -129,9 +129,10 @@ selected in Prism's profile.
 `resourcePacks` declares the enabled order of the world's own packs in
 `options.txt`, using pack names without `file/` (zip entries may omit `.zip`).
 The runner copies these packs from the fixture's `resourcepacks/` directory
-and enables them after `vanilla` and Fabric's `fabric` mod pack, which supplies
-the built-in baseline textures, and before the optional art pack. Omitting
-`resourcePacks` enables no world packs. Prefer unpacked folders for clean diffs.
+and enables them after `vanilla` and the selected loader's built-in resources
+(`fabric` on Fabric and `mod_resources` on Forge and NeoForge), which supply the baseline
+textures, and before the optional art pack. Omitting `resourcePacks` enables no
+world packs. Prefer unpacked folders for clean diffs.
 
 Older fixtures may still list `rtx-remix` for the retired baseline. The runner
 logs to stderr and drops that entry unless a real world-local folder or ZIP has
