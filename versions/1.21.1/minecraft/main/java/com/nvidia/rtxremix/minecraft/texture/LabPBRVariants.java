@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.texture;
 import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
@@ -14,6 +15,10 @@ import net.minecraft.server.packs.resources.ResourceManager;
 
 /** Minecraft resource lookup for the loader-neutral LabPBR converter. */
 public final class LabPBRVariants {
+    /** What a sidecar's name adds to the name of the texture it describes. */
+    static final List<String> VARIANT_SUFFIXES = List.of("_n", "_s", "_sss");
+    private static final String TEXTURE_EXTENSION = ".png";
+
     private final Map<ResourceLocation, Resource> resources;
 
     private LabPBRVariants(Map<ResourceLocation, Resource> resources) {
@@ -35,7 +40,12 @@ public final class LabPBRVariants {
 
     private static boolean isVariantResource(ResourceLocation id) {
         String path = id.getPath();
-        return path.endsWith("_n.png") || path.endsWith("_s.png") || path.endsWith("_sss.png");
+        if (!path.endsWith(TEXTURE_EXTENSION)) return false;
+        int nameEnd = path.length() - TEXTURE_EXTENSION.length();
+        for (String suffix : VARIANT_SUFFIXES) {
+            if (path.startsWith(suffix, nameEnd - suffix.length())) return true;
+        }
+        return false;
     }
 
     private static NativeImage loadResource(Resource resource) {
@@ -49,6 +59,6 @@ public final class LabPBRVariants {
 
     private static ResourceLocation variantId(ResourceLocation spriteId, String suffix) {
         return ResourceLocation.fromNamespaceAndPath(
-                spriteId.getNamespace(), "textures/" + spriteId.getPath() + suffix + ".png");
+                spriteId.getNamespace(), "textures/" + spriteId.getPath() + suffix + TEXTURE_EXTENSION);
     }
 }

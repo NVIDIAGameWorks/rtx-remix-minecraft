@@ -70,6 +70,7 @@
         "SpriteBillboardParticleAccessor",
         "SpriteContentsAccessor",
         "SpriteContentsUploadMixin",
+        "SpriteSourceListMixin",
         "TextureManagerMixin",
         "ThreadExecutorMixin",
         "TorchBlockAccessor",
