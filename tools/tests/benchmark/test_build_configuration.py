@@ -458,17 +458,20 @@ class BuildConfigurationTests(unittest.TestCase):
         for source in (REPO_ROOT / minecraft_module / "main" / "java").rglob("*.java"):
             loaded.update(re.findall(r'"textures/([^"/]+\.dds)"', source.read_text(encoding="utf-8")))
         installer = (REPO_ROOT / "packaging" / "installer.ps1").read_text(encoding="utf-8")
-        installed = set(re.findall(r"'textures\\([^'\\]+\.dds)'", installer))
+        installer_paths = set(re.findall(r"'textures\\([^'\\]+\.dds)'", installer))
+        obsolete = set(install.OBSOLETE_RUNTIME_TEXTURE_FILES)
         self.assertTrue(checked)
         self.assertEqual(checked, loaded)
-        self.assertEqual(checked, installed)
         self.assertEqual(checked, set(install.RUNTIME_TEXTURE_FILES))
+        self.assertTrue(checked.isdisjoint(obsolete))
+        self.assertEqual(checked | obsolete, installer_paths)
 
     def test_runtime_staging_uses_incremental_copy_tasks(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
 
         self.assertIn("tasks.register('syncRuntimeSdk', Sync)", build)
         self.assertIn("tasks.register('syncRuntimeTextures', Sync)", build)
+        self.assertIn("include runtimeTextureFiles", build)
         self.assertNotIn("tasks.register('syncDevelopmentResourcePack', Sync)", build)
 
     def test_runtime_config_copy_declares_only_its_own_output(self):

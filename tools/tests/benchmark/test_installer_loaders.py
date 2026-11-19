@@ -53,6 +53,10 @@ switch ($Action) {
     'RemoveApi' {
         Remove-FabricApiForNonFabric -McDir $Path -Launcher $Launcher -ModLoader $Loader
     }
+    'RemoveArtifacts' {
+        Initialize-LoaderCatalog
+        Remove-ModArtifacts -McDir $Path -Launcher $Launcher -ModLoader $Loader
+    }
     'LoaderProfile' {
         Ensure-MsLoaderProfile -ModLoader $Loader
     }
@@ -166,6 +170,37 @@ def test_unattended_uninstall_accepts_both_launchers_without_one_loader():
     assert "[ValidateSet('Prism', 'Microsoft', 'Both')]" in text
     assert "-not ($Mode -eq 'Uninstall' -and $Launcher -eq 'Both')" in text
     assert "$Launcher -eq 'Both' -and $Mode -ne 'Uninstall'" in text
+
+
+def test_uninstall_removes_legacy_water_normals_but_preserves_other_textures(tmp_path: Path):
+    game = tmp_path / "game"
+    write_paths = {
+        "mods/rtx-remix-renderer-fabric.jar",
+        "textures/water_normals_flipbook.dds",
+        "textures/overcast_thunderstorm_bc6u.dds",
+        "textures/custom.dds",
+    }
+    for relative in write_paths:
+        path = game / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"fixture")
+
+    result = run_harness(
+        tmp_path,
+        "-Action",
+        "RemoveArtifacts",
+        "-Path",
+        str(game),
+        "-Loader",
+        "Fabric",
+        "-Launcher",
+        "Prism",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (game / "textures/water_normals_flipbook.dds").exists()
+    assert not (game / "textures/overcast_thunderstorm_bc6u.dds").exists()
+    assert (game / "textures/custom.dds").read_bytes() == b"fixture"
 
 
 def test_release_jar_is_selected_from_the_requested_loader_directory(tmp_path: Path):

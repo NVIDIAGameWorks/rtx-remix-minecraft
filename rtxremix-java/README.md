@@ -22,6 +22,7 @@ Paths in this table are relative to `rtxremix-java/`.
 | `src/com/nvidia/rtxremix/RemixBridge.java` | Static JNI entry points |
 | `src/com/nvidia/rtxremix/` | API data holders, builders, constants, and handles |
 | `native/remixbridge.cpp` | Runtime loading, JNI marshalling, and C API calls |
+| `native/water_normals.h`, `native/water_normals.cpp` | Deterministic in-memory water-normal generation |
 | `native/include/remix_c.h` | C API header copied from the pinned runtime build |
 | `native/build_native.bat` | MSVC bridge build for Windows x64 or ARM64 |
 

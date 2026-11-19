@@ -165,12 +165,6 @@ the second benchmarks a save you imported and recorded a camera for.
   runtime, and `REMIX_FORCE_SDK_COPY=1` bypasses the runtime copy marker.
   Relative paths use the repository root. It neither builds nor launches
   Minecraft and does not manage the mod loader or its dependencies.
-- `rtx.bat textures water-normals [--seed N] [--out PATH]` generates
-  `water_normals_flipbook.dds` from code, by default under `build/textures/`:
-  120 frames of a tiling ocean surface that loops every six seconds, packed
-  12 x 10 as BC5 with mips in the layout `BlockTextureManager` plays. A seed
-  always produces the same surface. It takes about a minute, and it does not
-  publish the result to Packman.
 
 All Python tooling uses one uv-managed project in `tools/`, requiring
 Python >=3.15 and uv >=0.13. The benchmark and profiler packages share

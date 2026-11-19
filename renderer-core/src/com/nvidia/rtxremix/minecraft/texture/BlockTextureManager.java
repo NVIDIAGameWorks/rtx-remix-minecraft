@@ -66,6 +66,12 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
     public static final int L_TRANS = TerrainRenderLayer.TRANSLUCENT;
     public static final int L_GLASS = TerrainRenderLayer.GLASS;
     public static final int LAYER_COUNT = TerrainRenderLayer.COUNT;
+    private static final int WATER_NORMAL_FRAME_SIZE = 1024;
+    private static final int WATER_NORMAL_COLUMNS = 12;
+    private static final int WATER_NORMAL_ROWS = 10;
+    private static final long WATER_NORMAL_SEED = 225L;
+    private static final int WATER_NORMAL_WIDTH = WATER_NORMAL_COLUMNS * WATER_NORMAL_FRAME_SIZE;
+    private static final int WATER_NORMAL_HEIGHT = WATER_NORMAL_ROWS * WATER_NORMAL_FRAME_SIZE;
 
     private static BlockTextureManager INSTANCE;
 
@@ -92,7 +98,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
     private final List<RemixMaterial> managedMaterials = new ArrayList<>();
     private RemixMaterial waterSurfaceMaterial;
     private RemixMaterial waterCameraMediumMaterial;
-    private long waterNormalHandle;
+    private RemixTexture waterNormalTexture;
     private boolean initialized, initFailed;
     private float cutoutSssTransmissionDistance = DEFAULT_CUTOUT_SSS_TRANSMISSION_DISTANCE;
     private float cutoutSssAnisotropy = DEFAULT_CUTOUT_SSS_ANISOTROPY;
@@ -676,35 +682,45 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         }
     }
 
-    private void destroyWaterResources(RemixAPI api) {
-        destroyManagedMaterial(waterSurfaceMaterial);
-        waterSurfaceMaterial = null;
-        destroyManagedMaterial(waterCameraMediumMaterial);
-        waterCameraMediumMaterial = null;
+    private void destroyWaterResources(boolean destroyPersistentNormal) {
+        destroyWaterMaterials();
 
         destroyManagedTexture(waterWhiteTexture);
         waterWhiteTexture = null;
 
-        if (waterNormalHandle != 0) {
-            try {
-                api.destroyTexture(waterNormalHandle);
-            } catch (Exception e) {
-                LOGGER.warn("Failed to destroy water normal texture: {}", e.getMessage());
+        if (destroyPersistentNormal) {
+            if (waterNormalTexture != null && !waterNormalTexture.isDeleted()) {
+                waterNormalTexture.destroy();
             }
-            waterNormalHandle = 0;
+            waterNormalTexture = null;
         }
+    }
+
+    private void destroyWaterMaterials() {
+        destroyManagedMaterial(waterSurfaceMaterial);
+        waterSurfaceMaterial = null;
+        destroyManagedMaterial(waterCameraMediumMaterial);
+        waterCameraMediumMaterial = null;
     }
 
     private void buildWaterMaterials() {
         boolean success = false;
         try {
-            destroyWaterResources(api);
+            destroyWaterMaterials();
 
-            waterNormalHandle = api.createTextureFromFile(source.waterNormalsPath());
+            if (waterNormalTexture == null || waterNormalTexture.isDeleted()) {
+                waterNormalTexture = generateWaterNormalTexture();
+            }
+            if (waterNormalTexture == null) {
+                LOGGER.warn("Failed to generate water normal texture");
+                return;
+            }
 
-            byte[] white = {(byte) 255, (byte) 255, (byte) 255, (byte) 255};
-            waterWhiteTexture = upload(api, WATER_WHITE_TEXTURE_NAME, white, 1, 1,
-                    TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
+            if (waterWhiteTexture == null || waterWhiteTexture.isDeleted()) {
+                byte[] white = {(byte) 255, (byte) 255, (byte) 255, (byte) 255};
+                waterWhiteTexture = upload(api, WATER_WHITE_TEXTURE_NAME, white, 1, 1,
+                        TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
+            }
             if (waterWhiteTexture == null) {
                 LOGGER.warn("Failed to create white texture for water material");
                 return;
@@ -712,10 +728,10 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
 
             waterSurfaceMaterial = createMaterialViaStore(MaterialInfo.builder()
                     .albedoTexture(waterWhiteTexture.getHandle())
-                    .normalTexture(waterNormalHandle)
+                    .normalTexture(waterNormalTexture.getHandle())
                     .filterMode(1)
-                    .spriteSheetRow(10)
-                    .spriteSheetCol(12)
+                    .spriteSheetRow(WATER_NORMAL_ROWS)
+                    .spriteSheetCol(WATER_NORMAL_COLUMNS)
                     .spriteSheetFps(20)
                     .translucentExt(MaterialInfoTranslucentEXT.builder()
                             .refractiveIndex(waterIor)
@@ -749,10 +765,11 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
                 success = true;
             }
         } catch (Exception e) {
-            LOGGER.warn("Failed to create water materials (falling back to atlas): {}", e.getMessage());
+            LOGGER.warn("Failed to create water materials; water rendering is unavailable: {}",
+                    e.getMessage());
         } finally {
             if (!success) {
-                destroyWaterResources(api);
+                destroyWaterMaterials();
             }
         }
     }
@@ -1176,6 +1193,82 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
     //  Upload helper
     // ====================================================================
 
+    private RemixTexture generateWaterNormalTexture() {
+        try {
+            int bytes = api.waterNormalsTextureSize();
+            int expectedBytes = Math.multiplyExact(
+                    Math.multiplyExact(WATER_NORMAL_WIDTH, WATER_NORMAL_HEIGHT), 2);
+            if (bytes != expectedBytes) {
+                throw new IllegalStateException(
+                        "Native water-normal layout is " + bytes
+                                + " bytes; Java expects " + expectedBytes);
+            }
+            long started = System.nanoTime();
+            ByteBuffer pixels = DirectBufferPool.acquire(bytes);
+            boolean textureOwnsPixels = false;
+            try {
+                double generationSeconds =
+                        api.generateWaterNormals(pixels, WATER_NORMAL_SEED);
+                textureOwnsPixels = true;
+                RemixTexture texture = createWaterNormalTexture(
+                        WATER_NORMAL_WIDTH,
+                        WATER_NORMAL_HEIGHT,
+                        pixels);
+                double totalSeconds = (System.nanoTime() - started) / 1_000_000_000.0;
+                LOGGER.info(
+                        "Generated water normal flipbook in {} seconds and created "
+                                + "its Remix texture in {} seconds total ({} bytes)",
+                        generationSeconds, totalSeconds, bytes);
+                return texture;
+            } finally {
+                if (!textureOwnsPixels) {
+                    DirectBufferPool.release(pixels);
+                }
+            }
+        } catch (RuntimeException | OutOfMemoryError e) {
+            LOGGER.error(
+                    "Failed to generate the animated water normals; "
+                            + "using a flat water normal instead: {}",
+                    e.getMessage());
+            return createFlatWaterNormalTexture();
+        }
+    }
+
+    private RemixTexture createFlatWaterNormalTexture() {
+        int width = WATER_NORMAL_COLUMNS;
+        int height = WATER_NORMAL_ROWS;
+        ByteBuffer pixels = DirectBufferPool.acquire(width * height * 2);
+        boolean textureOwnsPixels = false;
+        try {
+            while (pixels.hasRemaining()) {
+                pixels.put((byte) 128);
+            }
+            pixels.flip();
+            textureOwnsPixels = true;
+            RemixTexture texture = createWaterNormalTexture(width, height, pixels);
+            LOGGER.warn("Created a flat water-normal fallback texture");
+            return texture;
+        } finally {
+            if (!textureOwnsPixels) {
+                DirectBufferPool.release(pixels);
+            }
+        }
+    }
+
+    private RemixTexture createWaterNormalTexture(int width, int height, ByteBuffer pixels) {
+        RemixTexture texture = new RemixTexture(
+                width, height, TextureFormat.RG8_UNORM, TexturePurpose.NORMAL_OTH, pixels);
+        try {
+            RemixTextureStore.get().create(texture);
+            return texture;
+        } catch (RuntimeException e) {
+            if (!texture.isDeleted()) {
+                texture.destroy();
+            }
+            throw e;
+        }
+    }
+
     private RemixTexture upload(RemixAPI api, String name, byte[] data, int w, int h, int fmt, int purpose) {
         ByteBuffer buf = DirectBufferPool.acquire(data.length);
         buf.put(data).flip();
@@ -1232,9 +1325,17 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         return texture == null ? 0L : texture.getHandle();
     }
 
-    public void reload() { cleanup(); initialized = initFailed = false; initialize(); }
+    public void reload() {
+        cleanup(false);
+        initialized = initFailed = false;
+        initialize();
+    }
 
     public void cleanup() {
+        cleanup(true);
+    }
+
+    private void cleanup(boolean destroyPersistentWaterNormal) {
         for (RemixMaterial mat : managedMaterials)
             if (!mat.isDeleted()) mat.destroy();
         managedMaterials.clear();
@@ -1251,12 +1352,17 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         atlasSssTex = null;
         atlasSssAlbedoTex = null;
         if (api != null) {
-            destroyWaterResources(api);
+            destroyWaterResources(destroyPersistentWaterNormal);
         } else {
             waterSurfaceMaterial = null;
             waterCameraMediumMaterial = null;
             waterWhiteTexture = null;
-            waterNormalHandle = 0;
+            if (destroyPersistentWaterNormal) {
+                if (waterNormalTexture != null && !waterNormalTexture.isDeleted()) {
+                    waterNormalTexture.destroy();
+                }
+                waterNormalTexture = null;
+            }
         }
         albedoRGBA = null; initialized = false;
     }
@@ -1271,8 +1377,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         AtlasData load() throws Exception;
 
         ImageResource loadVariant(Object spriteId, String suffix);
-
-        String waterNormalsPath();
 
         void initializeAnimation(
                 Map<String, AnimatedSpriteMaterialData> materialData,

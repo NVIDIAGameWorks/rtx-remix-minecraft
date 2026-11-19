@@ -436,10 +436,11 @@ The wrapper's source of truth, in order, is:
    are data holders, builders, constants, and handles.
 2. `rtxremix-java/native/remixbridge.cpp`: loads `d3d9.dll`, calls
    `remixapi_InitializeLibrary`, stores the native interface, and forwards calls.
-3. `rtxremix-java/native/include/remix_c.h`: the copied C API header.
-4. `rtxremix-java/native/build_native.bat`: the MSVC bridge build.
-5. `packman/remix-sdk.packman.xml`: the published runtime pins.
-6. SDK source management in `tools/src/rtx_tools/sdk.py` and fetching in `build.gradle`.
+3. `rtxremix-java/native/water_normals.{h,cpp}`: deterministic in-memory water-normal generation.
+4. `rtxremix-java/native/include/remix_c.h`: the copied C API header.
+5. `rtxremix-java/native/build_native.bat`: the MSVC bridge build.
+6. `packman/remix-sdk.packman.xml`: the published runtime pins.
+7. SDK source management in `tools/src/rtx_tools/sdk.py` and fetching in `build.gradle`.
 
 Declared loader modules compile the Java sources directly, while the neutral
 root builds `remixbridge.dll` into

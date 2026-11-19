@@ -9,7 +9,6 @@ import com.nvidia.rtxremix.minecraft.mixin.SpriteAtlasAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteContentsAccessor;
 import org.lwjgl.system.MemoryUtil;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
@@ -29,7 +28,6 @@ import net.minecraft.world.level.block.state.BlockState;
 public final class MinecraftBlockAtlasSource implements BlockTextureManager.AtlasSource {
     public static final ResourceLocation BLOCK_ATLAS_ID =
             ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
-    private static final String WATER_NORMALS_DDS = "textures/water_normals_flipbook.dds";
 
     private LabPBRVariants variants;
 
@@ -71,12 +69,6 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
         }
         NativeImage image = variants.loadVariant(id, suffix);
         return image == null ? null : NativeImagePixels.of(image);
-    }
-
-    @Override
-    public String waterNormalsPath() {
-        Path path = Minecraft.getInstance().gameDirectory.toPath().resolve(WATER_NORMALS_DDS);
-        return path.toAbsolutePath().toString();
     }
 
     @Override

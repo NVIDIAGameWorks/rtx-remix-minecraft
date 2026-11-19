@@ -53,7 +53,7 @@ def installation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, migration: Moc
         "packaging/rtx.conf": b"runtime defaults",
         "packaging/rtx-remix/mods/minecraft-logic/weather/rain.conf": b"shipped rain",
         "remix-runtime/textures/overcast_thunderstorm_bc6u.dds": b"overcast texture",
-        "remix-runtime/textures/water_normals_flipbook.dds": b"water normals",
+        "remix-runtime/textures/unlisted-package-file.bin": b"must not be installed",
     }
     for arch in ("win64", "arm64"):
         files[f"remix-runtime/{arch}/d3d9.dll"] = f"{arch} runtime".encode()
@@ -116,6 +116,7 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
         "remix-sdk/stale.dll": b"stale SDK",
         "rtx-remix/mods/minecraft-logic/weather/rain.conf": b"edited shipped rain",
         "rtx-remix/mods/custom/zones/castle.conf": b"author zone",
+        "textures/water_normals_flipbook.dds": b"obsolete shipped water normals",
         "textures/custom.dds": b"author texture",
         "resourcepacks/rtx-remix-labpbr/custom.txt": b"custom pack file",
         "options.txt": b"unchanged settings",
@@ -138,7 +139,6 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
         "rtx-remix/mods/minecraft-logic/weather/rain.conf": b"shipped rain",
         "rtx-remix/mods/custom/zones/castle.conf": b"author zone",
         "textures/overcast_thunderstorm_bc6u.dds": b"overcast texture",
-        "textures/water_normals_flipbook.dds": b"water normals",
         "textures/custom.dds": b"author texture",
         "resourcepacks/rtx-remix-labpbr/custom.txt": b"custom pack file",
         "options.txt": b"unchanged settings",
@@ -319,7 +319,7 @@ def test_install_checks_prerequisites_before_changing_game(installation, migrati
             texture.unlink()
         (project / "remix-runtime/textures").rmdir()
     elif missing == "texture file":
-        (project / "remix-runtime/textures/water_normals_flipbook.dds").unlink()
+        (project / "remix-runtime/textures/overcast_thunderstorm_bc6u.dds").unlink()
     elif missing == "empty texture":
         (project / "remix-runtime/textures/overcast_thunderstorm_bc6u.dds").write_bytes(b"")
     else:
@@ -346,7 +346,7 @@ def test_install_checks_prerequisites_before_changing_game(installation, migrati
         assert "ERROR: runtime textures not found" in output
         assert "fetchRuntimeTextures" in output
     elif missing == "texture file":
-        assert "water_normals_flipbook.dds" in output
+        assert "overcast_thunderstorm_bc6u.dds" in output
         assert "fetchRuntimeTextures" in output
     elif missing == "empty texture":
         assert "overcast_thunderstorm_bc6u.dds" in output
