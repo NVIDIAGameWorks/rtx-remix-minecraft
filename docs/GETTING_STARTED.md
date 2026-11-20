@@ -486,9 +486,9 @@ triage; confirm the indices against the runtime you are actually testing.
 
 ## Trying A Runtime Option
 
-The runtime reads `dxvk.conf` from the process working directory, which for
-`tools\rtx.bat launch` is the checkout-specific Prism instance's game
-directory. Put dxvk-level options such as
+The runtime reads `dxvk.conf` from the game directory, which for
+`tools\rtx.bat launch` is the checkout-specific Prism instance's. Put
+dxvk-level options such as
 `d3d9.*` swapchain settings or `dxvk.enableAftermath` there without rebuilding.
 It is the lowest config layer: built-in application defaults and `rtx.conf`
 outrank it. An `rtx.*` key already authored in `rtx.conf` can therefore appear

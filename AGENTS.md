@@ -137,6 +137,16 @@ one, and `ShippedPayloadHistoryTest` fails with the missing line. Deleting a
 shipped conf restores its default on the next launch. A present conf that fails to acquire still prevents renderer
 initialization; the error identifies the file.
 
+The runtime resolves `rtx.conf`, `dxvk.conf`, its `rtx-remix/` folder, its
+caches, and its dump files against the process working directory, which a
+launcher need not set to the game directory. When the two differ,
+`RuntimeHome` moves each of those into the game directory through the
+environment variable the runtime reads it from, set in the process before the
+runtime loads, and leaves alone a variable the process started with. The
+bridge's `crash\` folder is always under the game directory. `user.conf` and
+`imgui.ini` have no such variable and stay in the working directory; a
+`user.conf` in the game directory that will not be read is logged.
+
 Baseline LabPBR textures live in
 `versions/1.21.1/minecraft/main/resources/assets/` and load
 from the selected loader's built-in mod resources below user packs.
@@ -379,6 +389,10 @@ diluting the sampler's candidate pool.
   author-owned, and the native compile tasks, `setupRuntime`, and `package` stay
   aligned with the packaged contents they verify (`NativeExtractor`,
   `build.gradle`).
+- The runtime's and the bridge's files follow the game directory, not the
+  process working directory, and `RuntimeHome` is applied before the runtime
+  loads, because the runtime decides where `metrics.txt` goes while it loads
+  (`RuntimeHome`, `RemixRendererSession`).
 - The launcher's account options (`--username`, `--accessToken`, `--uuid`,
   `--xuid`, `--clientId`) are blanked in the process command line before the
   runtime loads, because its crash dumps copy that line (`RemixRenderer`,
