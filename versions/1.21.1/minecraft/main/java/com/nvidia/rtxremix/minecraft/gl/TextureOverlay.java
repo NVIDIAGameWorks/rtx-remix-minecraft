@@ -18,9 +18,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Draws the Remix output texture as a full-screen, fully opaque quad on
+ * Draws the Remix output texture as a full-screen quad, without blending, on
  * Minecraft's main framebuffer, after the world and first-person model have
  * been submitted and before the screen overlays and HUD.
+ *
+ * <p>Texels with zero alpha are not drawn. That is how {@link GlInterop} marks
+ * a frame Remix has not written, and vanilla's frame then stays as it is.
  *
  * <p>Render thread only. It goes through {@code RenderSystem} and
  * {@code Tessellator} rather than raw GL so the surrounding vanilla render
@@ -68,8 +71,8 @@ public class TextureOverlay {
 
         Matrix4f savedProjection = RenderSystem.getProjectionMatrix();
 
-        // Opaque: the Remix image replaces vanilla's output rather than blending
-        // with it, and it neither tests nor writes depth.
+        // No blending: the Remix image replaces vanilla's output rather than
+        // mixing with it, and it neither tests nor writes depth.
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.disableBlend();
@@ -83,6 +86,8 @@ public class TextureOverlay {
         RenderSystem.getModelViewStack().identity();
         RenderSystem.applyModelViewMatrix();
 
+        // position_tex discards texels whose alpha is zero, which is what
+        // keeps a frame Remix has not written out of the composite.
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, texId);
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
