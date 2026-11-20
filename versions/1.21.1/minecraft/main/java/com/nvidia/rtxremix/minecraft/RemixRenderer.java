@@ -10,6 +10,7 @@ import com.nvidia.rtxremix.core.RemixAssetStores;
 import com.nvidia.rtxremix.core.RendererFrameCoordinator;
 import com.nvidia.rtxremix.core.RemixRendererSession;
 import com.nvidia.rtxremix.core.RendererScene;
+import com.nvidia.rtxremix.core.RuntimeHome;
 import com.nvidia.rtxremix.core.JoinBurstHold;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.CameraInfo;
@@ -323,7 +324,8 @@ public class RemixRenderer {
             lastCameraMediumHandle = Long.MIN_VALUE;
 
             StartupInfo startupInfo = graphicsIntegration.prepareStartup();
-            Path dll = runtimeDll(MinecraftPlatform.services().gameDirectory());
+            Path gameDir = MinecraftPlatform.services().gameDirectory();
+            Path dll = runtimeDll(gameDir);
             if (!Files.isRegularFile(dll)) {
                 throw new IllegalStateException("RTX Remix runtime not found at " + dll
                         + "; reinstall the mod or run gradlew setupRuntime");
@@ -331,6 +333,17 @@ public class RemixRenderer {
             LOGGER.info("Loading Remix from: {}", dll);
 
             String dllPath = dll.toAbsolutePath().toString();
+            RuntimeHome runtimeHome = RuntimeHome.resolve(
+                    gameDir, Path.of(RemixAPI.processWorkingDirectory(dllPath)), System::getenv);
+            if (!runtimeHome.environment().isEmpty()) {
+                LOGGER.info("The working directory {} is not the game directory {}, so RTX Remix "
+                        + "is pointed at the game directory through {}",
+                        runtimeHome.workingDirectory(), runtimeHome.home(),
+                        runtimeHome.environment().keySet());
+            }
+            for (String warning : runtimeHome.warnings()) {
+                LOGGER.warn(warning);
+            }
             // RTXREMIX_EXTRA_RTXCONF="rtx.a=1;rtx.b=true" applies arbitrary rtx.conf
             // overrides for this session. Applied before startup() so options that
             // are only read at device/swapchain creation (e.g. frame generation)
@@ -347,11 +360,17 @@ public class RemixRenderer {
 
             RemixRendererSession.OpenResult opened = RemixRendererSession.open(
                     dllPath,
+                    runtimeHome,
                     startupInfo,
                     LauncherAccountOptions.ALL,
                     configOverrides);
             rendererSession = opened.session();
             remixApi = rendererSession.api();
+            if (!opened.crashDirectorySet()) {
+                LOGGER.warn("{} is too long a path for the bridge's crash files; they go to "
+                        + "crash\\ under the working directory, {}",
+                        runtimeHome.crashDirectory(), runtimeHome.workingDirectory());
+            }
             if (!FORWARD_REMIX_FAULTS) {
                 remixApi.setFaultForwarding(false);
                 LOGGER.info("Native crashes in Remix calls go to hs_err_pid*.log, "
@@ -477,7 +496,6 @@ public class RemixRenderer {
             if (!remixApi.isConfigLayersSupported()) {
                 throw new IllegalStateException("runtime lacks the config-layer API (needs API >= 0.9.0)");
             }
-            Path gameDir = MinecraftPlatform.services().gameDirectory();
             Path waterConf = gameDir.resolve("rtx-remix").resolve("mods").resolve("minecraft-logic")
                     .resolve("confs").resolve("water.conf");
             if (!Files.exists(waterConf)) {

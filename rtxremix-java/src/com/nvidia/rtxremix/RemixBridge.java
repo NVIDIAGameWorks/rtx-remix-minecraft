@@ -60,6 +60,23 @@ public final class RemixBridge {
      */
     public static native int overwriteProcessCommandLine(String replacement);
 
+    // ─── process environment ─────────────────────────────────────────────
+
+    /**
+     * @return this process's working directory as Windows holds it, which the
+     *         runtime resolves relative paths against, or null when Windows
+     *         cannot report it
+     */
+    public static native String processWorkingDirectory();
+
+    /**
+     * Sets a variable in this process's environment block. Native code reads
+     * the block; {@code System.getenv} keeps the copy it took at JVM start.
+     *
+     * @return false when Windows rejects the name or value
+     */
+    public static native boolean setProcessEnvironmentVariable(String name, String value);
+
     // ─── crash dumps ─────────────────────────────────────────────────────
 
     /**
@@ -68,6 +85,15 @@ public final class RemixBridge {
      * that memory includes the process's launch arguments.
      */
     public static native void setCrashDumpDetail(boolean full);
+
+    /**
+     * Sets the folder the bridge writes its crash files into. Until set, it is
+     * {@code crash} under the working directory at the time of the crash.
+     *
+     * @param directory an absolute folder whose parent exists
+     * @return false when the path is too long to leave room for a file name
+     */
+    public static native boolean setCrashDirectory(String directory);
 
     // ─── lifecycle ───────────────────────────────────────────────────────
 

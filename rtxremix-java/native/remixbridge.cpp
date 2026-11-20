@@ -194,13 +194,20 @@ static void writeAllThreadStacks(FILE* f, DWORD faultingTid, EXCEPTION_POINTERS*
 // Set from Java through RemixBridge.setCrashDumpDetail; see writeCrashFiles.
 static volatile bool g_crashDumpDetail = false;
 
+// Where writeCrashFiles puts its files. Set from Java through
+// RemixBridge.setCrashDirectory before the runtime loads, so the handler
+// builds no path from the working directory a launcher happened to choose.
+// The longest file name written below takes 33 characters after the folder.
+static const size_t kCrashFileNameRoom = 34;
+static wchar_t g_crashDir[MAX_PATH - kCrashFileNameRoom] = L"crash";
+
 // Writes both a .dmp and a .txt crash report for the given exception.
 static void writeCrashFiles(EXCEPTION_POINTERS* ep) {
     static volatile LONG dumping = 0;
     if (InterlockedCompareExchange(&dumping, 1, 0) != 0)
         return;
 
-    CreateDirectoryA("crash", nullptr);
+    CreateDirectoryW(g_crashDir, nullptr);
 
     char tag[32];
     time_t now = time(nullptr);
@@ -211,10 +218,12 @@ static void writeCrashFiles(EXCEPTION_POINTERS* ep) {
              tm.tm_hour, tm.tm_min, tm.tm_sec);
 
     // ── Minidump ──
-    char dmpPath[MAX_PATH];
-    snprintf(dmpPath, sizeof(dmpPath), "crash\\minidump_%s.dmp", tag);
+    char dmpName[64];
+    snprintf(dmpName, sizeof(dmpName), "minidump_%s.dmp", tag);
+    wchar_t dmpPath[MAX_PATH];
+    swprintf_s(dmpPath, L"%ls\\%hs", g_crashDir, dmpName);
 
-    HANDLE dmpFile = CreateFileA(dmpPath, GENERIC_WRITE, 0, nullptr,
+    HANDLE dmpFile = CreateFileW(dmpPath, GENERIC_WRITE, 0, nullptr,
                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (dmpFile != INVALID_HANDLE_VALUE) {
         MINIDUMP_EXCEPTION_INFORMATION mei;
@@ -241,15 +250,17 @@ static void writeCrashFiles(EXCEPTION_POINTERS* ep) {
     }
 
     // ── Text crash report ──
-    char txtPath[MAX_PATH];
-    snprintf(txtPath, sizeof(txtPath), "crash\\crash_report_%s.txt", tag);
+    wchar_t txtPath[MAX_PATH];
+    swprintf_s(txtPath, L"%ls\\crash_report_%hs.txt", g_crashDir, tag);
 
     DWORD code = ep->ExceptionRecord->ExceptionCode;
 
-    FILE* f = fopen(txtPath, "w");
+    FILE* f = _wfopen(txtPath, L"w");
     if (f) {
         fprintf(f, "=== RTX Remix for Minecraft: Crash Report ===\n");
-        fprintf(f, "Minidump: %s\n\n", dmpPath);
+        // The file name alone: the dump sits beside this report, and the
+        // folder may hold characters the C locale cannot print.
+        fprintf(f, "Minidump: %s\n\n", dmpName);
 
         fprintf(f, "Exception: 0x%08lX (%s)\n",
                 code, exceptionCodeName(code));
@@ -634,6 +645,14 @@ bool setJavaInstanceField(JNIEnv *env, jclass java_class,
 }
 } // namespace
 
+static std::wstring wideString(JNIEnv* env, jstring jText)
+{
+    const jsize length = env->GetStringLength(jText);
+    std::wstring text((size_t)length, L'\0');
+    env->GetStringRegion(jText, 0, length, (jchar*)text.data());
+    return text;
+}
+
 static jint initializeRuntime(const wchar_t* dllPath)
 {
     // Extract parent directory for SetDllDirectoryW
@@ -842,12 +861,52 @@ Java_com_nvidia_rtxremix_RemixBridge_overwriteProcessCommandLine(JNIEnv* env, jc
     return REMIXAPI_ERROR_CODE_SUCCESS;
 }
 
+// ─── process environment ─────────────────────────────────────────────────
+
+JNIEXPORT jstring JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_processWorkingDirectory(JNIEnv* env, jclass)
+{
+    // With no buffer the call returns the length including the terminator;
+    // with one, the length without it.
+    const DWORD size = GetCurrentDirectoryW(0, nullptr);
+    if (size == 0)
+        return nullptr;
+    std::vector<WCHAR> directory(size);
+    const DWORD length = GetCurrentDirectoryW(size, directory.data());
+    if (length == 0 || length >= size)
+        return nullptr;
+    return env->NewString((const jchar*)directory.data(), (jsize)length);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_setProcessEnvironmentVariable(JNIEnv* env, jclass,
+    jstring jName, jstring jValue)
+{
+    if (!jName || !jValue)
+        return JNI_FALSE;
+    const std::wstring name = wideString(env, jName);
+    const std::wstring value = wideString(env, jValue);
+    return SetEnvironmentVariableW(name.c_str(), value.c_str()) ? JNI_TRUE : JNI_FALSE;
+}
+
 // ─── crash dumps ─────────────────────────────────────────────────────────
 
 JNIEXPORT void JNICALL
 Java_com_nvidia_rtxremix_RemixBridge_setCrashDumpDetail(JNIEnv*, jclass, jboolean full)
 {
     g_crashDumpDetail = full;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_nvidia_rtxremix_RemixBridge_setCrashDirectory(JNIEnv* env, jclass, jstring jDirectory)
+{
+    if (!jDirectory)
+        return JNI_FALSE;
+    const std::wstring directory = wideString(env, jDirectory);
+    if (directory.empty() || directory.size() >= _countof(g_crashDir))
+        return JNI_FALSE;
+    wcscpy_s(g_crashDir, directory.c_str());
+    return JNI_TRUE;
 }
 
 // ─── lifecycle ───────────────────────────────────────────────────────────

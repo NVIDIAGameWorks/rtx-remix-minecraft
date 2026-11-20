@@ -32,12 +32,21 @@ public final class RemixRendererSession {
         this.frameState = new RemixFrameState(api);
     }
 
+    /**
+     * @param runtimeHome where the runtime's and the bridge's files belong;
+     *                    applied before the runtime loads, because it fixes
+     *                    some of its locations while loading
+     */
     public static OpenResult open(
             String runtimePath,
+            RuntimeHome runtimeHome,
             StartupInfo startupInfo,
             Collection<String> commandLineOptions,
             Map<String, String> configOverrides) throws RemixException {
         int redacted = RemixAPI.redactCommandLineOptions(runtimePath, commandLineOptions);
+        RemixAPI.setProcessEnvironment(runtimePath, runtimeHome.environment());
+        boolean crashDirectorySet = RemixAPI.setCrashDirectory(
+                runtimePath, runtimeHome.crashDirectory().toString());
         RemixAPI api = RemixAPI.load(runtimePath);
         boolean started = false;
         try {
@@ -46,7 +55,7 @@ public final class RemixRendererSession {
             }
             api.startup(startupInfo);
             started = true;
-            return new OpenResult(new RemixRendererSession(api), redacted);
+            return new OpenResult(new RemixRendererSession(api), redacted, crashDirectorySet);
         } finally {
             if (!started) {
                 try {
@@ -123,10 +132,15 @@ public final class RemixRendererSession {
     public static final class OpenResult {
         private final RemixRendererSession session;
         private final int redactedCommandLineValues;
+        private final boolean crashDirectorySet;
 
-        OpenResult(RemixRendererSession session, int redactedCommandLineValues) {
+        OpenResult(
+                RemixRendererSession session,
+                int redactedCommandLineValues,
+                boolean crashDirectorySet) {
             this.session = session;
             this.redactedCommandLineValues = redactedCommandLineValues;
+            this.crashDirectorySet = crashDirectorySet;
         }
 
         public RemixRendererSession session() {
@@ -135,6 +149,15 @@ public final class RemixRendererSession {
 
         public int redactedCommandLineValues() {
             return redactedCommandLineValues;
+        }
+
+        /**
+         * @return false when the bridge could not take the runtime home's crash
+         *         directory, and so keeps writing crash files under the
+         *         working directory
+         */
+        public boolean crashDirectorySet() {
+            return crashDirectorySet;
         }
     }
 }
