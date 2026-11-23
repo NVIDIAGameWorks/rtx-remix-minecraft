@@ -109,7 +109,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
 
     /** Per-sprite data: UV bounds (from Minecraft), texture handles, PBR flags. */
     public static final class SpriteEntry implements TerrainTexturePolicy.SpriteFacts {
-        public final int index;
         public final Object id;
         public final String name;
         public final float u0, v0, u1, v1;
@@ -119,8 +118,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         public boolean hasSSS;
         float[] lightColor;
 
-        SpriteEntry(int i, SpriteData sprite) {
-            this.index = i;
+        SpriteEntry(SpriteData sprite) {
             this.id = sprite.id;
             this.name = sprite.name;
             u0 = sprite.u0;
@@ -251,10 +249,10 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
 
     private void buildSprites(AtlasData atlas) {
         Map<String, Integer> lumMap = atlas.luminanceBySprite;
-        int pbr = 0, emissiveCount = 0, idx = 0;
+        int pbr = 0, emissiveCount = 0;
 
         for (SpriteData sprite : atlas.sprites) {
-            SpriteEntry se = new SpriteEntry(idx++, sprite);
+            SpriteEntry se = new SpriteEntry(sprite);
             byte[] alb = extractRGBA(se.pixX, se.pixY, se.pixW, se.pixH);
             Integer mappedLuminance = lumMap.get(se.name);
             int luminance = mappedLuminance == null ? 0 : mappedLuminance;
