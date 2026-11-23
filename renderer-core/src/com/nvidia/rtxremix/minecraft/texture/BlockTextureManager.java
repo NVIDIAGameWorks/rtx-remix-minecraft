@@ -30,16 +30,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Per-sprite texture and material management for Minecraft's block atlas.
  *
- * <p>Each atlas sprite becomes an individual Remix material with [0,1] UV space.
- * LabPBR sprites (_n/_s variants) get full PBR textures including POM and SSS.
- * Non-PBR sprites get simple albedo + constant materials.
+ * <p>Terrain samples atlas-level textures and materials. Sprite entries carry UV
+ * bounds, transparency, SSS flags, and light colours, never their own textures.
  */
 public class BlockTextureManager implements TerrainTexturePolicy, TerrainMaterialSet {
 
@@ -91,7 +89,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
     private int atlasW, atlasH;
     private final List<SpriteEntry> sprites = new ArrayList<>();
     private final Map<Object, SpriteEntry> spriteById = new HashMap<>();
-    private final Map<Long, RemixMaterial> materials = new HashMap<>();
     private final RemixMaterial[] atlasMaterials = new RemixMaterial[LAYER_COUNT];
     private final RemixMaterial[] atlasMaterialsSSS = new RemixMaterial[LAYER_COUNT];
     private final List<RemixTexture> managedTextures = new ArrayList<>();
@@ -119,8 +116,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         public final boolean hasTransparency;
         final int pixW, pixH, pixX, pixY;
         private final BitSet transparentPixels;
-        RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
-        public boolean hasPBR, hasSSS;
+        public boolean hasSSS;
         float[] lightColor;
 
         SpriteEntry(int i, SpriteData sprite) {
@@ -245,8 +241,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
             return;
         }
         albedoRGBA = atlas.albedoRgba;
-        atlasAlbedo = upload(api, "block_atlas", albedoRGBA, atlasW, atlasH,
-                TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
         LOGGER.info("Atlas {}x{} (stitched from {} sprites)",
                 atlasW, atlasH, atlas.sprites.size());
     }
@@ -271,14 +265,12 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
             try {
                 if (nI != null) LabPBRConverter.applyAO(
                         alb, se.pixW, nI, 0, 0, se.pixW, se.pixH);
-                se.albedo = upload(api, "s" + se.index + "_a", alb, se.pixW, se.pixH,
-                        TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
                 if (nI != null || sI != null || sssI != null) {
-                    buildPBR(api, se, nI, sI, sssI, alb);
+                    scanPBR(se, sI, sssI, alb);
                     pbr++;
                 }
-                if (se.emissive != null) emissiveCount++;
                 if (se.lightColor != null) {
+                    emissiveCount++;
                     spriteLightColors.put(se.name, se.lightColor);
                 } else if (luminance > 0) {
                     spriteLightColors.put(se.name, computeLightColor(alb, null, se.pixW, se.pixH));
@@ -879,7 +871,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
 
         rebuildAtlasSssMaterial(L_CUTOUT);
         rebuildAtlasSssMaterial(L_CUTOUT_MIPPED);
-        forgetCachedCutoutSpriteMaterials();
 
         LOGGER.info("Cutout SSS updated (transmissionDistance={}, anisotropy={}, albedo=({}, {}, {}), albedoTexture={})",
                 cutoutSssTransmissionDistance, cutoutSssAnisotropy,
@@ -893,18 +884,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         atlasMaterialsSSS[layerType] = createAtlasOpaqueMaterial(layerType, atlasNormalTex,
                 atlasHeightTex, atlasRoughnessTex, atlasMetallicTex, atlasEmissive, atlasSssTex,
                 atlasSssAlbedoTex);
-    }
-
-    private void forgetCachedCutoutSpriteMaterials() {
-        Iterator<Map.Entry<Long, RemixMaterial>> it = materials.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<Long, RemixMaterial> entry = it.next();
-            int layerType = (int) (entry.getKey() % LAYER_COUNT);
-            if (layerType == L_CUTOUT || layerType == L_CUTOUT_MIPPED) {
-                destroyManagedMaterial(entry.getValue());
-                it.remove();
-            }
-        }
     }
 
     private boolean rebuildWaterMaterials() {
@@ -941,48 +920,14 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         return atlasMaterialsSSS[layerType];
     }
 
-    private void buildPBR(RemixAPI api, SpriteEntry se,
-                          ImageResource nI, ImageResource sI, ImageResource sssI,
-                          byte[] alb) {
+    private void scanPBR(SpriteEntry se, ImageResource sI, ImageResource sssI, byte[] alb) {
         int w = se.pixW, h = se.pixH;
-        String p = "s" + se.index + "_";
-        se.hasPBR = nI != null || sI != null;
-
-        if (nI != null) {
-            byte[] nd = new byte[w * h * 4], hd = new byte[w * h];
-            LabPBRConverter.PixelImage pixels = nI;
-            LabPBRConverter.blitNormal(nd, w, pixels, 0, 0, w, h);
-            LabPBRConverter.blitHeight(hd, w, pixels, 0, 0, w, h);
-            se.normal = upload(api, p + "n", nd, w, h, TextureFormat.RGBA8_UNORM, TexturePurpose.NORMAL_DX);
-            se.height = upload(api, p + "h", hd, w, h, TextureFormat.R8_UNORM, TexturePurpose.HEIGHTMAP);
-        }
-        if (sI != null) {
-            byte[] rd = new byte[w * h], md = new byte[w * h], sd = new byte[w * h * 4];
-            LabPBRConverter.PixelImage pixels = sI;
-            LabPBRConverter.blitRoughness(rd, w, pixels, 0, 0, w, h);
-            LabPBRConverter.blitMetallic(md, w, pixels, 0, 0, w, h);
-            LabPBRConverter.blitSSS(sd, w, pixels, 0, 0, w, h);
-            se.roughness = upload(api, p + "r", rd, w, h, TextureFormat.R8_UNORM, TexturePurpose.DATA);
-            se.metallic  = upload(api, p + "m", md, w, h, TextureFormat.R8_UNORM, TexturePurpose.DATA);
-            if (LabPBRConverter.hasSSSData(pixels)) {
-                se.sss = upload(api, p + "s", sd, w, h, TextureFormat.RGBA8_UNORM, TexturePurpose.DATA);
-                se.hasSSS = true;
-            }
-        }
-        if (sssI != null) {
-            byte[] ssa = new byte[w * h * 4];
-            LabPBRConverter.blitSingleScatteringAlbedo(
-                    ssa, w, sssI, 0, 0, w, h);
-            se.sssAlbedo = upload(api, p + "ssa", ssa, w, h, TextureFormat.RGBA8_UNORM, TexturePurpose.DATA);
+        if ((sI != null && LabPBRConverter.hasSSSData(sI)) || sssI != null) {
             se.hasSSS = true;
         }
-        boolean needsEmissive = sI != null
-                && LabPBRConverter.hasEmissiveData(sI);
-        if (needsEmissive) {
+        if (sI != null && LabPBRConverter.hasEmissiveData(sI)) {
             byte[] ed = new byte[w * h * 4];
-            LabPBRConverter.blitEmissive(
-                    ed, w, alb, sI, 0, 0, w, h, 0f);
-            se.emissive = upload(api, p + "e", ed, w, h, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
+            LabPBRConverter.blitEmissive(ed, w, alb, sI, 0, 0, w, h, 0f);
             se.lightColor = computeLightColor(alb, ed, w, h);
         }
     }
@@ -1020,88 +965,6 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
     @Override
     public boolean hasSssMaterial(int layerType) {
         return getAtlasMaterialSSS(layerType) != null;
-    }
-
-    /** Returns the material for a sprite + layer, creating lazily. */
-    public RemixMaterial getMaterial(SpriteEntry se, int layerType) {
-        if (se == null) return null;
-        long key = (long) se.index * LAYER_COUNT + layerType;
-        return materials.computeIfAbsent(key, k -> createMaterial(se, layerType));
-    }
-
-    private RemixMaterial createMaterial(SpriteEntry se, int lt) {
-        if (api == null) return null;
-
-        if (lt == L_TRANS) return createTransMaterial(api, se);
-        if (lt == L_GLASS) return createGlassMaterial(se);
-
-        MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
-                .albedoConstant(1f, 1f, 1f).useDrawCallAlphaState(true);
-        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(128);
-
-        MaterialInfo.Builder mb = MaterialInfo.builder()
-                .albedoTexture(se.albedo.getHandle()).filterMode(0);
-
-        if (se.hasPBR) {
-            ob.roughnessConstant(1f).metallicConstant(1f);
-            if (se.roughness != null) ob.roughnessTexture(se.roughness.getHandle());
-            if (se.metallic != null)  ob.metallicTexture(se.metallic.getHandle());
-            if (se.height != null)    ob.heightTexture(se.height.getHandle()).displaceIn(POM_DISPLACE_IN);
-            if (se.normal != null)    mb.normalTexture(se.normal.getHandle());
-        } else {
-            ob.roughnessConstant(0.7f).metallicConstant(0f);
-        }
-        if (se.hasSSS) ob.subsurfaceExt(buildSSS(se, lt == L_SOLID));
-        if (se.emissive != null)
-            mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
-
-        return createMaterialViaStore(mb.opaqueExt(ob.build()).build());
-    }
-
-    private RemixMaterial createTransMaterial(RemixAPI api, SpriteEntry se) {
-        MaterialInfo.Builder mb = MaterialInfo.builder()
-                .albedoTexture(se.albedo.getHandle()).filterMode(0);
-        if (se.normal != null)   mb.normalTexture(se.normal.getHandle());
-        if (se.emissive != null) mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
-        return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
-                .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceTexture(se.albedo.getHandle()).transmittanceMeasurementDistance(0.012f)
-                .useDiffuseLayer(false).build()).build());
-    }
-
-    /** Per-sprite form of {@link #createAtlasGlassMaterial}: clear transmission with the sprite as a diffuse layer. */
-    private RemixMaterial createGlassMaterial(SpriteEntry se) {
-        MaterialInfo.Builder mb = MaterialInfo.builder()
-                .albedoTexture(se.albedo.getHandle()).filterMode(0);
-        if (se.normal != null) mb.normalTexture(se.normal.getHandle());
-        if (se.emissive != null) mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
-        return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
-                .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
-                .useDiffuseLayer(true).build()).build());
-    }
-
-    private MaterialInfoOpaqueSubsurfaceEXT buildSSS(SpriteEntry se, boolean solid) {
-        MaterialInfoOpaqueSubsurfaceEXT.Builder sb = MaterialInfoOpaqueSubsurfaceEXT.builder()
-                .transmittanceTexture(se.albedo.getHandle());
-        if (solid) {
-            RemixTexture radiusTexture = (se.sssAlbedo != null) ? se.sssAlbedo : se.albedo;
-            sb.diffusionProfile(true).radiusTexture(radiusTexture.getHandle())
-              .radiusScale(LabPBRConverter.DIFFUSION_SSS_RADIUS_SCALE)
-              .maxSampleRadius(LabPBRConverter.DIFFUSION_SSS_MAX_SAMPLE_RADIUS);
-        } else {
-            sb.diffusionProfile(false)
-              .singleScatteringAlbedo(cutoutSssAlbedoR, cutoutSssAlbedoG, cutoutSssAlbedoB)
-              .measurementDistance(cutoutSssTransmissionDistance)
-              .volumetricAnisotropy(cutoutSssAnisotropy);
-            if (se.sss != null) {
-                sb.thicknessTexture(se.sss.getHandle());
-            }
-            if (cutoutSssAlbedoTextureEnabled && se.sssAlbedo != null) {
-                sb.singleScatteringAlbedoTexture(se.sssAlbedo.getHandle());
-            }
-        }
-        return sb.build();
     }
 
     public static int layerType(String name) {
@@ -1342,7 +1205,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         for (RemixTexture tex : managedTextures)
             if (!tex.isDeleted()) tex.destroy();
         managedTextures.clear();
-        materials.clear(); sprites.clear(); spriteById.clear(); spriteLightColors.clear();
+        sprites.clear(); spriteById.clear(); spriteLightColors.clear();
         Arrays.fill(atlasMaterials, null);
         Arrays.fill(atlasMaterialsSSS, null);
         atlasNormalTex = null;
