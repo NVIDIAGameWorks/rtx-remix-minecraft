@@ -304,7 +304,9 @@ hand, emitted once the item's pose is on the matrix stack, so first person, the
 hidden shadow model, and other players share one hook. `HeldLightState` is the
 one decision on whether a held item's lit element is burning: the local
 player's Toggle Held Lights key puts out everything in their own hands, and by
-default an open flame goes out for any holder whose eyes are under water.
+default an open flame goes out for any holder whose eyes are under water. A
+torch's own texture glows, so an item whose flame is out is drawn through the
+atlas material with its emission off (`EntitySurfaceMode.DOUSED`).
 
 Terrain block lights are per-frame draws, not retained instances: every frame
 `ChunkManager.draw` submits each surviving `TerrainLight` (the `RemixLight`
@@ -416,8 +418,9 @@ diluting the sampler's candidate pool.
   owns a dynamic articulated light, and a static rule would light it twice
   (`LightManager`, `CopperBeaconBlockEntityRenderer`).
 - Whether a held item's lit element burns is decided once, in `HeldLightState`;
-  the flame, the smoke, the hand light, and the held beam all consult it
-  (`HeldItemEffectsRenderer`, `LightManager`).
+  the flame, the smoke, the hand light, the held beam, and the glow of the
+  item's own texture all consult it (`HeldItemEffectsRenderer`, `LightManager`,
+  `ItemRendererMixin`).
 - A terrain light's cull is the decision not to draw it this frame, never a
   destroy; the radius `TerrainState` holds is finite and pushed only on
   change, because a changed radius dirties the whole flood (`ChunkManager`,

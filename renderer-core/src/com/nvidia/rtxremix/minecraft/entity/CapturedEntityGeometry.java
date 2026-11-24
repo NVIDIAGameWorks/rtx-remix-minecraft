@@ -23,6 +23,7 @@ public interface CapturedEntityGeometry {
     Object getPartSprite(int part);
     int getPartTint(int part);
     int getPartBlockItemLayer(int part);
+    boolean isPartDoused(int part);
     int cardFaceOfPartStartingAt(int start);
 
     int getVertexCount();

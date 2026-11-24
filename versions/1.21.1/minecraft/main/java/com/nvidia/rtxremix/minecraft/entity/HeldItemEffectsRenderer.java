@@ -73,6 +73,21 @@ public final class HeldItemEffectsRenderer {
     private HeldItemEffectsRenderer() {}
 
     /**
+     * Whether {@code stack} is being rendered in a hand with its lit element
+     * out, see {@link HeldLightState}. The item's own texture must then not glow
+     * either: a torch's head is emissive, and stayed bright under water after
+     * the flame and the light had gone.
+     *
+     * <p>False for an item with no flame to put out, and outside a hand, where
+     * {@link #render} lets a prop burn.
+     */
+    public static boolean isDoused(ItemStack stack) {
+        if (HeldItemFlame.particleFor(stack) == null) return false;
+        LivingEntity holder = (LivingEntity) EntityRenderContext.get().getHeldItemHolder();
+        return holder != null && !HeldLightState.isLit(holder, stack);
+    }
+
+    /**
      * Emits the flame and smoke quads for {@code stack} if the Remix capture is
      * active, {@code mode} is a hand, the item carries a lit element, and that
      * element is burning in its holder's hand, see {@link HeldLightState}.

@@ -48,6 +48,7 @@ public final class EntityRenderContext {
     /** Entity whose hand-held item is being rendered, or null outside a held-item render. */
     private Object heldItemHolder;
     private int blockItemLayer = NO_BLOCK_ITEM;
+    private boolean heldItemDoused;
 
     /** The viewer's eye in the capture's space, valid while {@link #eyeKnown}. */
     private final Vector3f eye = new Vector3f();
@@ -85,6 +86,7 @@ public final class EntityRenderContext {
         this.activeHand = null;
         this.heldItemHolder = null;
         this.blockItemLayer = NO_BLOCK_ITEM;
+        this.heldItemDoused = false;
         this.eyeKnown = false;
         this.boneCounter = 0;
         // Bone transforms are not cleared: the pre-allocated Matrix4f objects are
@@ -119,6 +121,7 @@ public final class EntityRenderContext {
         this.activeHand = null;
         this.heldItemHolder = null;
         this.blockItemLayer = NO_BLOCK_ITEM;
+        this.heldItemDoused = false;
         this.eyeKnown = false;
     }
 
@@ -143,6 +146,22 @@ public final class EntityRenderContext {
 
     public void setBlockItemLayer(int blockItemLayer) {
         this.blockItemLayer = blockItemLayer;
+    }
+
+    /**
+     * Whether the item currently being rendered is a hand-held one whose lit
+     * element is out, so its own texture must not glow either.
+     *
+     * <p>Set and sampled as {@link #getBlockItemLayer()} is: by
+     * {@code ItemRendererMixin} for one item render, and by
+     * {@link RemixCapturingConsumer} as each part opens.
+     */
+    public boolean isHeldItemDoused() {
+        return heldItemDoused;
+    }
+
+    public void setHeldItemDoused(boolean heldItemDoused) {
+        this.heldItemDoused = heldItemDoused;
     }
 
     /**

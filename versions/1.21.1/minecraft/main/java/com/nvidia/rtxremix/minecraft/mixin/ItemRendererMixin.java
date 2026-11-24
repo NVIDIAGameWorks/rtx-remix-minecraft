@@ -21,8 +21,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Records the terrain layer of the block item being rendered, and adds the lit
- * element of a hand-held item.
+ * Records the terrain layer of the block item being rendered and whether a
+ * hand-held item's lit element is out, and adds that lit element when it is
+ * burning.
  *
  * <p>Minecraft routes ordinary opaque items through its translucent item layer,
  * and clear glass through its cutout one, so the render layer alone cannot tell
@@ -43,6 +44,7 @@ public class ItemRendererMixin {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) {
             context.setBlockItemLayer(rtxremix$blockLayer(stack));
+            context.setHeldItemDoused(HeldItemEffectsRenderer.isDoused(stack));
         }
     }
 
@@ -75,6 +77,7 @@ public class ItemRendererMixin {
         EntityRenderContext context = EntityRenderContext.get();
         if (context.isRemixPass()) {
             context.setBlockItemLayer(EntityRenderContext.NO_BLOCK_ITEM);
+            context.setHeldItemDoused(false);
         }
     }
 

@@ -10,5 +10,11 @@ public enum EntitySurfaceMode {
     CUTOUT,
     TRANSLUCENT,
     EMISSIVE,
-    GLASS
+    GLASS,
+    /**
+     * A block-atlas cutout with its emission off: a hand-held item whose lit
+     * element is out. A torch's texture glows by itself, so the torch would
+     * otherwise look lit after its flame and its light have gone.
+     */
+    DOUSED
 }

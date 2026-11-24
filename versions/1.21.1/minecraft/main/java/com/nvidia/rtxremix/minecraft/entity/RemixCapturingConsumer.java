@@ -179,6 +179,12 @@ public class RemixCapturingConsumer implements VertexConsumer, CapturedEntityGeo
      */
     private final int[] partBlockItemLayer = new int[MAX_PARTS];
     /**
+     * Whether each part came from a hand-held item whose lit element is out;
+     * see {@link EntityRenderContext#isHeldItemDoused}. Per part for the reason
+     * the layer is, and written wherever the layer is.
+     */
+    private final boolean[] partDoused = new boolean[MAX_PARTS];
+    /**
      * The first vertex of a full item-card face in each part, or {@link #NO_VERTICES}.
      * A full face survives only when its sprite is too busy to rebuild, see
      * {@link #MAX_CARD_FACE_RECTS}; its silhouette is then the texture's alpha rather
@@ -1091,7 +1097,9 @@ public class RemixCapturingConsumer implements VertexConsumer, CapturedEntityGeo
             partBone[parts] = bone;
             partSides[parts] = null;
             partSprite[parts] = null;
-            partBlockItemLayer[parts] = EntityRenderContext.get().getBlockItemLayer();
+            EntityRenderContext context = EntityRenderContext.get();
+            partBlockItemLayer[parts] = context.getBlockItemLayer();
+            partDoused[parts] = context.isHeldItemDoused();
             partCardFace[parts] = NO_VERTICES;
             lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
             partOpen = true;
@@ -1127,6 +1135,7 @@ public class RemixCapturingConsumer implements VertexConsumer, CapturedEntityGeo
         // Streamed strip vertices never come from a baked item quad, so the
         // constants are exact.
         partBlockItemLayer[parts] = EntityRenderContext.NO_BLOCK_ITEM;
+        partDoused[parts] = false;
         partCardFace[parts] = NO_VERTICES;
         lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
         partOpen = true;
@@ -1242,6 +1251,10 @@ public class RemixCapturingConsumer implements VertexConsumer, CapturedEntityGeo
     /** The terrain layer of the block item this part came from, or {@link EntityRenderContext#NO_BLOCK_ITEM}. */
     public int getPartBlockItemLayer(int part) { return partBlockItemLayer[part]; }
 
+    /** Whether this part came from a hand-held item whose lit element is out. */
+    @Override
+    public boolean isPartDoused(int part) { return partDoused[part]; }
+
     /**
      * The first vertex of a full item-card face in the part whose vertices start at
      * {@code start}, or {@link #NO_VERTICES} when that part is not an item card.
@@ -1287,6 +1300,7 @@ public class RemixCapturingConsumer implements VertexConsumer, CapturedEntityGeo
         // no context to sample, agrees with the live one. Translucent and glass
         // blocks are baked-quad models, so the constants are exact.
         partBlockItemLayer[parts] = EntityRenderContext.NO_BLOCK_ITEM;
+        partDoused[parts] = false;
         partCardFace[parts] = NO_VERTICES;
         parts++;
     }
@@ -1311,6 +1325,7 @@ public class RemixCapturingConsumer implements VertexConsumer, CapturedEntityGeo
         partTint[parts] = color;
         partHash[parts] = 0L;
         partBlockItemLayer[parts] = EntityRenderContext.NO_BLOCK_ITEM;
+        partDoused[parts] = false;
         partCardFace[parts] = NO_VERTICES;
         parts++;
     }
