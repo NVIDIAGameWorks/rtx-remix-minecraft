@@ -731,6 +731,42 @@ class RemixCapturingConsumerTest {
         assertEquals(EntityRenderContext.NO_BLOCK_ITEM, consumer.getPartBlockItemLayer(2));
     }
 
+    @Test
+    void whetherAHeldItemIsDousedIsSampledAsEachPartOpens() {
+        // A torch that is out in one hand and a block in the other can arrive
+        // through one layer, so this answer is per part too.
+        EntityRenderContext context = EntityRenderContext.get();
+        context.begin(true);
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+
+        context.setHeldItemDoused(true);
+        itemQuad(consumer, poseAt(0.0f));
+        context.setHeldItemDoused(false);
+        itemQuad(consumer, poseAt(1.0f));
+        consumer.finishOpenVertex();
+
+        assertEquals(2, consumer.getPartCount());
+        assertTrue(consumer.isPartDoused(0));
+        assertFalse(consumer.isPartDoused(1));
+    }
+
+    @Test
+    void cuboidPartsOverwriteAStaleDousedAnswer() {
+        EntityRenderContext context = EntityRenderContext.get();
+        context.begin(true);
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        context.setHeldItemDoused(true);
+        itemQuad(consumer, poseAt(0.0f));
+        consumer.finishOpenVertex();
+        assertTrue(consumer.isPartDoused(0));
+        consumer.clear();
+
+        consumer.acceptCuboid(quads(1), 0xFFFFFFFF, new Matrix4f(), null);
+
+        assertEquals(1, consumer.getPartCount());
+        assertFalse(consumer.isPartDoused(0));
+    }
+
     /**
      * A pooled consumer as the next entity receives it: cleared, with the answers
      * an earlier item entity wrote into its first two slots still there, and the

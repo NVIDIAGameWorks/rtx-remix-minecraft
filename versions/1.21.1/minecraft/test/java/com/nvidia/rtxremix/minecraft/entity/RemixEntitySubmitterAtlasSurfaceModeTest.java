@@ -64,6 +64,34 @@ class RemixEntitySubmitterAtlasSurfaceModeTest {
     }
 
     @Test
+    void aHeldItemWhoseLitElementIsOutLosesTheAtlasMaterialThatGlows() {
+        assertEquals(EntitySurfaceMode.DOUSED,
+                RemixEntitySubmitter.dousedSurfaceMode(BLOCK_ATLAS, EntitySurfaceMode.CUTOUT, true));
+        assertEquals(EntitySurfaceMode.CUTOUT,
+                RemixEntitySubmitter.dousedSurfaceMode(BLOCK_ATLAS, EntitySurfaceMode.CUTOUT, false));
+    }
+
+    @Test
+    void onlyAnAtlasCutoutIsEverDoused() {
+        // Nothing that carries a lit element is glass or translucent, and an
+        // entity texture has its own material.
+        for (EntitySurfaceMode mode : EntitySurfaceMode.values()) {
+            if (mode == EntitySurfaceMode.CUTOUT) {
+                continue;
+            }
+            assertEquals(mode, RemixEntitySubmitter.dousedSurfaceMode(BLOCK_ATLAS, mode, true), mode.name());
+        }
+        assertEquals(EntitySurfaceMode.CUTOUT,
+                RemixEntitySubmitter.dousedSurfaceMode(ENTITY_TEXTURE, EntitySurfaceMode.CUTOUT, true));
+    }
+
+    @Test
+    void aDousedPartBlendsAndBorrowsAsTheCutoutItReplaces() {
+        assertEquals(BlockTextureManager.L_CUTOUT,
+                RemixEntitySubmitter.atlasLayerType(EntitySurfaceMode.DOUSED));
+    }
+
+    @Test
     void texturesOtherThanTheAtlasAreNeverNarrowed() {
         // A genuinely translucent entity layer, a ghast or a slime, must keep it,
         // and an entity texture is never glass.

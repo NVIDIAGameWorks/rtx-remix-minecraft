@@ -699,6 +699,8 @@ public class RemixEntitySubmitter {
      */
     private final IdentityHashMap<Object, BeaconLensAssets>
             beaconLensAssets = new IdentityHashMap<>();
+    /** See {@link #dousedAtlasMaterial(BlockTextureManager)}; null until a doused part is drawn. */
+    private RemixMaterial dousedAtlasMaterial;
     private final Map<EntityTextureKey, EntityTextureSet> textureSets = new HashMap<>();
     private final Map<EntityTextureKey, TextureSize> dynamicTextureSizes = new HashMap<>();
     private final Map<EntityTextureKey, Long> dynamicTextureVersions = new HashMap<>();
@@ -908,6 +910,31 @@ public class RemixEntitySubmitter {
         }
     }
 
+    /**
+     * The atlas cutout material with its emission off, made on first use and
+     * shared by every doused part. It reads the atlas textures the terrain
+     * materials own, so it is dropped with them when materials reload.
+     */
+    private RemixMaterial dousedAtlasMaterial(BlockTextureManager textures) {
+        if (dousedAtlasMaterial == null || dousedAtlasMaterial.isDeleted()) {
+            dousedAtlasMaterial = textures.createEmissionScaledAtlasMaterial(0.0f);
+        }
+        return dousedAtlasMaterial;
+    }
+
+    private void clearDousedAtlasMaterial() {
+        if (dousedAtlasMaterial == null) {
+            return;
+        }
+        BlockTextureManager textures = BlockTextureManager.get();
+        if (textures != null) {
+            textures.destroyEmissionScaledAtlasMaterial(dousedAtlasMaterial);
+        } else if (!dousedAtlasMaterial.isDeleted()) {
+            dousedAtlasMaterial.destroy();
+        }
+        dousedAtlasMaterial = null;
+    }
+
     private void clearBeaconLensAssets() {
         BlockTextureManager textures = BlockTextureManager.get();
         for (BeaconLensAssets assets : beaconLensAssets.values()) {
@@ -1039,7 +1066,9 @@ public class RemixEntitySubmitter {
             }
             if (canvasReader.isBacking(role, sides, bone)) continue;
             submitRigidPart(result, consumer, part, texId,
-                    atlasSurfaceMode(texId, surfaceMode, consumer.getPartBlockItemLayer(part)),
+                    dousedSurfaceMode(texId,
+                            atlasSurfaceMode(texId, surfaceMode, consumer.getPartBlockItemLayer(part)),
+                            consumer.isPartDoused(part)),
                     layer.topology(), layer.transientGeometry(), layerIndex,
                     shellLayerFor(layerIndex, canvasReader.depth(), role), role,
                     worldTransform, baseCategoryFlags | textureCategoryFlags
@@ -1083,6 +1112,29 @@ public class RemixEntitySubmitter {
             return surfaceMode;
         }
         return EntitySurfaceMode.CUTOUT;
+    }
+
+    /**
+     * Takes a held item whose lit element is out off the atlas material that
+     * glows.
+     *
+     * <p>A held block borrows the atlas material of its placed counterpart, and
+     * a torch's texture is emissive there, so a torch whose flame and light had
+     * gone out still showed a bright head. Only the cutout treatment is swapped:
+     * nothing that carries a lit element is glass or translucent.
+     *
+     * @param narrowed the part's mode after {@link #atlasSurfaceMode}
+     * @param doused   whether the capture path saw the part come from a
+     *                 hand-held item whose lit element is out
+     */
+    static EntitySurfaceMode dousedSurfaceMode(EntityTextureKey texId,
+                                               EntitySurfaceMode narrowed,
+                                               boolean doused) {
+        return doused
+                && narrowed == EntitySurfaceMode.CUTOUT
+                && BLOCK_ATLAS_TEXTURE.equals(texId)
+                ? EntitySurfaceMode.DOUSED
+                : narrowed;
     }
 
     /**
@@ -2255,7 +2307,9 @@ public class RemixEntitySubmitter {
             // items through its translucent item layer too, so a captured atlas
             // TRANSLUCENT only reaches a material key after atlasSurfaceMode has
             // narrowed it per part.
-            RemixMaterial material = btm.getAtlasMaterial(atlasLayerType(materialKey.surfaceMode()));
+            RemixMaterial material = materialKey.surfaceMode() == EntitySurfaceMode.DOUSED
+                    ? dousedAtlasMaterial(btm)
+                    : btm.getAtlasMaterial(atlasLayerType(materialKey.surfaceMode()));
             cacheMaterial(materialKey, material);
             return;
         }
@@ -2967,6 +3021,7 @@ public class RemixEntitySubmitter {
         retainedEntityParts.clear(RemixEntitySubmitter::destroyRetainedPart);
         frameOpen = false;
         clearBeaconLensAssets();
+        clearDousedAtlasMaterial();
 
         for (PooledMesh pooled : rigidMeshPool.values()) {
             if (!pooled.mesh.isDeletedFast()) pooled.mesh.destroy();
