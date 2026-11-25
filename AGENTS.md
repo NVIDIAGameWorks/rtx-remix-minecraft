@@ -266,8 +266,9 @@ entry; a column build retains each snapshot before submission and releases in
 its executor task's `finally`; the last release returns the buffers and makes
 the surfaces unreadable while the cached hashes stay readable for diffing.
 
-**Textures and atlases.** Atlas capture produces per-sprite materials plus
-atlas-level PBR, emissive, and luminance textures. Animated sprite uploads are
+**Textures and atlases.** Atlas capture produces atlas-level materials plus
+atlas-level PBR, emissive, and luminance textures; sprites carry UV bounds and
+flags, never their own textures. Animated sprite uploads are
 batched and forwarded, which needs the upload hook, the patch types in the
 wrapper, and runtime support for updating a texture from memory. Glyph pages are
 mirrored on upload, because vanilla assembles them on the GPU and never keeps
