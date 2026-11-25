@@ -127,6 +127,7 @@ class FakeLauncher:
     name: str = "fake"
     block: LaunchBlocked | None = None
     prepared: list[tuple[str, bool]] = field(default_factory=list)
+    packaged_prepared: list[str] = field(default_factory=list)
     requests: list[LaunchRequest] = field(default_factory=list)
     extra_log: str = ""
     sign_in_opened: bool = False
@@ -147,6 +148,9 @@ class FakeLauncher:
 
     def prepare(self, arch: str, *, build: bool) -> None:
         self.prepared.append((arch, build))
+
+    def prepare_packaged(self, arch: str) -> None:
+        self.packaged_prepared.append(arch)
 
     def start(self, request: LaunchRequest) -> FakeProcess:
         self.requests.append(request)

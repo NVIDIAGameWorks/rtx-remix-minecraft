@@ -11,12 +11,11 @@ plugins {
 apply from: rootProject.file('gradle/loader-module.gradle')
 
 // --- Build target architectures ------------------------------------------
-// Gradle -Parch flag controls which platforms are included in the JAR and
-// which native bridges are compiled. Omit for the default dual-arch fat JAR;
-// pass -Parch=win64 or -Parch=arm64 for a single-arch dev JAR.
-def isSingleArchJar = archProperty != null
+// Omit -Parch to build one self-contained JAR per declared architecture.
+// Pass -Parch=win64 or -Parch=arm64 to narrow local packaging and staging.
+def isNarrowedArchBuild = archProperty != null
 logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
-        (isSingleArchJar ? " (single-arch JAR mode)" : " (fat JAR)"))
+        (isNarrowedArchBuild ? " (selected architecture)" : " (artifact matrix)"))
 
 def benchmarkJfrPath = providers.gradleProperty("benchmarkJfrPath")
 def benchmarkQuickPlayWorld = providers.gradleProperty("benchmarkQuickPlayWorld")

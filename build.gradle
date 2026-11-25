@@ -26,7 +26,7 @@ def currentRuntimeArch = System.getProperty('os.arch') == 'aarch64' ? 'arm64' : 
 def runtimeArch = archProperty ?: currentRuntimeArch
 
 group = targetState.mod.group
-version = runtimePackageVersion(projectDir, baseVersion, archProperty)
+version = runtimePackageVersion(projectDir, baseVersion)
 def resolvedBuildVersion = version.toString()
 
 ext.sharedBuildArches = buildArches
@@ -348,22 +348,42 @@ def worldArchiveTask = tasks.register('worldArchive', Zip) {
 }
 
 def loaderArchives = declaredLoaders.collectEntries { loader ->
-    def releaseArchiveBaseName =
-            "${targetState.mod.id}-${loader.id}-mc${targetState.minecraft.version}"
+    [(loader.id): buildArches.collectEntries { arch ->
+        [(arch): layout.projectDirectory.file(
+                "${loader.module}/build/distributions/" +
+                runtimeArtifactFileName(
+                        loader.packagedArtifact.pattern,
+                        baseVersion,
+                        targetState.minecraft.version,
+                        arch))]
+    }]
+}
+def installerThinArchives = declaredLoaders.collectEntries { loader ->
     [(loader.id): layout.projectDirectory.file(
-            "${loader.module}/build/distributions/" +
-            "${releaseArchiveBaseName}-${resolvedBuildVersion}.jar")]
+            "${loader.module}/build/installer-components/" +
+            "${targetState.mod.id}-${baseVersion}-mc${targetState.minecraft.version}-" +
+            "${loader.id}-thin.jar")]
 }
 def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
-    description = 'Stages the selected Minecraft target JARs, release content, and installer'
+    description = 'Stages loader components, shared runtimes, release content, and installer'
     group = 'build'
-    dependsOn declaredLoaders.collect { "${it.projectPath}:verifyPackageJar" }
+    dependsOn declaredLoaders.collect { "${it.projectPath}:verifyInstallerThinJar" }
+    dependsOn fetchRuntimeSdkTasks.values(), compileNativeTasks.values(), fetchRuntimeTexturesTask
+    inputs.files(supportedRuntimeArches.collect { file("remix-runtime/${it}/.local-sdk-source") })
+            .withPropertyName('runtimeSourceMarkers')
+            .optional()
+    doFirst {
+        checkRuntimeSourceHomogeneity(projectDir, supportedRuntimeArches)
+    }
     into layout.buildDirectory.dir('release')
     duplicatesStrategy = DuplicatesStrategy.FAIL
     declaredLoaders.each { loader ->
-        from(loaderArchives[loader.id]) {
+        from(installerThinArchives[loader.id]) {
             into "mods/${loader.id}"
         }
+    }
+    into('runtime') {
+        with runtimePayloadSpec(projectDir, supportedRuntimeArches)
     }
     from(materialsArchiveTask) {
         into 'resourcepacks'
@@ -380,6 +400,12 @@ def stageReleaseArchiveTask = tasks.register('stageReleaseArchive', Sync) {
     from 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'
     from('packaging/licenses') {
         into 'packaging/licenses'
+    }
+    doLast {
+        verifyRuntimePayloadDirectory(
+                layout.buildDirectory.dir('release/runtime').get().asFile,
+                projectDir,
+                supportedRuntimeArches)
     }
 }
 
@@ -406,7 +432,9 @@ tasks.register('stageReleaseAssets', Sync) {
     into layout.buildDirectory.dir('release-assets')
     duplicatesStrategy = DuplicatesStrategy.FAIL
     declaredLoaders.each { loader ->
-        from(loaderArchives[loader.id])
+        buildArches.each { arch ->
+            from(loaderArchives[loader.id][arch])
+        }
     }
     from(materialsArchiveTask)
     from(worldArchiveTask)

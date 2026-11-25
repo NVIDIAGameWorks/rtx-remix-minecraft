@@ -34,6 +34,10 @@ def version() -> dict:
                     "directory": "versions/1.21.1/fabric/build/libs",
                     "pattern": "*.jar",
                 },
+                "packagedArtifact": {
+                    "directory": "versions/1.21.1/fabric/build/distributions",
+                    "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-fabric-{architecture}.jar",
+                },
                 "installedJar": "rtx-remix-renderer-fabric.jar",
                 "builtinResourcePack": "fabric",
                 "gradle": {
@@ -63,6 +67,7 @@ def manifest() -> dict:
     return {
         "schema": "multi-version/v1",
         "defaultMinecraftVersion": "1.21.1",
+        "architectures": ["win64", "arm64"],
         "mod": {
             "id": "rtx-remix-renderer",
             "group": "com.nvidia.rtxremix",

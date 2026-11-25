@@ -36,6 +36,7 @@ pluginManagement {
             mod: catalog.mod,
             versionId: requestedVersion,
             loaders: selectedLoaders,
+            architectures: catalog.architectures,
     ]
 
     repositories {
@@ -63,11 +64,18 @@ pluginManagement {
 }
 
 def state = gradle.ext.targetState
-def requiredTopLevel = ['supportTier', 'defaultLoader', 'mod', 'minecraft', 'loaders']
+def requiredTopLevel = ['supportTier', 'defaultLoader', 'mod', 'minecraft', 'loaders', 'architectures']
 def missingTopLevel = requiredTopLevel.findAll { state[it] == null }
 if (!missingTopLevel.isEmpty()) {
     throw new GradleException(
             "Selected Minecraft state is missing required fields: ${missingTopLevel.join(', ')}")
+}
+if (!(state.architectures instanceof List)
+        || state.architectures.isEmpty()
+        || state.architectures.unique().size() != state.architectures.size()
+        || !state.architectures.every { it in ['win64', 'arm64'] }) {
+    throw new GradleException(
+            'project-state.json architectures must contain unique win64/arm64 values')
 }
 if (!(state.mod.id ==~ /[a-z][a-z0-9-]*/)
         || !(state.mod.group ==~ /[A-Za-z0-9_.-]+/)

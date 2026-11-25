@@ -357,12 +357,13 @@ shipped defaults pin the demo world and art pack and select no graphics preset.
 
 To build an installable release, run
 `.\gradlew.bat releaseArchive "-PmcVersion=1.21.1"`. It verifies
-each declared loader package, stages its self-contained JAR under
-`build/release/mods/<loader-id>/` with the RTX Remix Materials and RTX Remix
-Showcase World zips, installer, documentation, and license notices, and writes
-a ZIP with the same layout under `build/distributions/`. Use `-Parch=win64` or
-`-Parch=arm64` for one architecture; omitting it includes both. The baseline
-resource pack is built into every loader JAR.
+each declared loader component, stages it under
+`build/release/mods/<loader-id>/`, stages both runtime architectures once under
+`build/release/runtime/`, and adds the RTX Remix Materials and RTX Remix
+Showcase World zips, installer, documentation, and license notices. The
+installer assembles the selected loader and host architecture into a
+self-contained JAR. Standalone `package` artifacts remain self-contained and
+use one JAR per loader and architecture.
 
 The pack and world come from the `resourcePack` and `world` pins in
 `tools/config.json` that development launches use, so moving a pin changes the
@@ -454,8 +455,8 @@ runners. [`check`](.github/workflows/check.yml) installs uv and runs
 and the public-boundary gate. On a pull request it also scans the commit
 messages from the base SHA to the head SHA.
 [`build`](.github/workflows/build.yml) validates `project-state.json`, then
-builds, tests, packages, and verifies every declared Minecraft-version/loader
-target. Each compiles the shared `renderer-core/` and its version-specific
+builds, tests, packages, and verifies every declared
+Minecraft-version/loader/architecture target. Each compiles the shared `renderer-core/` and its version-specific
 Minecraft integration through a thin adapter.
 Both workflows use read-only repository permissions and no secrets, including
 for fork pull requests. The builds fetch the pinned runtime from public

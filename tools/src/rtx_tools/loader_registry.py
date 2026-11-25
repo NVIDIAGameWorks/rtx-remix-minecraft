@@ -39,6 +39,8 @@ class Loader:
     provider: str
     development_jar_dir: str
     development_jar_pattern: str
+    packaged_jar_dir: str
+    packaged_jar_pattern: str
     installed_jar: str
     builtin_resource_pack: str
     build_task: str
@@ -83,6 +85,7 @@ class LoaderRegistry:
     host_graphics_backend: str
     available_versions: tuple[str, ...]
     default_version: str
+    architectures: tuple[str, ...]
 
     @property
     def ids(self) -> tuple[str, ...]:
@@ -150,6 +153,7 @@ def _loader(loader_id: str, value: Any, *, version_id: str, version_field: str) 
     field = f"{version_field}.loaders.{loader_id}"
     data = _object(value, field)
     artifact = _object(data.get("developmentArtifact"), f"{field}.developmentArtifact")
+    packaged_artifact = _object(data.get("packagedArtifact"), f"{field}.packagedArtifact")
     gradle = _object(data.get("gradle"), f"{field}.gradle")
     prism = _object(data.get("prism"), f"{field}.prism")
     runtime = data.get("loader")
@@ -179,6 +183,11 @@ def _loader(loader_id: str, value: Any, *, version_id: str, version_field: str) 
         raise ManifestError(
             f"project-state.json field '{field}.developmentArtifact.directory' must be under module {module!r}"
         )
+    packaged_directory = _relative(packaged_artifact.get("directory"), f"{field}.packagedArtifact.directory")
+    if not packaged_directory.startswith(f"{module}/"):
+        raise ManifestError(
+            f"project-state.json field '{field}.packagedArtifact.directory' must be under module {module!r}"
+        )
     build_task = _string(gradle.get("build"), f"{field}.gradle.build")
     test_task = _string(gradle.get("test"), f"{field}.gradle.test")
     package_task = _string(gradle.get("package"), f"{field}.gradle.package")
@@ -206,6 +215,8 @@ def _loader(loader_id: str, value: Any, *, version_id: str, version_field: str) 
         provider=provider,
         development_jar_dir=development_directory,
         development_jar_pattern=_string(artifact.get("pattern"), f"{field}.developmentArtifact.pattern"),
+        packaged_jar_dir=packaged_directory,
+        packaged_jar_pattern=_string(packaged_artifact.get("pattern"), f"{field}.packagedArtifact.pattern"),
         installed_jar=installed_jar,
         builtin_resource_pack=_string(data.get("builtinResourcePack"), f"{field}.builtinResourcePack"),
         build_task=build_task,
@@ -244,6 +255,7 @@ def _version_registry(
     available_versions: tuple[str, ...],
     default_version: str,
     source: str,
+    architectures: tuple[str, ...],
 ) -> LoaderRegistry:
     field = f"versions.{version_id}"
     version = _object(value, field)
@@ -265,6 +277,13 @@ def _version_registry(
         raise ManifestError("project-state.json field 'mod.group' is malformed")
     if re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", mod_version) is None:
         raise ManifestError("project-state.json field 'mod.version' is malformed")
+    for loader in loaders:
+        expected_pattern = f"{mod_id}-{{modVersion}}-mc{{minecraftVersion}}-{loader.id}-{{architecture}}.jar"
+        if loader.packaged_jar_pattern != expected_pattern:
+            raise ManifestError(
+                f"project-state.json packaged artifact pattern for {version_id}/{loader.id} "
+                f"must be {expected_pattern!r}"
+            )
     minecraft_version = _string(minecraft.get("version"), f"{field}.minecraft.version")
     if minecraft_version != version_id:
         raise ManifestError(
@@ -306,6 +325,7 @@ def _version_registry(
         host_graphics_backend=host_graphics_backend,
         available_versions=available_versions,
         default_version=default_version,
+        architectures=architectures,
     )
     if default_id not in registry.ids:
         raise ManifestError(f"{source} {field}.defaultLoader {default_id!r} is not present in loaders")
@@ -342,6 +362,11 @@ def parse_manifest(
     default_version = _string(root.get("defaultMinecraftVersion"), "defaultMinecraftVersion")
     if default_version not in versions:
         raise ManifestError(f"{source} defaultMinecraftVersion {default_version!r} is not present in versions")
+    architectures = _strings(root.get("architectures"), "architectures")
+    if not architectures or len(set(architectures)) != len(architectures):
+        raise ManifestError(f"{source} field 'architectures' must declare unique architecture ids")
+    if any(arch not in {"win64", "arm64"} for arch in architectures):
+        raise ManifestError(f"{source} field 'architectures' may contain only 'win64' and 'arm64'")
 
     registries = {
         version_id: _version_registry(
@@ -351,6 +376,7 @@ def parse_manifest(
             available_versions=available_versions,
             default_version=default_version,
             source=source,
+            architectures=architectures,
         )
         for version_id, version_value in versions.items()
     }

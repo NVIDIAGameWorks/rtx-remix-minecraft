@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import zipfile
 from copy import deepcopy
 from pathlib import Path
 
@@ -106,6 +107,13 @@ switch ($Action) {
     }
     'ArtifactLoader' {
         Get-ModArtifactLoader -FileName $Path
+    }
+    'InstallMod' {
+        $script:SCRIPT_DIR = $Root
+        $env:RTXREMIX_PROJECT_STATE = Join-Path $Root 'project-state.json'
+        Initialize-LoaderCatalog
+        Initialize-Session
+        Install-ModFiles -McDir $Path -ModLoader $Loader
     }
     'Version' {
         function Invoke-Menu {
@@ -224,6 +232,89 @@ def test_release_jar_is_selected_from_the_requested_loader_directory(tmp_path: P
         result = run_harness(tmp_path, "-Action", "Dist", "-Root", str(root), "-Loader", loader)
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.strip() == expected
+
+
+def test_installer_assembles_one_host_runtime_into_the_selected_loader_jar(tmp_path: Path):
+    root = tmp_path / "release"
+    root.mkdir()
+    shutil.copy2(util.PROJECT_DIR / "project-state.json", root / "project-state.json")
+    shutil.copy2(util.PROJECT_DIR / "packaging" / "migrate_resource_packs.ps1", root)
+    component = root / "mods" / "fabric" / "rtx-remix-renderer-0.1.1-mc1.21.1-fabric-thin.jar"
+    component.parent.mkdir(parents=True)
+    with zipfile.ZipFile(component, "w") as archive:
+        archive.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
+        archive.writestr("fabric.mod.json", "{}")
+        archive.writestr("rtx-remix-shipped-payload.sha256", "")
+        archive.writestr("example/Mod.class", b"class")
+    for arch in PROJECT_STATE.architectures:
+        sdk = root / "runtime" / "native" / f"remix-sdk-{arch}"
+        sdk.mkdir(parents=True)
+        (sdk / "d3d9.dll").write_bytes(arch.encode())
+        (sdk / "remixbridge.dll").write_bytes(b"bridge")
+    (root / "runtime" / "native" / "rtx.conf").write_text("rtx.showUI = False\n", encoding="utf-8")
+    texture = root / "runtime" / "native" / "textures" / "overcast_thunderstorm_bc6u.dds"
+    texture.parent.mkdir(parents=True)
+    texture.write_bytes(b"texture")
+    license_file = root / "runtime" / "packaging" / "licenses" / "runtime.txt"
+    license_file.parent.mkdir(parents=True)
+    license_file.write_text("license", encoding="utf-8")
+    game = tmp_path / "game"
+
+    result = run_harness(
+        tmp_path,
+        "-Action",
+        "InstallMod",
+        "-Root",
+        str(root),
+        "-Path",
+        str(game),
+        "-Loader",
+        "Fabric",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    installed = game / "mods" / PROJECT_STATE.get("fabric").installed_jar
+    with zipfile.ZipFile(installed) as archive:
+        names = set(archive.namelist())
+    windows_arch = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE", "")
+    host_arch = "arm64" if windows_arch.lower() == "arm64" else "win64"
+    other_arch = "win64" if host_arch == "arm64" else "arm64"
+    assert f"native/remix-sdk-{host_arch}/d3d9.dll" in names
+    assert f"native/remix-sdk-{other_arch}/d3d9.dll" not in names
+    assert "native/rtx.conf" in names
+    assert "native/textures/overcast_thunderstorm_bc6u.dds" in names
+    assert "packaging/licenses/runtime.txt" in names
+
+
+def test_installer_reports_a_self_contained_jar_for_the_wrong_architecture(tmp_path: Path):
+    root = tmp_path / "release"
+    root.mkdir()
+    shutil.copy2(util.PROJECT_DIR / "project-state.json", root / "project-state.json")
+    shutil.copy2(util.PROJECT_DIR / "packaging" / "migrate_resource_packs.ps1", root)
+    windows_arch = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE", "")
+    host_arch = "arm64" if windows_arch.lower() == "arm64" else "win64"
+    other_arch = "win64" if host_arch == "arm64" else "arm64"
+    packaged = root / "mods" / "fabric" / f"rtx-remix-renderer-0.1.1-mc1.21.1-fabric-{other_arch}.jar"
+    packaged.parent.mkdir(parents=True)
+    with zipfile.ZipFile(packaged, "w") as archive:
+        archive.writestr(f"native/remix-sdk-{other_arch}/d3d9.dll", b"runtime")
+        archive.writestr("native/rtx.conf", b"config")
+
+    result = run_harness(
+        tmp_path,
+        "-Action",
+        "InstallMod",
+        "-Root",
+        str(root),
+        "-Path",
+        str(tmp_path / "game"),
+        "-Loader",
+        "Fabric",
+    )
+
+    assert result.returncode != 0
+    assert f"contains a runtime for {other_arch}, but this host requires {host_arch}" in result.stdout + result.stderr
+    assert "component collision" not in (result.stdout + result.stderr).lower()
 
 
 def test_prism_instance_directory_follows_launcher_configuration(tmp_path: Path):
@@ -670,12 +761,24 @@ def test_loader_switch_removes_only_other_managed_microsoft_profiles(tmp_path: P
         ("rtx-remix-renderer-0.1.0.jar", "Fabric"),
         ("rtx-remix-renderer-forge-0.1.0-all.jar", "Forge"),
         ("rtx-remix-renderer-neoforge-0.1.0.jar", "NeoForge"),
+        ("rtx-remix-renderer-0.1.1-mc1.21.1-fabric-win64.jar", "Fabric"),
+        ("rtx-remix-renderer-0.1.1-mc1.21.1-forge-arm64.jar", "Forge"),
+        ("rtx-remix-renderer-0.1.1-mc1.21.1-neoforge-win64.jar", "NeoForge"),
     ],
 )
 def test_legacy_loader_artifact_inference_handles_all_loaders(tmp_path: Path, filename: str, loader: str):
     result = run_harness(tmp_path, "-Action", "ArtifactLoader", "-Path", filename)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == loader
+
+
+def test_published_artifact_inference_comes_from_the_project_catalog():
+    text = INSTALLER.read_text(encoding="utf-8-sig")
+
+    assert "$loader.PackagedArtifactPattern" in text
+    assert "$script:ARCHITECTURES" in text
+    assert "'^rtx-remix-renderer-.+-mc.+'" not in text
+    assert "'-(?:win64|arm64)\\.jar$'" not in text
 
 
 def test_migration_call_supports_the_loader_contract():

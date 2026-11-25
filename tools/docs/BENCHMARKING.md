@@ -35,6 +35,14 @@ which records JFR only. Select a preset explicitly for comparisons.
 `--sdk-variant tracy` adds native Tracy capture and requires a Tracy-enabled
 local runtime or access to the configured runtime download service.
 
+A release-runtime run packages and installs the same architecture-specific,
+self-contained JAR shipped to players. `NativeExtractor` installs its embedded
+runtime before the world and measured frames begin. Preparation removes the
+existing extraction marker, including with `--no-build`, so a prior development
+or Tracy launch cannot leave its runtime active. Tracy is a development runtime
+variant instead: Tracy runs keep the lightweight development JAR and the
+existing direct SDK staging path, and no Tracy-specific release JAR is produced.
+
 `run` builds the checkout, stages the world and camera into the game directory
 of this checkout's Prism instance (`<gameDir>` below), launches Minecraft
 through Prism, captures the benchmark,

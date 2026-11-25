@@ -19,6 +19,14 @@ LOADER_BUILD = REPO_ROOT / "gradle" / "loader-module.gradle"
 
 
 class BuildConfigurationTests(unittest.TestCase):
+    def test_packaged_artifacts_have_curseforge_friendly_matrix_names(self):
+        self.assertEqual(PROJECT_STATE.architectures, ("win64", "arm64"))
+        for loader in PROJECT_STATE.loaders:
+            self.assertEqual(
+                loader.packaged_jar_pattern,
+                f"rtx-remix-renderer-{{modVersion}}-mc{{minecraftVersion}}-{loader.id}-{{architecture}}.jar",
+            )
+
     def test_build_tool_versions_are_reproducible(self):
         wrapper = (REPO_ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text(encoding="utf-8")
 
@@ -41,9 +49,39 @@ class BuildConfigurationTests(unittest.TestCase):
         build = LOADER_BUILD.read_text(encoding="utf-8")
 
         self.assertNotIn("startParameter.taskNames", build)
-        self.assertIn("tasks.register('packageJar', Zip)", build)
+        self.assertIn('tasks.register("packageJar${taskSuffix}", Zip)', build)
+        self.assertIn("tasks.register('packageJar')", build)
         self.assertIn("tasks.register('verifyPackageJar')", build)
         self.assertIn("destinationDirectory.set(layout.buildDirectory.dir('distributions'))", build)
+
+    def test_release_runtime_payload_excludes_every_pdb(self):
+        policy = RUNTIME_POLICY.read_text(encoding="utf-8")
+
+        self.assertIn("name.toLowerCase(java.util.Locale.ROOT).endsWith('.pdb')", policy)
+        self.assertIn("it.toLowerCase(java.util.Locale.ROOT).endsWith('.pdb')", policy)
+        self.assertIn("Distributable JAR contains a PDB symbol file", policy)
+        self.assertIn("name == '.local-sdk-source'", policy)
+        self.assertIn("Distributable JAR contains a local SDK source marker", policy)
+        self.assertIn("include 'remixbridge.dll'", policy)
+        self.assertNotIn("include 'remixbridge.dll', 'remixbridge.pdb'", policy)
+        self.assertNotIn('required.add("native/remix-sdk-${arch}/remixbridge.pdb")', policy)
+
+    def test_installer_runtime_verifier_covers_the_shared_payload(self):
+        policy = RUNTIME_POLICY.read_text(encoding="utf-8")
+
+        self.assertIn("ext.checkRuntimeSourceHomogeneity", policy)
+        self.assertIn("ext.verifyRuntimePayloadDirectory", policy)
+        for required in (
+            "native/remix-sdk-${arch}/d3d9.dll",
+            "native/remix-sdk-${arch}/remixbridge.dll",
+            "native/rtx.conf",
+            "native/textures/${it}",
+            "packaging/licenses/",
+        ):
+            self.assertIn(required, policy)
+        self.assertIn("Installer runtime contains a PDB symbol file", policy)
+        self.assertIn("Installer runtime contains a local SDK source marker", policy)
+        self.assertIn("Installer runtime must not contain a Python runtime", policy)
 
     def test_release_staging_uses_verified_loader_specific_package_archives(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
@@ -53,14 +91,17 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(staging, "release staging must remove stale files through Sync")
         assert staging is not None
         body = staging.group(1)
-        self.assertIn('dependsOn declaredLoaders.collect { "${it.projectPath}:verifyPackageJar" }', body)
+        self.assertIn('dependsOn declaredLoaders.collect { "${it.projectPath}:verifyInstallerThinJar" }', body)
         self.assertIn("into layout.buildDirectory.dir('release')", body)
         self.assertIn("declaredLoaders.each { loader ->", body)
-        self.assertIn("from(loaderArchives[loader.id])", body)
+        self.assertIn("from(installerThinArchives[loader.id])", body)
         self.assertIn('into "mods/${loader.id}"', body)
-        # The JAR carries the runtime textures; a second copy beside it would only grow the archive.
-        self.assertNotIn("runtimeTexturesDir", body)
-        self.assertNotIn("textures", body)
+        self.assertIn("with runtimePayloadSpec(projectDir, supportedRuntimeArches)", body)
+        self.assertIn("into('runtime')", body)
+        self.assertIn("withPropertyName('runtimeSourceMarkers')", body)
+        self.assertIn("checkRuntimeSourceHomogeneity(projectDir, supportedRuntimeArches)", body)
+        self.assertIn("verifyRuntimePayloadDirectory(", body)
+        self.assertIn("layout.buildDirectory.dir('release/runtime')", body)
         for name in ("install.bat", "installer.ps1", "migrate_resource_packs.ps1", "INSTALLER_REFERENCE.md"):
             self.assertIn(f"'packaging/{name}'", body)
         self.assertIn("from('packaging/INSTALL.md')", body)
@@ -300,11 +341,11 @@ class BuildConfigurationTests(unittest.TestCase):
         # JAR must carry every runtime texture for NativeExtractor to write into the game directory.
         build = LOADER_BUILD.read_text(encoding="utf-8")
         policy = RUNTIME_POLICY.read_text(encoding="utf-8")
-        package = re.search(r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}", build)
-        verify = re.search(r"(?ms)^def verifyPackageJarTask = tasks.register\('verifyPackageJar'\) \{(.+?)^\}", build)
+        package = re.search(r"(?ms)^def packageJarTasks = buildArches.collectEntries \{ arch ->(.+?)^\}", build)
+        verify = re.search(r"(?ms)^def verifyPackageJarTasks = packageJarArchives.collectEntries \{(.+?)^\}", build)
         assert package is not None and verify is not None
         self.assertIn("dependsOn ':fetchRuntimeTextures'", package.group(1))
-        self.assertIn("with runtimePayloadSpec(repoRoot, buildArches)", package.group(1))
+        self.assertIn("with runtimePayloadSpec(repoRoot, [arch])", package.group(1))
         self.assertIn("verifyRuntimePayloadArchive(", verify.group(1))
         self.assertRegex(policy, r"from\(new File\(repoRoot, 'remix-runtime/textures'\)\) \{")
         self.assertIn("into 'native/textures'", policy)
@@ -335,13 +376,13 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("archiveClassifier.set('installer')", body)
         # The installer's name stays apart from both loader JARs, which have no classifier.
         jar = re.search(
-            r"(?ms)^def packageJarTask = tasks.register\('packageJar', Zip\) \{(.+?)^\}",
+            r"(?ms)^def packageJarTasks = buildArches.collectEntries \{ arch ->(.+?)^\}",
             LOADER_BUILD.read_text(encoding="utf-8"),
         )
         assert jar is not None
         self.assertNotIn("archiveClassifier", jar.group(1))
 
-    def test_release_assets_are_the_five_release_files(self):
+    def test_release_assets_include_every_loader_architecture_jar(self):
         build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
         assets = re.search(r"(?ms)^tasks.register\('stageReleaseAssets', Sync\) \{(.+?)^\}", build)
         self.assertIsNotNone(assets, "release assets must be staged through Sync so a stale file cannot be uploaded")
@@ -351,10 +392,11 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("into layout.buildDirectory.dir('release-assets')", body)
         self.assertIn("duplicatesStrategy = DuplicatesStrategy.FAIL", body)
         # Every declared loader JAR, both content zips, and the bundle, and nothing else.
-        self.assertEqual(
-            re.findall(r"from\(([^)]*)\)", body),
-            ["loaderArchives[loader.id]", "materialsArchiveTask", "worldArchiveTask", "releaseArchiveTask"],
-        )
+        self.assertIn("buildArches.each { arch ->", body)
+        self.assertIn("from(loaderArchives[loader.id][arch])", body)
+        self.assertIn("from(materialsArchiveTask)", body)
+        self.assertIn("from(worldArchiveTask)", body)
+        self.assertIn("from(releaseArchiveTask)", body)
         self.assertNotIn("include", body)
         self.assertNotIn("exclude", body)
 

@@ -157,49 +157,103 @@ jar {
 }
 
 def packageSourceTask = tasks.named(loader.packageSourceTask)
-def packageJarTask = tasks.register('packageJar', Zip) {
-    description = "Assembles the ${loader.displayName} distributable JAR with the selected runtime payload"
+def packageJarTasks = buildArches.collectEntries { arch ->
+    def taskSuffix = arch == 'win64' ? 'Win64' : 'Arm64'
+    [(arch): tasks.register("packageJar${taskSuffix}", Zip) {
+        description = "Assembles the ${loader.displayName} ${arch} distributable JAR"
+        group = 'build'
+        dependsOn packageSourceTask
+        dependsOn arch == 'win64' ? ':fetchRuntimeSdkWin64' : ':fetchRuntimeSdkArm64'
+        dependsOn arch == 'win64' ? ':compileNativeWin64' : ':compileNativeArm64'
+        dependsOn ':fetchRuntimeTextures'
+
+        archiveFileName.set(runtimeArtifactFileName(
+                loader.packagedArtifact.pattern,
+                state.mod.version,
+                state.minecraft.version,
+                arch))
+        destinationDirectory.set(layout.buildDirectory.dir('distributions'))
+        configureReproducibleRuntimeArchive(delegate)
+
+        from({ zipTree(packageSourceTask.get().archiveFile.get().asFile) })
+        with runtimePayloadSpec(repoRoot, [arch])
+    }]
+}
+
+def packageJarTask = tasks.register('packageJar') {
+    description = "Assembles the selected ${loader.displayName} architecture JARs"
+    group = 'build'
+    dependsOn packageJarTasks.values()
+}
+
+def packageJarArchives = packageJarTasks.collectEntries { arch, task ->
+    [(arch): task.flatMap { it.archiveFile }]
+}
+def verifyPackageJarTasks = packageJarArchives.collectEntries { arch, archive ->
+    def taskSuffix = arch == 'win64' ? 'Win64' : 'Arm64'
+    [(arch): tasks.register("verifyPackageJar${taskSuffix}") {
+        description = "Verifies the ${loader.displayName} ${arch} distributable runtime payload"
+        group = 'verification'
+        dependsOn packageJarTasks[arch]
+        inputs.file(archive)
+        inputs.dir(rootProject.file('packaging/rtx-remix'))
+        inputs.dir(rootProject.file('packaging/licenses'))
+
+        doLast {
+            verifyRuntimePayloadArchive(
+                    archive.get().asFile, repoRoot, [arch], [loader.metadataFile])
+        }
+    }]
+}
+def verifyPackageJarTask = tasks.register('verifyPackageJar') {
+    description = "Verifies the selected ${loader.displayName} architecture JARs"
+    group = 'verification'
+    dependsOn verifyPackageJarTasks.values()
+}
+
+def installerThinJarTask = tasks.register('installerThinJar', Zip) {
+    description = "Assembles the ${loader.displayName} installer component without a runtime"
     group = 'build'
     dependsOn packageSourceTask
-    dependsOn buildArches.collect {
-        it == 'win64' ? ':fetchRuntimeSdkWin64' : ':fetchRuntimeSdkArm64'
-    }
-    if (buildArches.contains('win64')) dependsOn ':compileNativeWin64'
-    if (buildArches.contains('arm64')) dependsOn ':compileNativeArm64'
-    dependsOn ':fetchRuntimeTextures'
-
-    archiveBaseName.set(
-            "${state.mod.id}-${loaderEntry.key}-mc${state.minecraft.version}")
-    archiveVersion.set(resolvedBuildVersion)
-    archiveExtension.set('jar')
-    destinationDirectory.set(layout.buildDirectory.dir('distributions'))
+    archiveFileName.set(
+            "${state.mod.id}-${state.mod.version}-mc${state.minecraft.version}-" +
+            "${loaderEntry.key}-thin.jar")
+    destinationDirectory.set(layout.buildDirectory.dir('installer-components'))
     configureReproducibleRuntimeArchive(delegate)
-
     from({ zipTree(packageSourceTask.get().archiveFile.get().asFile) })
-    with runtimePayloadSpec(repoRoot, buildArches)
-
-    doFirst {
-        checkRuntimeSourceHomogeneity(repoRoot, buildArches)
-    }
 }
-
-def packageJarArchive = packageJarTask.flatMap { it.archiveFile }
-def verifyPackageJarTask = tasks.register('verifyPackageJar') {
-    description = "Verifies the ${loader.displayName} distributable runtime payload"
+def installerThinJarArchive = installerThinJarTask.flatMap { it.archiveFile }
+def verifyInstallerThinJarTask = tasks.register('verifyInstallerThinJar') {
+    description = "Verifies the ${loader.displayName} installer component"
     group = 'verification'
-    dependsOn packageJarTask
-    inputs.file(packageJarArchive)
-    inputs.dir(rootProject.file('packaging/rtx-remix'))
-    inputs.dir(rootProject.file('packaging/licenses'))
+    dependsOn installerThinJarTask
+    inputs.file(installerThinJarArchive)
 
     doLast {
-        verifyRuntimePayloadArchive(
-                packageJarArchive.get().asFile, repoRoot, buildArches, [loader.metadataFile])
+        def zip = new java.util.zip.ZipFile(installerThinJarArchive.get().asFile)
+        try {
+            if (zip.getEntry(loader.metadataFile) == null) {
+                throw new GradleException(
+                        "${loader.displayName} installer component is missing ${loader.metadataFile}")
+            }
+            def nativeEntry = java.util.Collections.list(zip.entries()).find {
+                it.name == 'native' || it.name.startsWith('native/')
+            }
+            if (nativeEntry != null) {
+                throw new GradleException(
+                        "${loader.displayName} installer component unexpectedly contains ${nativeEntry.name}")
+            }
+        } finally {
+            zip.close()
+        }
     }
 }
 
-ext.packageJarArchive = packageJarArchive
+ext.packageJarArchives = packageJarArchives
+ext.verifyPackageJarTasks = verifyPackageJarTasks
 ext.verifyPackageJarTask = verifyPackageJarTask
+ext.installerThinJarArchive = installerThinJarArchive
+ext.verifyInstallerThinJarTask = verifyInstallerThinJarTask
 
 tasks.register('package') {
     description = "Builds and verifies the ${loader.displayName} distributable"

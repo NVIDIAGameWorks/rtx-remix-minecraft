@@ -289,14 +289,15 @@ compilation without fetching or staging the runtime or compiling the JNI
 bridge. It is a useful iteration check, not validation of native integration.
 
 The root `package` task produces one self-contained JAR per declared loader
-under that module's `build/distributions/`. Each embeds the
+and architecture under that module's `build/distributions/`. Each embeds the
 runtime, gameplay conf payload, runtime textures, and baseline PBR textures. To
 try one in a normal Minecraft 1.21.1 installation, use the matching loader and
 add Fabric API for the Fabric build.
 
-`releaseArchive` contains every verified loader artifact under
-`mods/<loader-id>/`. Its installer supports the packaged catalog, migrates old generated
-baseline packs, and preserves user-pack ordering.
+`releaseArchive` carries thin loader components under `mods/<loader-id>/` and
+one shared payload per architecture under `runtime/`. Its installer combines
+the selected loader and host architecture into a self-contained JAR, migrates
+old generated baseline packs, and preserves user-pack ordering.
 
 The neutral root owns native compilation, runtime fetching, and
 `setupRuntime`. Ordinary `build` and `test` tasks for declared modules compile
@@ -312,27 +313,30 @@ Each module's `build` produces a lightweight JAR that is not installable on its
 own. Its `package` embeds the runtime, `rtx.conf`, the gameplay conf payload,
 and the runtime textures.
 
-`verifyPackageJar` rejects Python interpreter and binding payloads because the
-runtime uses Python-free OpenUSD. Plain `.py` templates are not interpreters:
-`usd/usd/resources/codegenTemplates/__init__.py` is deliberately permitted.
-The task also requires every `packaging/licenses/` file in the JAR.
+`verifyPackageJar` rejects PDB symbols and Python interpreter or binding
+payloads. Release symbols are published separately by the runtime producer,
+and the runtime uses Python-free OpenUSD. Plain `.py` templates are not
+interpreters: `usd/usd/resources/codegenTemplates/__init__.py` is deliberately
+permitted. The task also requires every `packaging/licenses/` file in the JAR.
 
 | `package` invocation | Output |
 |---|---|
-| `package` | One dual-architecture fat JAR per declared loader. Needs both architectures staged from the same kind of source |
-| `package -Ploader=<loader-id>` | One dual-architecture fat JAR for the selected loader |
+| `package` | One win64 and one arm64 self-contained JAR per declared loader |
+| `package -Ploader=<loader-id>` | One win64 and one arm64 self-contained JAR for the selected loader |
 | `package -Parch=win64` | Declared loader JARs, win64 only; skips the arm64 bridge compile |
 | `package -Parch=arm64` | Declared loader JARs, arm64 only; useful for cross-building for device testing |
 
-`releaseArchive` runs every declared loader package verification task, then
-stages each JAR under `build/release/mods/<loader-id>/`, RTX Remix Materials under
+`releaseArchive` verifies each thin loader component, stages it under
+`build/release/mods/<loader-id>/`, stages each runtime architecture once under
+`build/release/runtime/`, RTX Remix Materials under
 `build/release/resourcepacks/`, RTX Remix Showcase World under
 `build/release/saves/`, and the installer scripts, documentation, and license
 notices beside them. It writes that layout as
 `rtx-remix-renderer-mc<minecraft-version>-<mod-version>-installer.zip` in
-`build/distributions/`. The same `-Parch` selection applies to every JAR;
-omitting it includes both architectures. The baseline resource pack is built
-into every JAR.
+`build/distributions/`. The installed JAR carries only the host architecture.
+The standalone artifacts use
+`rtx-remix-renderer-<mod-version>-mc<minecraft-version>-<loader>-<architecture>.jar`.
+The baseline resource pack is built into every standalone and assembled JAR.
 
 `fetchReleaseContent` pulls the pack and world through Packman into
 `remix-runtime/art-pack/` and `remix-runtime/world/` from the pins in
@@ -343,8 +347,8 @@ content. Because the installer finds the zips by name, `fetchReleaseContent`
 refuses a pack version that does not read `1.2.3` or a world version that does
 not read `v1.2.3`, its `v` optional. `materialsArchive` and `worldArchive` zip
 the two with the files in `packaging/content/`, and `stageReleaseAssets`
-collects one JAR per declared loader plus the Materials zip, Showcase World
-zip, and installer bundle in
+collects one JAR per declared loader and architecture plus the Materials zip,
+Showcase World zip, and installer bundle in
 `build/release-assets/`. Only these release tasks fetch the pack and world;
 `build`, `test`, and `package` never do.
 

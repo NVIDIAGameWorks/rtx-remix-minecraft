@@ -56,6 +56,15 @@ if ($modId -cnotmatch '^[a-z][a-z0-9-]*$' -or $modGroup -notmatch '^[A-Za-z0-9_.
     $modVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
     throw "project-state.json mod identity or version is malformed."
 }
+$architecturesProperty = $state.PSObject.Properties['architectures']
+if ($null -eq $architecturesProperty -or $architecturesProperty.Value -isnot [array]) {
+    throw "project-state.json architectures must be an array."
+}
+$architectures = @($architecturesProperty.Value)
+if ($architectures.Count -eq 0 -or @($architectures | Select-Object -Unique).Count -ne $architectures.Count -or
+    @($architectures | Where-Object { $_ -notin @('win64', 'arm64') }).Count -ne 0) {
+    throw "project-state.json architectures must contain unique win64/arm64 values."
+}
 
 $versions = Require-Object $state 'versions' 'versions'
 $versionProperties = @($versions.PSObject.Properties | Where-Object { $_.MemberType -eq 'NoteProperty' })
@@ -71,6 +80,7 @@ if ($ModLoader -and -not $MinecraftVersion) {
 }
 
 $targets = @()
+$packageTargets = @()
 $validatedVersions = [ordered]@{}
 foreach ($versionProperty in $versionProperties) {
     $versionId = $versionProperty.Name
@@ -168,6 +178,17 @@ foreach ($versionProperty in $versionProperties) {
         if (-not ($developmentDirectory.Replace('\', '/')).StartsWith("$module/")) {
             throw "project-state.json $loaderPath.developmentArtifact.directory must be under module '$module'."
         }
+        $packagedArtifact = Require-Object $loader 'packagedArtifact' "$loaderPath.packagedArtifact"
+        $packagedDirectory = Require-String $packagedArtifact 'directory' "$loaderPath.packagedArtifact.directory"
+        $packagedPattern = Require-String $packagedArtifact 'pattern' "$loaderPath.packagedArtifact.pattern"
+        if (-not ($packagedDirectory.Replace('\', '/')).StartsWith("$module/")) {
+            throw "project-state.json $loaderPath.packagedArtifact.directory must be under module '$module'."
+        }
+        $expectedPackagedPattern =
+            "$modId-{modVersion}-mc{minecraftVersion}-$loaderId-{architecture}.jar"
+        if ($packagedPattern -cne $expectedPackagedPattern) {
+            throw "project-state.json $loaderPath.packagedArtifact.pattern must be '$expectedPackagedPattern'."
+        }
         [void](Require-String $loader 'installedJar' "$loaderPath.installedJar")
         [void](Require-String $loader 'builtinResourcePack' "$loaderPath.builtinResourcePack")
         $prism = Require-Object $loader 'prism' "$loaderPath.prism"
@@ -184,7 +205,7 @@ foreach ($versionProperty in $versionProperties) {
             throw "Declared target '$versionId/$loaderId' has no build.gradle under module '$module'."
         }
         $normalizedLoaders += $loaderId
-        $targets += [ordered]@{
+        $target = [ordered]@{
             minecraftVersion = $versionId
             loader = $loaderId
             javaTarget = [int]$minecraft.javaTarget
@@ -193,6 +214,17 @@ foreach ($versionProperty in $versionProperties) {
             buildTask = [string]$gradle.build
             testTask = [string]$gradle.test
             packageTask = [string]$gradle.package
+        }
+        $targets += $target
+        foreach ($architecture in $architectures) {
+            $packageTarget = [ordered]@{}
+            foreach ($key in $target.Keys) {
+                $packageTarget[$key] = $target[$key]
+            }
+            $packageTarget['architecture'] = $architecture
+            $taskSuffix = if ($architecture -eq 'win64') { 'Win64' } else { 'Arm64' }
+            $packageTarget['packageVerifyTask'] = "${projectPath}:verifyPackageJar${taskSuffix}"
+            $packageTargets += $packageTarget
         }
     }
     if ($normalizedLoaders -cnotcontains $defaultLoader) {
@@ -227,6 +259,7 @@ $selectedTasks = foreach ($loaderProperty in $selectedLoaderProperties) {
     $loaderProperty.Value.gradle.package
 }
 $matrix = @{ include = @($targets) } | ConvertTo-Json -Compress -Depth 5
+$packageMatrix = @{ include = @($packageTargets) } | ConvertTo-Json -Compress -Depth 5
 $versionSummary = @($validatedVersions.Keys | ForEach-Object {
     "$($_):$($validatedVersions[$_].LoaderIds -join ',')"
 }) -join ';'
@@ -244,6 +277,7 @@ if ($GitHubEnvironment) {
         "PROJECT_LOADERS=$($selectedLoaderIds -join ',')"
         "PROJECT_LOADER=$ModLoader"
         "PROJECT_LOADER_COUNT=$($selectedLoaderIds.Count)"
+        "PROJECT_ARCHITECTURES=$($architectures -join ',')"
         "PROJECT_GRADLE_TASKS=$($selectedTasks -join ' ')"
         "PROJECT_GRADLE_PROPERTIES=$gradleProperties"
         "PROJECT_VERSION_MATRIX=$versionSummary"
@@ -252,6 +286,7 @@ if ($GitHubEnvironment) {
 if ($GitHubOutput) {
     @(
         "matrix=$matrix"
+        "packageMatrix=$packageMatrix"
         "versionMatrix=$versionSummary"
         "javaTarget=$($targetVersion.Minecraft.javaTarget)"
         "minecraftVersion=$targetVersionId"
@@ -267,25 +302,28 @@ if ($GitHubOutput) {
 if ($ReleaseAssetsDirectory) {
     $assetDirectory = (Resolve-Path -LiteralPath $ReleaseAssetsDirectory).Path
     $releaseJars = @(Get-ChildItem -LiteralPath $assetDirectory -File -Filter '*.jar')
-    if ($releaseJars.Count -ne $targetVersion.LoaderIds.Count) {
-        throw "Expected one staged release JAR per loader for Minecraft $targetVersionId ($($targetVersion.LoaderIds.Count)); found $($releaseJars.Count)."
+    $expectedJarCount = $targetVersion.LoaderIds.Count * $architectures.Count
+    if ($releaseJars.Count -ne $expectedJarCount) {
+        throw "Expected one staged release JAR per loader and architecture for Minecraft $targetVersionId ($expectedJarCount); found $($releaseJars.Count)."
     }
-    $releaseHashes = @($releaseJars | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash })
     foreach ($loaderProperty in $targetVersion.LoaderProperties) {
         $loaderId = $loaderProperty.Name
         $loader = $loaderProperty.Value
-        $releaseArchiveBaseName = "$modId-$loaderId-mc$targetVersionId"
         $distributionDirectory = Join-Path $projectRoot "$($loader.module)\build\distributions"
-        $moduleJars = @(Get-ChildItem -LiteralPath $distributionDirectory -File |
-            Where-Object { $_.Name -like "$releaseArchiveBaseName-*.jar" })
-        if ($moduleJars.Count -eq 0) {
-            throw "No packaged JAR exists for target '$targetVersionId/$loaderId'."
-        }
-        $moduleHashes = @($moduleJars | ForEach-Object {
-            (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
-        })
-        if (-not ($moduleHashes | Where-Object { $releaseHashes -contains $_ })) {
-            throw "The staged release assets do not contain the packaged '$targetVersionId/$loaderId' JAR."
+        foreach ($architecture in $architectures) {
+            $name = "$modId-$modVersion-mc$targetVersionId-$loaderId-$architecture.jar"
+            $moduleJar = Join-Path $distributionDirectory $name
+            $releaseJar = Join-Path $assetDirectory $name
+            if (-not (Test-Path -LiteralPath $moduleJar -PathType Leaf)) {
+                throw "No packaged JAR exists for target '$targetVersionId/$loaderId/$architecture'."
+            }
+            if (-not (Test-Path -LiteralPath $releaseJar -PathType Leaf)) {
+                throw "The staged release assets do not contain '$name'."
+            }
+            if ((Get-FileHash -LiteralPath $moduleJar -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $releaseJar -Algorithm SHA256).Hash) {
+                throw "The staged '$name' does not match its packaged module artifact."
+            }
         }
     }
     @(

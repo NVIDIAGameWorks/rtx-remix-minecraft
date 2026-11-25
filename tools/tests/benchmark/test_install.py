@@ -3,6 +3,7 @@
 
 import os
 import subprocess
+import zipfile
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -104,6 +105,59 @@ def test_development_mod_jar_never_selects_newer_thin_forge_artifact(
         os.utime(path, (timestamp, timestamp))
 
     assert install.development_mod_jar(tmp_path, "forge") == runnable
+
+
+@pytest.mark.parametrize("mod_loader", PROJECT_STATE.ids)
+@pytest.mark.parametrize("arch", PROJECT_STATE.architectures)
+def test_packaged_mod_jar_uses_the_declared_exact_artifact(
+    tmp_path: Path,
+    mod_loader: str,
+    arch: str,
+):
+    loader = PROJECT_STATE.get(mod_loader)
+    name = loader.packaged_jar_pattern.format(
+        modVersion=PROJECT_STATE.mod_version,
+        minecraftVersion=PROJECT_STATE.minecraft_version,
+        architecture=arch,
+    )
+    packaged = tmp_path / loader.packaged_jar_dir / name
+    write_file(packaged, b"jar")
+
+    assert install.packaged_mod_jar(tmp_path, mod_loader, arch) == packaged
+
+
+def test_packaged_install_leaves_runtime_extraction_to_the_mod(tmp_path: Path):
+    project = tmp_path / "checkout"
+    game = tmp_path / "game"
+    loader = PROJECT_STATE.get("fabric")
+    arch = "win64"
+    name = loader.packaged_jar_pattern.format(
+        modVersion=PROJECT_STATE.mod_version,
+        minecraftVersion=PROJECT_STATE.minecraft_version,
+        architecture=arch,
+    )
+    packaged = project / loader.packaged_jar_dir / name
+    packaged.parent.mkdir(parents=True)
+    with zipfile.ZipFile(packaged, "w") as archive:
+        archive.writestr(f"native/remix-sdk-{arch}/d3d9.dll", b"runtime")
+        archive.writestr("native/rtx.conf", b"config")
+    game.mkdir()
+    (game / ".rtx-remix-version").write_text("stale development marker", encoding="utf-8")
+
+    assert (
+        install.install_packaged_build(
+            project,
+            game_dir=game,
+            arch=arch,
+            mod_loader=loader.id,
+        )
+        == 0
+    )
+    assert (game / "mods" / loader.installed_jar).is_file()
+    assert not (game / "remix-sdk").exists()
+    assert not (game / "rtx.conf").exists()
+    assert not (game / "textures").exists()
+    assert not (game / ".rtx-remix-version").exists()
 
 
 @pytest.mark.parametrize("arch", ["win64", "arm64"])

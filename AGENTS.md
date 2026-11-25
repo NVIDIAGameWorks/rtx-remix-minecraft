@@ -43,7 +43,7 @@ Remix runtime automatically. [Getting Started](docs/GETTING_STARTED.md) covers l
 .\tools\rtx.bat launch
 .\gradlew.bat test "-PmcVersion=1.21.1" "-Ploader=neoforge"
 .\gradlew.bat package "-PmcVersion=1.21.1" "-Ploader=forge" -Parch=win64
-.\gradlew.bat releaseArchive "-PmcVersion=1.21.1" -Parch=win64
+.\gradlew.bat releaseArchive "-PmcVersion=1.21.1"
 ```
 
 `tools\rtx.bat launch` builds the mod, installs it into a checkout-specific
@@ -69,11 +69,12 @@ Ordinary `build` and `test` tasks for the declared loaders compile and verify Ja
 without staging native payloads. Each loader's `runClient` depends on the
 shared runtime setup and applies that loader's resource-pack migration;
 `package` also builds and embeds the selected native payload. Lightweight
-development JARs go under each module's `build/libs/`, and self-contained JARs
-under each module's `build/distributions/`. Packaging verifies inclusion of
-every `packaging/licenses/` file and excludes Python interpreter and binding
-payloads. Staged and packaged contents must agree with `NativeExtractor`.
-A release carries one JAR per declared loader plus the other release content
+development JARs go under each module's `build/libs/`, and one self-contained
+JAR per selected architecture goes under each module's `build/distributions/`.
+Packaging verifies inclusion of every `packaging/licenses/` file and excludes
+PDB symbols plus Python interpreter and binding payloads. Staged and packaged
+contents must agree with `NativeExtractor`.
+A release carries one JAR per declared loader and architecture plus the other release content
 that `stageReleaseAssets` collects: the RTX Remix Materials and RTX Remix
 Showcase World zips, which
 `materialsArchive` and `worldArchive` build from what `fetchReleaseContent`
@@ -83,20 +84,22 @@ installer bundle `releaseArchive` makes from those artifacts and the installer.
 See [Getting Started](docs/GETTING_STARTED.md) and
 root [`build.gradle`](build.gradle) for the shared staging inventory.
 
-The release archive stages each self-contained JAR under
-`mods/<loader-id>/`. Its `install.bat` offers the loaders declared by the
-packaged project state.
+The release archive stages thin loader components under `mods/<loader-id>/`
+and each native architecture once under `runtime/`. Its installer assembles
+the selected loader and host architecture into an equivalent self-contained JAR
+published separately for launcher installs.
 
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
-worktree. Build guards should prevent a silently wrong artifact, as the
-mixed-runtime-source guard does, rather than police checkout cleanliness.
+worktree. Build guards should prevent a silently wrong artifact rather than
+police checkout cleanliness.
 
 ## Minecraft Versions And Ports
 
 `main` contains every maintained Minecraft target under `versions/`.
 `project-state.json` marks each version `primary`, `active`, `maintenance`, or
-`archived`; CI expands the catalog into one job per version/loader target.
+`archived`; CI expands the catalog into one build/test job per version/loader
+target and one packaging job per version/loader/architecture artifact.
 Release tags are immutable. The default target keeps the ordinary
 `v<mod-version>` tag, while another target qualifies new tags with its
 Minecraft version.
