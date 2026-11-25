@@ -172,11 +172,12 @@ public final class DirectoryRuntimePayload {
             if (markerMatches(existing, expectedMarker)) {
                 if (Files.isRegularFile(remixSdkDir.resolve("d3d9.dll"))) {
                     cleanupObsoleteRuntimeTextures(gameDir, reporter);
-                    if (restoreMissingRtxConf(nativeRoot, gameDir)) {
+                    if (restoreMissingRtxConf(nativeRoot, gameDir, Files::newInputStream, Thread::sleep, reporter)) {
                         reporter.info("Restored mod-owned " + RTX_CONF
                                 + " after it was deleted since the last extraction");
                     }
-                    extractTextures(nativeRoot, gameDir, true, fileCount, totalBytes);
+                    extractTextures(nativeRoot, gameDir, true, Files::newInputStream, Thread::sleep, reporter,
+                            fileCount, totalBytes);
                     extractAuthorPayload(nativeRoot, gameDir, history, reporter,
                             fileCount, totalBytes, keptCount);
                     reporter.info("Native runtime " + expectedMarker + " already extracted; restored or updated "
@@ -243,7 +244,8 @@ public final class DirectoryRuntimePayload {
                 }
             }
         }
-        extractTextures(nativeRoot, gameDir, false, fileCount, totalBytes);
+        extractTextures(nativeRoot, gameDir, false, Files::newInputStream, Thread::sleep, reporter,
+                fileCount, totalBytes);
         extractAuthorPayload(nativeRoot, gameDir, history, reporter, fileCount, totalBytes, keptCount);
 
         // Commit: swap staging into place. If either move fails we abort
@@ -251,10 +253,10 @@ public final class DirectoryRuntimePayload {
         retireAndSwap(remixSdkDir, sdkStaging, retiredSdkCleanup, reporter);
 
         if (Files.exists(rtxConfStaging)) {
-            // This single-file replacement is the closest to atomic we get
-            // on Windows (ReplaceFileW underneath).
+            // One replacing rename, so the live conf is never absent between
+            // a delete and a rename.
             retrying("Moving " + rtxConfStaging + " to " + rtxConfFile,
-                    () -> Files.move(rtxConfStaging, rtxConfFile, StandardCopyOption.REPLACE_EXISTING),
+                    () -> moveReplacing(rtxConfStaging, rtxConfFile),
                     Thread::sleep, RENAME_RETRY_DELAYS_MS, reporter);
         }
 
@@ -292,8 +294,9 @@ public final class DirectoryRuntimePayload {
      * written; without it every shipped texture replaces its live copy. Other
      * files in the folder are never touched.
      */
-    private static void extractTextures(Path nativeRoot, Path gameDir, boolean onlyMissing,
-                                        AtomicInteger fileCount, AtomicLong totalBytes) throws IOException {
+    static void extractTextures(Path nativeRoot, Path gameDir, boolean onlyMissing,
+                                FileOpener opener, Sleeper sleeper, Reporter reporter,
+                                AtomicInteger fileCount, AtomicLong totalBytes) throws IOException {
         Path bundled = nativeRoot.resolve(TEXTURES_DIR);
         if (!Files.isDirectory(bundled)) {
             return;
@@ -309,9 +312,7 @@ public final class DirectoryRuntimePayload {
                 // Through a staging file, so an interrupted copy never leaves a
                 // truncated texture that a matching marker would then keep.
                 Files.createDirectories(texturesDir);
-                Path staging = texturesDir.resolve(name + ".staging");
-                Files.copy(texture, staging, StandardCopyOption.REPLACE_EXISTING);
-                Files.move(staging, live, StandardCopyOption.REPLACE_EXISTING);
+                writeThroughStaging(texture, live, opener, sleeper, reporter);
                 fileCount.incrementAndGet();
                 totalBytes.addAndGet(Files.size(live));
             }
@@ -346,14 +347,20 @@ public final class DirectoryRuntimePayload {
      * {@code rtx.conf} carries no intent: it is mod-owned, so the only way to
      * change it is to edit it, and deleting it asks for the shipped default
      * back. Restoring is therefore safe, and an existing file is never touched.
+     * That is also why the copy goes through a staging file: a truncated conf
+     * exists, so no later launch would restore it.
      *
      * @param nativeRoot the JAR's {@code native/} root, which need not exist
      * @param gameDir    the Minecraft game directory
+     * @param opener     opens the bundled conf
+     * @param sleeper    waits between attempts to move the copy into place
+     * @param reporter   receives the retry warnings
      * @return true when a file was written, false when the live conf was
      *         already present or the JAR carries no bundled conf
-     * @throws IOException if the copy fails
+     * @throws IOException if the copy fails, leaving no conf behind
      */
-    static boolean restoreMissingRtxConf(Path nativeRoot, Path gameDir) throws IOException {
+    static boolean restoreMissingRtxConf(
+            Path nativeRoot, Path gameDir, FileOpener opener, Sleeper sleeper, Reporter reporter) throws IOException {
         Path liveConf = gameDir.resolve(RTX_CONF);
         if (Files.exists(liveConf)) {
             return false;
@@ -362,7 +369,7 @@ public final class DirectoryRuntimePayload {
         if (!Files.isRegularFile(bundledConf)) {
             return false;
         }
-        Files.copy(bundledConf, liveConf);
+        writeThroughStaging(bundledConf, liveConf, opener, sleeper, reporter);
         return true;
     }
 
@@ -433,11 +440,12 @@ public final class DirectoryRuntimePayload {
     /**
      * Writes the bundled {@code file} to {@code target} through a staging file
      * beside it, so the live path keeps its previous content until the whole
-     * copy exists. A partial author-owned file matches no shipped version, so
-     * each later launch would keep it as an edit and the update could never
-     * finish. The copy is flushed to disk before the move for the same reason:
-     * after a power loss the move can otherwise be on disk without the bytes
-     * it moved. A failed write removes the staging file and nothing else.
+     * copy exists. A partial file would be kept: an author-owned one matches
+     * no shipped version, so each later launch would take it for an edit, and
+     * a mod-owned one is restored only while it is missing. The copy is flushed
+     * to disk before the move for the same reason: after a power loss the move
+     * can otherwise be on disk without the bytes it moved. A failed write
+     * removes the staging file and nothing else.
      */
     static void writeThroughStaging(
             Path file, Path target, FileOpener opener, Sleeper sleeper, Reporter reporter) throws IOException {
@@ -457,7 +465,7 @@ public final class DirectoryRuntimePayload {
                     sleeper, RENAME_RETRY_DELAYS_MS, reporter);
         } catch (IOException e) {
             try {
-                // One entry, never a tree: a folder holding this name is the author's.
+                // One entry, never a tree: a folder holding this name is not ours.
                 Files.deleteIfExists(staging);
             } catch (IOException cleanupFailure) {
                 e.addSuppressed(cleanupFailure);

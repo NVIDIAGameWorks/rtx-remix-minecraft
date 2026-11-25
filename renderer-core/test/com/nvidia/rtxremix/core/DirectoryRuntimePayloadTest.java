@@ -442,6 +442,56 @@ class DirectoryRuntimePayloadTest {
     }
 
     @Test
+    void anInterruptedTextureWriteLeavesTheOldTextureAndNoStagingFile(@TempDir Path tmp) throws IOException {
+        // The textures folder is shared with other files, so nothing else
+        // would ever clear a partial staging copy left beside the texture.
+        Path nativeRoot = createNativePayload(tmp);
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        Path textures = Files.createDirectories(gameDir.resolve("textures"));
+        Files.writeString(textures.resolve("overcast_thunderstorm_bc6u.dds"), "previous release's overcast");
+        AtomicInteger files = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+
+        IOException failure = assertThrows(IOException.class, () -> DirectoryRuntimePayload.extractTextures(
+                nativeRoot, gameDir, false, DirectoryRuntimePayloadTest::openFailingPartway, millis -> { },
+                DirectoryRuntimePayload.Reporter.NONE, files, bytes));
+
+        assertEquals(READ_FAILURE, failure.getMessage());
+        assertEquals("previous release's overcast",
+                Files.readString(textures.resolve("overcast_thunderstorm_bc6u.dds")));
+        assertEquals(List.of("overcast_thunderstorm_bc6u.dds"), fileNames(textures),
+                "the staging file must not outlive the failure");
+        assertEquals(0, files.get());
+    }
+
+    @Test
+    void aTextureMoveBlockedByAnotherProgramSucceedsOnceItLetsGo(@TempDir Path tmp) throws IOException {
+        // A scanner can still have the live texture open when its replacement
+        // is ready; the move waits it out as the SDK rename does.
+        Path nativeRoot = createNativePayload(tmp);
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        Path overcast = Files.createDirectories(gameDir.resolve("textures"))
+                .resolve("overcast_thunderstorm_bc6u.dds");
+        Files.writeString(overcast, "previous release's overcast");
+        List<Long> waits = new ArrayList<>();
+
+        // java.io opens a file without delete sharing, so Windows refuses to
+        // replace it until the stream closes, here during the second wait.
+        try (InputStream holder = new FileInputStream(overcast.toFile())) {
+            DirectoryRuntimePayload.extractTextures(nativeRoot, gameDir, false, Files::newInputStream, millis -> {
+                waits.add(millis);
+                if (waits.size() == 2) {
+                    closeUnchecked(holder);
+                }
+            }, DirectoryRuntimePayload.Reporter.NONE, new AtomicInteger(), new AtomicLong());
+        }
+
+        assertEquals(2, waits.size());
+        assertEquals("shipped overcast", Files.readString(overcast));
+        assertEquals(List.of("overcast_thunderstorm_bc6u.dds"), fileNames(overcast.getParent()));
+    }
+
+    @Test
     void aVersionChangeRemovesAnObsoleteRuntimeTextureOnly(@TempDir Path tmp) throws IOException {
         Path nativeRoot = createNativePayload(tmp);
         Path gameDir = Files.createDirectories(tmp.resolve("game"));
@@ -606,7 +656,7 @@ class DirectoryRuntimePayloadTest {
         Path gameDir = Files.createDirectories(tmp.resolve("game"));
         Files.writeString(nativeRoot.resolve("rtx.conf"), "rtx.showUICursor = false");
 
-        assertTrue(DirectoryRuntimePayload.restoreMissingRtxConf(nativeRoot, gameDir));
+        assertTrue(restoreMissingRtxConf(nativeRoot, gameDir));
         assertEquals("rtx.showUICursor = false", Files.readString(gameDir.resolve("rtx.conf")));
     }
 
@@ -619,7 +669,7 @@ class DirectoryRuntimePayloadTest {
         Files.writeString(nativeRoot.resolve("rtx.conf"), "shipped");
         Files.writeString(gameDir.resolve("rtx.conf"), "hand tuned");
 
-        assertFalse(DirectoryRuntimePayload.restoreMissingRtxConf(nativeRoot, gameDir));
+        assertFalse(restoreMissingRtxConf(nativeRoot, gameDir));
         assertEquals("hand tuned", Files.readString(gameDir.resolve("rtx.conf")));
     }
 
@@ -628,7 +678,40 @@ class DirectoryRuntimePayloadTest {
         // Development runs load classes without a bundled native/ root.
         Path gameDir = Files.createDirectories(tmp.resolve("game"));
 
-        assertFalse(DirectoryRuntimePayload.restoreMissingRtxConf(tmp.resolve("absent-native"), gameDir));
+        assertFalse(restoreMissingRtxConf(tmp.resolve("absent-native"), gameDir));
         assertFalse(Files.exists(gameDir.resolve("rtx.conf")));
+    }
+
+    @Test
+    void anInterruptedRtxConfRestoreLeavesNoConfForLaterLaunchesToKeep(@TempDir Path tmp) throws IOException {
+        // Restoring happens only while rtx.conf is missing, so a truncated
+        // one would stay until the next version change replaced it.
+        Path nativeRoot = Files.createDirectories(tmp.resolve("native"));
+        Path gameDir = Files.createDirectories(tmp.resolve("game"));
+        Files.writeString(nativeRoot.resolve("rtx.conf"), "rtx.showUICursor = false");
+
+        IOException failure = assertThrows(IOException.class, () -> DirectoryRuntimePayload.restoreMissingRtxConf(
+                nativeRoot, gameDir, DirectoryRuntimePayloadTest::openFailingPartway, millis -> { },
+                DirectoryRuntimePayload.Reporter.NONE));
+
+        assertEquals(READ_FAILURE, failure.getMessage());
+        assertEquals(List.of(), fileNames(gameDir));
+
+        assertTrue(restoreMissingRtxConf(nativeRoot, gameDir));
+        assertEquals("rtx.showUICursor = false", Files.readString(gameDir.resolve("rtx.conf")));
+        assertEquals(List.of("rtx.conf"), fileNames(gameDir));
+    }
+
+    private static boolean restoreMissingRtxConf(Path nativeRoot, Path gameDir) throws IOException {
+        return DirectoryRuntimePayload.restoreMissingRtxConf(
+                nativeRoot, gameDir, Files::newInputStream, millis -> { }, DirectoryRuntimePayload.Reporter.NONE);
+    }
+
+    private static void closeUnchecked(InputStream stream) {
+        try {
+            stream.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }
