@@ -493,7 +493,7 @@ function New-LoaderCatalog {
             throw "project-state.json loaders '$($installedJars[$installedJar.ToLowerInvariant()])' and '$id' for Minecraft $VersionId declare the same installedJar '$installedJar'."
         }
         $installedJars[$installedJar.ToLowerInvariant()] = $id
-        foreach ($objectField in @('developmentArtifact', 'gradle', 'prism', 'loader')) {
+        foreach ($objectField in @('developmentArtifact', 'packagedArtifact', 'gradle', 'prism', 'loader')) {
             if (-not $declaration.PSObject.Properties[$objectField] -or
                 $declaration.$objectField -isnot [pscustomobject]) {
                 throw "project-state.json field '$loaderPath.$objectField' must be an object."
@@ -502,6 +502,9 @@ function New-LoaderCatalog {
         foreach ($field in @('directory', 'pattern')) {
             if ([string]::IsNullOrWhiteSpace([string]$declaration.developmentArtifact.$field)) {
                 throw "project-state.json field '$loaderPath.developmentArtifact.$field' must be a non-empty string."
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$declaration.packagedArtifact.$field)) {
+                throw "project-state.json field '$loaderPath.packagedArtifact.$field' must be a non-empty string."
             }
         }
         foreach ($field in @('build', 'test', 'package')) {
@@ -549,6 +552,7 @@ function New-LoaderCatalog {
         $entry.Module = [string]$declaration.module
         $entry.DevelopmentArtifactDirectory = [string]$declaration.developmentArtifact.directory
         $entry.DevelopmentArtifactPattern = [string]$declaration.developmentArtifact.pattern
+        $entry.PackagedArtifactPattern = [string]$declaration.packagedArtifact.pattern
         $entry.InstalledJar = $installedJar
         $entry.BuiltInResourcePack = [string]$declaration.builtinResourcePack
         $entry.PrismUid = [string]$declaration.prism.uid
@@ -637,10 +641,19 @@ function Initialize-LoaderCatalog {
         throw "project-state.json schema must be 'multi-version/v1', got '$($manifest.schema)'."
     }
     if ($manifest.mod -isnot [pscustomobject] -or
+        [string]::IsNullOrWhiteSpace([string]$manifest.mod.id) -or
         [string]::IsNullOrWhiteSpace([string]$manifest.mod.version)) {
-        throw "project-state.json field 'mod.version' must be a non-empty string."
+        throw "project-state.json fields 'mod.id' and 'mod.version' must be non-empty strings."
     }
+    $script:MOD_ID = [string]$manifest.mod.id
     $script:APP_VERSION = [string]$manifest.mod.version
+    $architectures = @($manifest.architectures)
+    if ($architectures.Count -eq 0 -or
+        @($architectures | Select-Object -Unique).Count -ne $architectures.Count -or
+        @($architectures | Where-Object { $_ -notin @('win64', 'arm64') }).Count -ne 0) {
+        throw "project-state.json architectures must contain unique win64/arm64 values."
+    }
+    $script:ARCHITECTURES = $architectures
     if (-not $manifest.PSObject.Properties['versions'] -or
         $manifest.versions -isnot [pscustomobject] -or
         $manifest.versions.PSObject.Properties.Count -eq 0) {
@@ -708,6 +721,16 @@ function Get-ModArtifactLoader {
     if (-not $FileName -or $FileName -match '-(sources|dev|javadoc)\.jar$') { return $null }
     foreach ($loader in $script:LOADER_CATALOG.Values) {
         if ($FileName -eq $loader.InstalledJar) { return $loader.DisplayName }
+    }
+    foreach ($loader in $script:LOADER_CATALOG.Values) {
+        $published = [regex]::Escape($loader.PackagedArtifactPattern)
+        $published = $published.Replace([regex]::Escape('{modVersion}'), '.+')
+        $published = $published.Replace([regex]::Escape('{minecraftVersion}'), '.+')
+        $architecturePattern = '(?:' +
+            (($script:ARCHITECTURES | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')'
+        $published = $published.Replace([regex]::Escape('{architecture}'), $architecturePattern)
+        $published = "^${published}$"
+        if ($FileName -match $published) { return $loader.DisplayName }
     }
     # Recognize pre-manifest versioned installs for upgrades and uninstall.
     # Loader-qualified artifacts must be checked before Fabric's historical
@@ -3466,6 +3489,116 @@ function Install-ModFiles {
     # must not turn an upgrade into a destructive failure.
     $newJar = Get-DistModJar -ModLoader $ModLoader
     if (-not $newJar) { throw "No $ModLoader rtx-remix-renderer JAR found in $(Join-Path $script:SCRIPT_DIR $provider.ArtifactDirectory)" }
+    $runtimeArch = if (Test-HostIsArm64) { 'arm64' } else { 'win64' }
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $sourceArchive = [IO.Compression.ZipFile]::OpenRead($newJar)
+    try {
+        $runtimeEntry = "native/remix-sdk-$runtimeArch/d3d9.dll"
+        $isSelfContained = $null -ne $sourceArchive.GetEntry($runtimeEntry)
+        $bundledRuntimeArches = @(
+            $sourceArchive.Entries |
+                ForEach-Object {
+                    if ($_.FullName -match '^native/remix-sdk-([^/]+)/') { $Matches[1] }
+                } |
+                Sort-Object -Unique
+        )
+    } finally {
+        $sourceArchive.Dispose()
+    }
+    if (-not $isSelfContained -and $bundledRuntimeArches.Count -ne 0) {
+        throw "The selected $ModLoader JAR contains a runtime for $($bundledRuntimeArches -join ', '), but this host requires $runtimeArch."
+    }
+    if (-not $isSelfContained) {
+        $runtimeRoot = Join-Path $script:SCRIPT_DIR 'runtime'
+        $selectedSdk = Join-Path $runtimeRoot "native\remix-sdk-$runtimeArch"
+        if (-not (Test-Path -LiteralPath (Join-Path $selectedSdk 'd3d9.dll') -PathType Leaf)) {
+            throw "The installer runtime is missing native/remix-sdk-$runtimeArch/d3d9.dll."
+        }
+        $assembledJar = New-SessionTempPath "$($provider.Id)-$runtimeArch.jar"
+        $outputStream = [IO.File]::Open(
+            $assembledJar,
+            [IO.FileMode]::Create,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::None)
+        try {
+            $outputArchive = [IO.Compression.ZipArchive]::new(
+                $outputStream,
+                [IO.Compression.ZipArchiveMode]::Create,
+                $false)
+            try {
+                $names = @{}
+                $thinArchive = [IO.Compression.ZipFile]::OpenRead($newJar)
+                try {
+                    foreach ($entry in $thinArchive.Entries) {
+                        if (-not $entry.Name) { continue }
+                        if ($names.ContainsKey($entry.FullName)) {
+                            throw "The $ModLoader component contains duplicate JAR entry '$($entry.FullName)'."
+                        }
+                        $names[$entry.FullName] = $true
+                        $targetEntry = $outputArchive.CreateEntry(
+                            $entry.FullName,
+                            [IO.Compression.CompressionLevel]::Optimal)
+                        $sourceStream = $entry.Open()
+                        $output = $targetEntry.Open()
+                        try { $sourceStream.CopyTo($output) } finally {
+                            $output.Dispose()
+                            $sourceStream.Dispose()
+                        }
+                    }
+                } finally {
+                    $thinArchive.Dispose()
+                }
+
+                $runtimeFiles = @(
+                    Get-ChildItem -LiteralPath (Join-Path $runtimeRoot 'native') -File -Recurse |
+                        Where-Object {
+                            $relative = $_.FullName.Substring($runtimeRoot.Length + 1).Replace('\', '/')
+                            -not $relative.StartsWith('native/remix-sdk-') -or
+                                $relative.StartsWith("native/remix-sdk-$runtimeArch/")
+                        }
+                    Get-ChildItem -LiteralPath (Join-Path $runtimeRoot 'packaging\licenses') -File -Recurse
+                )
+                foreach ($file in $runtimeFiles) {
+                    $entryName = $file.FullName.Substring($runtimeRoot.Length + 1).Replace('\', '/')
+                    if ($names.ContainsKey($entryName)) {
+                        throw "Installer component collision at JAR entry '$entryName'."
+                    }
+                    $names[$entryName] = $true
+                    $targetEntry = $outputArchive.CreateEntry(
+                        $entryName,
+                        [IO.Compression.CompressionLevel]::Optimal)
+                    $sourceStream = [IO.File]::OpenRead($file.FullName)
+                    $output = $targetEntry.Open()
+                    try { $sourceStream.CopyTo($output) } finally {
+                        $output.Dispose()
+                        $sourceStream.Dispose()
+                    }
+                }
+            } finally {
+                $outputArchive.Dispose()
+            }
+        } finally {
+            $outputStream.Dispose()
+        }
+        $assembledArchive = [IO.Compression.ZipFile]::OpenRead($assembledJar)
+        try {
+            foreach ($required in @(
+                'META-INF/MANIFEST.MF',
+                "native/remix-sdk-$runtimeArch/d3d9.dll",
+                "native/remix-sdk-$runtimeArch/remixbridge.dll",
+                'native/rtx.conf',
+                'rtx-remix-shipped-payload.sha256'
+            )) {
+                if ($null -eq $assembledArchive.GetEntry($required)) {
+                    throw "Assembled $ModLoader JAR is missing '$required'."
+                }
+            }
+        } finally {
+            $assembledArchive.Dispose()
+        }
+        $newJar = $assembledJar
+    }
 
     # Stage beside the target. Keep every working old JAR until the new JAR and
     # loader-specific resource-pack migration both succeed.

@@ -1934,7 +1934,7 @@ def benchmark_run_plan(args) -> dict[str, Any]:
     mod_loader = tools_config.mod_loader(config)
     registry = loader_registry.load_registry()
     loader = registry.get(mod_loader)
-    build_task = loader.build_task if ci else loader.package_task
+    build_task = loader.package_task if sdk_variant == "release" else loader.build_task
     resource_pack_files = resolve_resource_pack_files(config, selection)
     screenshots = _configured_screenshots(config)
     return {
@@ -3128,10 +3128,16 @@ def started_client(request: client.LaunchRequest) -> Iterator[client.GameProcess
             print(f"WARNING: the game client did not exit within {CLIENT_EXIT_WAIT_SECONDS}s.")
 
 
-def run_gradle_build(arch: str, ci: bool, mod_loader: str | None = None) -> None:
+def run_gradle_build(
+    arch: str,
+    ci: bool,
+    mod_loader: str | None = None,
+    *,
+    packaged: bool = True,
+) -> None:
     registry = loader_registry.load_registry()
     loader = registry.get(mod_loader or registry.default_id)
-    task = loader.build_task if ci else loader.package_task
+    task = loader.package_task if packaged else loader.build_task
     timeout_seconds = 900 if ci else 1200
     project = util.PROJECT_DIR
     args = [
@@ -4656,9 +4662,17 @@ def run_benchmark(args) -> Path | None:
     write_sdk_version(sdk)
 
     if not args.no_build:
-        run_gradle_build(arch, ci=args.ci, mod_loader=tools_config.mod_loader(config))
+        run_gradle_build(
+            arch,
+            ci=args.ci,
+            mod_loader=tools_config.mod_loader(config),
+            packaged=args.sdk_variant == "release",
+        )
     # The jar is built, by the step above or by the caller of --no-build; this installs it into the game directory.
-    client.active().prepare(arch, build=False)
+    if args.sdk_variant == "release":
+        client.active().prepare_packaged(arch)
+    else:
+        client.active().prepare(arch, build=False)
 
     run_failures: list[dict[str, object]] = []
     post_run_failures: list[dict[str, object]] = []

@@ -36,9 +36,9 @@ sourceSets.each {
 }
 
 def forgeVersion = loaderState.loader.version
-def isSingleArchJar = archProperty != null
+def isNarrowedArchBuild = archProperty != null
 logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
-        (isSingleArchJar ? ' (single-arch JAR mode)' : ' (fat JAR)'))
+        (isNarrowedArchBuild ? ' (selected architecture)' : ' (artifact matrix)'))
 
 minecraft {
     mappings channel: 'official', version: minecraftVersion
@@ -133,69 +133,71 @@ tasks.named('jarJar') {
 
 verifyPackageJarTask.configure {
     doLast {
-        File archive = packageJarArchive.get().asFile
+        packageJarArchives.each { packageArch, packageArchive ->
+            File archive = packageArchive.get().asFile
 
-        // Verify the artifact that users actually launch, not only source compilation.
-        // This catches ForgeGradle remapping/refmap and JarJar packaging regressions
-        // before a live client has to discover them one mixin at a time.
-        def zip = new java.util.zip.ZipFile(archive)
-        try {
-            def entries = zip.entries().toList()*.name
-            if (!entries.contains('META-INF/jarjar/metadata.json')) {
-                throw new GradleException('Forge package is missing JarJar metadata')
-            }
-            if (!entries.any {
-                it.startsWith('META-INF/jarjar/mixinextras-forge-') && it.endsWith('.jar')
-            }) {
-                throw new GradleException('Forge package is missing the nested MixinExtras runtime')
-            }
-            [
-                'META-INF/LICENSE',
-                'META-INF/NOTICE',
-                'META-INF/THIRD_PARTY_NOTICES.md'
-            ].each { name ->
-                if (!entries.contains(name)) {
-                    throw new GradleException("Forge package is missing ${name}")
+            // Verify the artifact that users actually launch, not only source compilation.
+            // This catches ForgeGradle remapping/refmap and JarJar packaging regressions
+            // before a live client has to discover them one mixin at a time.
+            def zip = new java.util.zip.ZipFile(archive)
+            try {
+                def entries = zip.entries().toList()*.name
+                if (!entries.contains('META-INF/jarjar/metadata.json')) {
+                    throw new GradleException('Forge package is missing JarJar metadata')
                 }
-            }
+                if (!entries.any {
+                    it.startsWith('META-INF/jarjar/mixinextras-forge-') && it.endsWith('.jar')
+                }) {
+                    throw new GradleException('Forge package is missing the nested MixinExtras runtime')
+                }
+                [
+                    'META-INF/LICENSE',
+                    'META-INF/NOTICE',
+                    'META-INF/THIRD_PARTY_NOTICES.md'
+                ].each { name ->
+                    if (!entries.contains(name)) {
+                        throw new GradleException("Forge package is missing ${name}")
+                    }
+                }
 
-            [
-                'rtx-remix-renderer.mixins.json',
-                'rtx-remix-renderer.vanilla-section.mixins.json',
-                'rtx-remix-renderer.forge.mixins.json'
-            ].each { name ->
-                def entry = zip.getEntry(name)
-                if (entry == null) {
-                    throw new GradleException("Forge package is missing ${name}")
+                [
+                    'rtx-remix-renderer.mixins.json',
+                    'rtx-remix-renderer.vanilla-section.mixins.json',
+                    'rtx-remix-renderer.forge.mixins.json'
+                ].each { name ->
+                    def entry = zip.getEntry(name)
+                    if (entry == null) {
+                        throw new GradleException("Forge package is missing ${name}")
+                    }
+                    String config = zip.getInputStream(entry).getText('UTF-8')
+                    if (config.contains('"refmap"')) {
+                        throw new GradleException("${name} must not select ForgeGradle's SRG refmap")
+                    }
+                    if (config.contains('"WindowMixin"')) {
+                        throw new GradleException("${name} must not apply WindowMixin under Forge's early display")
+                    }
                 }
-                String config = zip.getInputStream(entry).getText('UTF-8')
-                if (config.contains('"refmap"')) {
-                    throw new GradleException("${name} must not select ForgeGradle's SRG refmap")
-                }
-                if (config.contains('"WindowMixin"')) {
-                    throw new GradleException("${name} must not apply WindowMixin under Forge's early display")
-                }
-            }
 
-            [
-                'com/nvidia/rtxremix/minecraft/mixin/MinecraftClientMixin.class': 'runTick',
-                'com/nvidia/rtxremix/minecraft/mixin/BiomeMixin.class': 'specialEffects',
-                'com/nvidia/rtxremix/minecraft/mixin/TorchBlockAccessor.class': 'flameParticle'
-            ].each { className, mojmapSelector ->
-                def entry = zip.getEntry(className)
-                if (entry == null) {
-                    throw new GradleException("Forge package is missing ${className}")
+                [
+                    'com/nvidia/rtxremix/minecraft/mixin/MinecraftClientMixin.class': 'runTick',
+                    'com/nvidia/rtxremix/minecraft/mixin/BiomeMixin.class': 'specialEffects',
+                    'com/nvidia/rtxremix/minecraft/mixin/TorchBlockAccessor.class': 'flameParticle'
+                ].each { className, mojmapSelector ->
+                    def entry = zip.getEntry(className)
+                    if (entry == null) {
+                        throw new GradleException("Forge package is missing ${className}")
+                    }
+                    String constantPool = new String(zip.getInputStream(entry).bytes,
+                            java.nio.charset.StandardCharsets.ISO_8859_1)
+                    if (!constantPool.contains(mojmapSelector)) {
+                        throw new GradleException(
+                                "${className} lost Mojmap selector '${mojmapSelector}'; " +
+                                'the production artifact appears reobfuscated')
+                    }
                 }
-                String constantPool = new String(zip.getInputStream(entry).bytes,
-                        java.nio.charset.StandardCharsets.ISO_8859_1)
-                if (!constantPool.contains(mojmapSelector)) {
-                    throw new GradleException(
-                            "${className} lost Mojmap selector '${mojmapSelector}'; " +
-                            'the production artifact appears reobfuscated')
-                }
+            } finally {
+                zip.close()
             }
-        } finally {
-            zip.close()
         }
     }
 }

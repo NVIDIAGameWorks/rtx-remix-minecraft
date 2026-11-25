@@ -206,8 +206,8 @@ public final class DirectoryRuntimePayload {
             reporter.error(
                     "This archive contains SDK binaries for " + jarArchDirs + " but the current "
                     + "machine requires " + archDir + ". This is a single-platform archive "
-                    + "built for a different architecture. Use a dual-platform "
-                    + "or matching single-platform archive instead.");
+                    + "built for a different architecture. Install the matching "
+                    + archDir + " archive instead.");
             return;  // No marker written; mod init will fail loudly later.
         }
 

@@ -329,6 +329,67 @@ class PrismLauncher:
         if loader.provider != "fabric":
             self._remove_fabric_api()
 
+    def prepare_packaged(self, arch: str) -> None:
+        """Install a packaged JAR without pre-staging its embedded runtime."""
+        config = self.config
+        layout = self._layout(self._executable(config))
+        project = util.PROJECT_DIR
+        mod_loader = _mod_loader(config)
+        registry = loader_registry.load_registry()
+        loader = registry.get(mod_loader)
+        if loader.prepare_tasks:
+            util.run(
+                [
+                    str(project / "gradlew.bat"),
+                    *loader.prepare_tasks,
+                    *registry.gradle_arguments(loader.id),
+                    f"-Parch={arch}",
+                    "--console=plain",
+                    "--quiet",
+                ],
+                cwd=project,
+                env=runner.gradle_env(),
+            )
+        if install.packaged_mod_jar(project, mod_loader, arch) is None:
+            raise LaunchBlocked(f"No packaged {loader.display_name} {arch} mod JAR exists. Rerun without --no-build.")
+        self._runtime_probe = runtime_compat.warn_if_incompatible(project, arch)
+        if (
+            self._runtime_probe is not None
+            and self._runtime_probe.incompatible
+            and not self.confirm_incompatible_runtime()
+        ):
+            raise LaunchBlocked("Launch cancelled: stage a Remix runtime compatible with this checkout and try again.")
+        if loader.provider == "fabric":
+            self._install_fabric_api(
+                loader.project_path(project, loader.module) / "build" / "dev" / "fabric-api.jar",
+                loader,
+            )
+        if (
+            install.install_packaged_build(
+                project,
+                game_dir=self.game_dir,
+                arch=arch,
+                mod_loader=mod_loader,
+            )
+            != 0
+        ):
+            raise LaunchBlocked(f"Could not install the packaged build into {self.game_dir}; see the errors above.")
+        prism.write_instance(
+            layout.data_dir,
+            instances_dir=layout.instances_dir,
+            instance_id=layout.instance_id,
+            instance_name=layout.instance_name,
+            java=self._java(arch),
+            jvm_args=[
+                *prism.recommended_jvm_args(),
+                *_configured_jvm_args(config),
+            ],
+            mod_loader=mod_loader,
+            window_size=_window_size(config),
+        )
+        if loader.provider != "fabric":
+            self._remove_fabric_api()
+
     def start(self, request: LaunchRequest) -> GameProcess:
         config = self.config
         exe = self._executable(config)

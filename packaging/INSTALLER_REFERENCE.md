@@ -47,6 +47,12 @@ to switch loaders. The loader choice selects the packaged JAR, launcher
 component or profile, built-in resource-pack ordering, and whether Fabric API
 is installed. `-MinecraftVersion` and `-ModLoader` name both parts explicitly.
 
+The offline archive stores each loader as a thin component and stores the
+win64 and ARM64 runtimes once under `runtime\`. Before changing the game
+directory, the installer combines the selected loader with the host
+architecture, validates the required runtime entries, and stages the resulting
+self-contained JAR through the same rollback path used by older bundles.
+
 The available choices come from the `multi-version/v1`
 `project-state.json`, staged beside the installer in a release bundle (or at
 the repository root for a source-tree run). Its `defaultMinecraftVersion` and

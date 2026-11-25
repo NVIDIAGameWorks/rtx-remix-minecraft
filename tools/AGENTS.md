@@ -134,10 +134,10 @@ Gradle fetches a missing runtime automatically but never replaces an existing
 directory or local override. After changing `packman/remix-sdk.packman.xml`,
 use `sdk packman` to move an existing junction to the new pin.
 
-The root build reads the sentinel, and every loader's dual-architecture
-`package` rejects one architecture as a local copy and the other as
-Packman-managed. Stage both the same way, or build a single architecture with
-`-Parch=`.
+The root build reads the sentinel. Every loader's `package` creates one
+self-contained JAR per selected architecture; `-Parch=` narrows local
+packaging to one. The universal installer stores each architecture once and
+assembles the selected loader at install time.
 
 ## Shared Configuration And Assets
 

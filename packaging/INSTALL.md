@@ -72,21 +72,22 @@ breaks, report it (see below); that is how it gets fixed.
 | `project-state.json` | The release's loader, version, and artifact catalog, consumed by the installer |
 | `README.md` | This file |
 | `INSTALLER_REFERENCE.md` | The installer modes, every flag, headless and CI use, and what the installer verifies before it downloads anything. |
-| `mods\fabric\` | The verified, self-contained Fabric JAR |
-| `mods\forge\` | The verified, self-contained Forge JAR |
-| `mods\neoforge\` | The verified, self-contained NeoForge JAR |
+| `mods\fabric\` | The verified Fabric loader component |
+| `mods\forge\` | The verified Forge loader component |
+| `mods\neoforge\` | The verified NeoForge loader component |
+| `runtime\` | Shared win64 and ARM64 runtime components; the installer embeds only the host architecture in the selected loader JAR |
 | `resourcepacks\` | RTX Remix Materials, the texture pack, one ZIP. The installer copies it as it is, and Minecraft loads it without unpacking |
 | `saves\` | RTX Remix Showcase World, one ZIP. The installer unpacks it into the game's `saves\NVIDIA RTX Demo\` |
 | `migrate_resource_packs.ps1` | Migrates legacy baseline packs and resource-pack ordering |
 | `LICENSE`, `NOTICE` | The project's Apache License 2.0 and its attribution notices |
 | `THIRD_PARTY_NOTICES.md`, `packaging\licenses\` | The third-party components the mod JAR carries, chiefly the RTX Remix runtime, and their license texts |
 
-The packaged mod file name ends in the version, a build timestamp, and a short
-commit hash, which together identify the exact build. The installer copies it
-to the stable loader-specific name declared by `project-state.json`; `/rtx
-status` identifies the running build for bug reports. A packaged file name
-ending in `-win64` or `-arm64` carries one architecture; any other name carries
-both, and the matching runtime is unpacked on first launch.
+Standalone mod files use
+`rtx-remix-renderer-<mod-version>-mc<minecraft-version>-<loader>-<architecture>.jar`.
+The installer assembles the same single-architecture contents from the loader
+and runtime components, then puts that file in the launcher's `mods` folder
+under the stable loader-specific name declared by `project-state.json`.
+`/rtx status` identifies the running build for bug reports.
 
 The installer reads `project-state.json` beside itself in a release bundle (or
 at the repository root when run from `packaging\`). It requires schema

@@ -76,12 +76,13 @@ tools\rtx.bat launch --minecraft-version 1.21.1 --loader neoforge
 ```
 
 CI validates the checked-out manifest, derives its target matrix, then builds,
-tests, and packages every supported Minecraft-version/loader pair.
+tests, and packages every supported Minecraft-version/loader/architecture
+combination.
 
-Published loader JARs include the loader ID, Minecraft target, and mod version;
+Published loader JARs include the mod version, Minecraft target, loader ID, and architecture;
 the installer bundle includes the Minecraft target and mod version. Release
-staging contains one JAR per declared loader plus the target's other release
-content, so asset count is derived rather than fixed.
+staging contains one JAR per declared loader and architecture plus the target's
+other release content, so asset count is derived rather than fixed.
 
 ## Version Folders
 

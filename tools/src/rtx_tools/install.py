@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import zipfile
 from pathlib import Path
 
 from . import loader_registry
@@ -25,6 +26,85 @@ def development_mod_jar(project_dir: Path, mod_loader: str) -> Path | None:
     pattern = loader.development_jar_pattern
     jars = [jar for jar in directory.glob(pattern) if jar.is_file() and "-sources" not in jar.name.lower()]
     return max(jars, key=lambda jar: jar.stat().st_mtime_ns, default=None)
+
+
+def packaged_mod_jar(project_dir: Path, mod_loader: str, arch: str) -> Path | None:
+    """The declared self-contained JAR for one loader and architecture."""
+    registry_dir = project_dir if (project_dir / loader_registry.MANIFEST_NAME).is_file() else None
+    registry = loader_registry.load_registry(registry_dir)
+    loader = registry.get(mod_loader)
+    normalized_arch = arch.lower()
+    if normalized_arch not in registry.architectures:
+        return None
+    name = loader.packaged_jar_pattern.format(
+        modVersion=registry.mod_version,
+        minecraftVersion=registry.minecraft_version,
+        architecture=normalized_arch,
+    )
+    candidate = loader.project_path(project_dir, loader.packaged_jar_dir) / name
+    return candidate if candidate.is_file() else None
+
+
+def _install_mod_jar(mod_jar: Path, game_dir: Path, installed_name: str) -> Path:
+    mods = game_dir / "mods"
+    mods.mkdir(parents=True, exist_ok=True)
+    target = mods / installed_name
+    staged = target.with_name(target.name + ".new")
+    staged.unlink(missing_ok=True)
+    shutil.copy2(mod_jar, staged)
+    previous = [jar for jar in mods.glob("rtx-remix-renderer*.jar") if jar.is_file()]
+    rollbacks: list[tuple[Path, Path]] = []
+    installed = False
+    try:
+        for index, jar in enumerate(previous):
+            rollback = jar.with_name(f"{jar.name}.rollback-{index}")
+            rollback.unlink(missing_ok=True)
+            jar.replace(rollback)
+            rollbacks.append((jar, rollback))
+        staged.replace(target)
+        installed = True
+    except OSError:
+        if installed:
+            target.unlink(missing_ok=True)
+        for original, rollback in reversed(rollbacks):
+            if rollback.exists():
+                rollback.replace(original)
+        staged.unlink(missing_ok=True)
+        raise
+    for _, rollback in rollbacks:
+        rollback.unlink(missing_ok=True)
+    return target
+
+
+def install_packaged_build(
+    project_dir: Path,
+    *,
+    game_dir: Path,
+    arch: str,
+    mod_loader: str,
+) -> int:
+    """Install a self-contained release JAR and force its runtime extraction on launch."""
+    registry_dir = project_dir if (project_dir / loader_registry.MANIFEST_NAME).is_file() else None
+    registry = loader_registry.load_registry(registry_dir)
+    loader = registry.get(mod_loader)
+    mod_jar = packaged_mod_jar(project_dir, mod_loader, arch)
+    if mod_jar is None:
+        print(
+            f"ERROR: no packaged {loader.display_name} {arch} JAR matching "
+            f"{loader.packaged_jar_dir}/{loader.packaged_jar_pattern}."
+        )
+        return 1
+    required_runtime = f"native/remix-sdk-{arch}/d3d9.dll"
+    with zipfile.ZipFile(mod_jar) as archive:
+        names = set(archive.namelist())
+    if required_runtime not in names or "native/rtx.conf" not in names:
+        print(f'ERROR: packaged JAR "{mod_jar}" is not self-contained for {arch}.')
+        return 1
+    _install_mod_jar(mod_jar, game_dir, loader.installed_jar)
+    (game_dir / ".rtx-remix-version").unlink(missing_ok=True)
+    print(f"Packaged mod jar: {mod_jar}")
+    print(f"Installed to {game_dir}")
+    return 0
 
 
 def runtime_source(project_dir: Path, arch: str) -> Path:
@@ -126,33 +206,7 @@ def install_development_build(
         return 1
 
     mods = game_dir / "mods"
-    mods.mkdir(parents=True, exist_ok=True)
-    installed_name = loader.installed_jar
-    target = mods / installed_name
-    staged = target.with_name(target.name + ".new")
-    staged.unlink(missing_ok=True)
-    shutil.copy2(mod_jar, staged)
-    previous = [jar for jar in mods.glob("rtx-remix-renderer*.jar") if jar.is_file()]
-    rollbacks: list[tuple[Path, Path]] = []
-    installed = False
-    try:
-        for index, jar in enumerate(previous):
-            rollback = jar.with_name(f"{jar.name}.rollback-{index}")
-            rollback.unlink(missing_ok=True)
-            jar.replace(rollback)
-            rollbacks.append((jar, rollback))
-        staged.replace(target)
-        installed = True
-    except OSError:
-        if installed:
-            target.unlink(missing_ok=True)
-        for original, rollback in reversed(rollbacks):
-            if rollback.exists():
-                rollback.replace(original)
-        staged.unlink(missing_ok=True)
-        raise
-    for _, rollback in rollbacks:
-        rollback.unlink(missing_ok=True)
+    _install_mod_jar(mod_jar, game_dir, loader.installed_jar)
     if loader.provider == "fabric" and not any(mods.glob("fabric-api-*.jar")):
         print(f"WARNING: no fabric-api jar in {mods}.")
         requirement = loader.api_version_range or loader.api_version or "(version declared in project-state.json)"

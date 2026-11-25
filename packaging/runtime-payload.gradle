@@ -5,7 +5,7 @@
 // Each declared module remains responsible for producing its loader-specific
 // base JAR; this file owns the native inventory and its verification.
 
-ext.supportedRuntimeArches = ['win64', 'arm64'].asImmutable()
+ext.supportedRuntimeArches = gradle.ext.targetState.architectures.collect { it.toString() }.asImmutable()
 ext.runtimeTextureFiles = [
         'overcast_thunderstorm_bc6u.dds'
 ].asImmutable()
@@ -15,13 +15,12 @@ ext.resolveRuntimeArches = { Object archValue ->
     if (arch != null && !supportedRuntimeArches.contains(arch)) {
         throw new GradleException(
                 "Invalid -Parch value: '${arch}'. Use win64 or arm64 " +
-                '(or omit for dual-arch fat JAR).')
+                '(or omit to build every architecture artifact).')
     }
     arch == null ? supportedRuntimeArches : [arch]
 }
 
-ext.runtimePackageVersion = { File repoRoot, String baseVersion, Object archValue ->
-    def arch = archValue == null ? null : archValue.toString()
+ext.runtimePackageVersion = { File repoRoot, String baseVersion ->
     def timestamp = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
             .format(java.time.format.DateTimeFormatter.ofPattern('yyyyMMddHHmm'))
     def gitShortHash = providers.exec {
@@ -33,15 +32,22 @@ ext.runtimePackageVersion = { File repoRoot, String baseVersion, Object archValu
         workingDir repoRoot
         commandLine 'git', 'status', '--porcelain', '--untracked-files=no'
     }.standardOutput.asText.get().trim().isEmpty() ? '' : '-dirty'
-    def archSuffix = arch == null ? '' : "-${arch}"
-    "${baseVersion}-${timestamp}-${gitShortHash}${gitDirty}${archSuffix}"
+    "${baseVersion}-${timestamp}-${gitShortHash}${gitDirty}"
+}
+
+ext.runtimeArtifactFileName = {
+        String pattern, String modVersion, String minecraftVersion, String arch ->
+    pattern
+            .replace('{modVersion}', modVersion)
+            .replace('{minecraftVersion}', minecraftVersion)
+            .replace('{architecture}', arch)
 }
 
 ext.runtimeSdkExclusions = { details ->
     def name = details.name
     name == 'NvRemixBridge.exe'
-            || name == 'NvRemixBridge.pdb'
-            || (name.endsWith('.pdb') && name != 'remixbridge.pdb')
+            || name == '.local-sdk-source'
+            || name.toLowerCase(java.util.Locale.ROOT).endsWith('.pdb')
 }
 
 ext.runtimePayloadSpec = { File repoRoot, List<String> arches ->
@@ -55,7 +61,7 @@ ext.runtimePayloadSpec = { File repoRoot, List<String> arches ->
             }
             from(new File(repoRoot, "build/native/${arch}")) {
                 into "native/remix-sdk-${arch}"
-                include 'remixbridge.dll', 'remixbridge.pdb'
+                include 'remixbridge.dll'
             }
         }
         from(new File(repoRoot, 'packaging/rtx.conf')) {
@@ -83,19 +89,17 @@ ext.configureReproducibleRuntimeArchive = { archiveTask ->
 ext.checkRuntimeSourceHomogeneity = { File repoRoot, List<String> arches ->
     if (arches.size() < 2) return
 
-    def sources = [:]
-    arches.each { arch ->
+    def sources = arches.collectEntries { arch ->
         def sentinel = new File(repoRoot, "remix-runtime/${arch}/.local-sdk-source")
-        sources[arch] = sentinel.exists()
+        [(arch): sentinel.exists()
                 ? [type: 'local', detail: sentinel.text.trim()]
-                : [type: 'managed', detail: '']
+                : [type: 'managed', detail: '']]
     }
     if (sources.values().collect { it.type }.unique().size() == 1) return
 
     def localArches = sources.findAll { key, value -> value.type == 'local' }.keySet()
     def managedArches = sources.findAll { key, value -> value.type == 'managed' }.keySet()
-    def message = new StringBuilder()
-    message.append('\nERROR: fat JAR requires both platforms from the same source.\n')
+    def message = new StringBuilder('\nERROR: installer bundle requires every architecture from the same source.\n')
     sources.each { arch, info ->
         if (info.type == 'local') {
             def source = info.detail.readLines().find { it.startsWith('source:') } ?: 'source: (unknown)'
@@ -106,18 +110,77 @@ ext.checkRuntimeSourceHomogeneity = { File repoRoot, List<String> arches ->
         }
     }
     message.append('\nTo proceed, choose one:\n')
-    message.append('  (a) Build a single-platform JAR from an architecture you have staged:\n')
-    localArches.each { message.append("        .\\gradlew.bat package -Parch=${it}\n") }
-    message.append('  (b) Stage the remaining platform(s) the same way, then build again:\n')
+    message.append('  (a) Stage the remaining platform(s) from local builds:\n')
     managedArches.each {
         message.append("        .\\tools\\rtx.bat sdk local --arch ${it} --path <runtime dir>\n")
     }
-    message.append('      docs/GETTING_STARTED.md#get-a-runtime says where to get one.\n')
-    message.append("  (c) Restore the managed source for ${localArches.join(', ')}:\n")
+    message.append('  (b) Restore the managed source for the locally staged platform(s):\n')
     localArches.each {
         message.append("        .\\tools\\rtx.bat sdk packman --arch ${it}\n")
     }
     throw new GradleException(message.toString())
+}
+
+ext.verifyRuntimePayloadDirectory = {
+        File runtimeRoot, File repoRoot, List<String> arches ->
+    def entryNames = fileTree(runtimeRoot).files.collect {
+        runtimeRoot.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+    }
+    def required = ['native/rtx.conf']
+    arches.each { arch ->
+        required.add("native/remix-sdk-${arch}/d3d9.dll")
+        required.add("native/remix-sdk-${arch}/remixbridge.dll")
+    }
+    runtimeTextureFiles.each { required.add("native/textures/${it}") }
+    [
+        [new File(repoRoot, 'packaging/rtx-remix'), 'native/rtx-remix/'],
+        [new File(repoRoot, 'packaging/licenses'), 'packaging/licenses/']
+    ].each { source, prefix ->
+        fileTree(source).files.each {
+            required.add(prefix + source.toPath().relativize(it.toPath()).toString().replace('\\', '/'))
+        }
+    }
+
+    def missing = required.collect { it.toString() }.findAll { !entryNames.contains(it) }
+    if (!missing.isEmpty()) {
+        throw new GradleException(
+                "Installer runtime ${runtimeRoot} is missing required entries: ${missing.join(', ')}")
+    }
+    supportedRuntimeArches.findAll { !arches.contains(it) }.each { arch ->
+        def prefix = "native/remix-sdk-${arch}/"
+        if (entryNames.any { it.startsWith(prefix) }) {
+            throw new GradleException("Installer runtime unexpectedly contains ${prefix}")
+        }
+    }
+    def unexpectedTexture = entryNames.find {
+        it.startsWith('native/textures/')
+                && !runtimeTextureFiles.contains(it.substring('native/textures/'.length()))
+    }
+    if (unexpectedTexture != null) {
+        throw new GradleException(
+                "Installer runtime contains an unexpected runtime texture: ${unexpectedTexture}")
+    }
+    def pdbEntry = entryNames.find {
+        it.toLowerCase(java.util.Locale.ROOT).endsWith('.pdb')
+    }
+    if (pdbEntry != null) {
+        throw new GradleException("Installer runtime contains a PDB symbol file: ${pdbEntry}")
+    }
+    def excludedSdkEntry = entryNames.find {
+        it.startsWith('native/remix-sdk-') && it.endsWith('/NvRemixBridge.exe')
+    }
+    if (excludedSdkEntry != null) {
+        throw new GradleException("Installer runtime contains an excluded SDK file: ${excludedSdkEntry}")
+    }
+    def sourceMarkerEntry = entryNames.find { it.endsWith('/.local-sdk-source') }
+    if (sourceMarkerEntry != null) {
+        throw new GradleException("Installer runtime contains a local SDK source marker: ${sourceMarkerEntry}")
+    }
+    def pythonEntry = ~/(?i)native\/remix-sdk-[^\/]+\/(.*\/)?([^\/]*python[^\/]*\.dll|[^\/]*\.(pyd|pyc)|python\d*(\.\d+)?\/.*)/
+    def pythonOffender = entryNames.find { it ==~ pythonEntry }
+    if (pythonOffender != null) {
+        throw new GradleException("Installer runtime must not contain a Python runtime: ${pythonOffender}")
+    }
 }
 
 ext.verifyRuntimePayloadArchive = {
@@ -134,7 +197,6 @@ ext.verifyRuntimePayloadArchive = {
         arches.each { arch ->
             required.add("native/remix-sdk-${arch}/d3d9.dll")
             required.add("native/remix-sdk-${arch}/remixbridge.dll")
-            required.add("native/remix-sdk-${arch}/remixbridge.pdb")
         }
         runtimeTextureFiles.each { required.add("native/textures/${it}") }
         def payloadEntries = { File dir, String prefix ->
@@ -170,18 +232,29 @@ ext.verifyRuntimePayloadArchive = {
                     "Distributable JAR contains an unexpected runtime texture: ${unexpectedTexture}")
         }
 
+        def pdbEntry = entryNames.find {
+            it.toLowerCase(java.util.Locale.ROOT).endsWith('.pdb')
+        }
+        if (pdbEntry != null) {
+            throw new GradleException(
+                    "Distributable JAR contains a PDB symbol file: ${pdbEntry}")
+        }
+
         def sdkEntry = ~/native\/remix-sdk-[^\/]+\/(?:.*\/)?([^\/]+)/
         def excludedSdkEntry = entryNames.find { name ->
             def match = name =~ sdkEntry
             if (!match.matches()) return false
             def leaf = match.group(1)
             leaf == 'NvRemixBridge.exe'
-                    || leaf == 'NvRemixBridge.pdb'
-                    || (leaf.endsWith('.pdb') && leaf != 'remixbridge.pdb')
         }
         if (excludedSdkEntry != null) {
             throw new GradleException(
                     "Distributable JAR contains an excluded SDK file: ${excludedSdkEntry}")
+        }
+        def sourceMarkerEntry = entryNames.find { it.endsWith('/.local-sdk-source') }
+        if (sourceMarkerEntry != null) {
+            throw new GradleException(
+                    "Distributable JAR contains a local SDK source marker: ${sourceMarkerEntry}")
         }
 
         // The runtime uses OpenUSD without Python support. Plain .py codegen

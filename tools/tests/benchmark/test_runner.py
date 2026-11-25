@@ -3878,8 +3878,8 @@ def test_run_benchmark_installs_the_build_after_gradle_makes_it(
         pass
 
     order = Mock()
-    order.prepare.side_effect = StopAfterPrepare
-    monkeypatch.setattr(fake_launcher, "prepare", order.prepare)
+    order.prepare_packaged.side_effect = StopAfterPrepare
+    monkeypatch.setattr(fake_launcher, "prepare_packaged", order.prepare_packaged)
     monkeypatch.setattr(runner, "run_gradle_build", order.run_gradle_build)
     monkeypatch.setattr(runner, "load_config", Mock(return_value={}))
     for name in ("ensure_no_live_client", "ensure_world_staged", "verify_jvm_matches_arch", "write_sdk_version"):
@@ -3910,13 +3910,13 @@ def test_run_benchmark_installs_the_build_after_gradle_makes_it(
     )
     with pytest.raises(StopAfterPrepare):
         runner.run_benchmark(args)
-    assert [name for name, _, _ in order.mock_calls] == ["run_gradle_build", "prepare"]
-    assert order.prepare.call_args == call("win64", build=False)
+    assert [name for name, _, _ in order.mock_calls] == ["run_gradle_build", "prepare_packaged"]
+    assert order.prepare_packaged.call_args == call("win64")
 
 
 @pytest.mark.parametrize(
     ("mod_loader", "task"),
-    [(loader.id, loader.build_task) for loader in PROJECT_STATE.loaders],
+    [(loader.id, loader.package_task) for loader in PROJECT_STATE.loaders],
 )
 def test_run_gradle_build_targets_selected_loader(
     mod_loader: str, task: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -3933,6 +3933,20 @@ def test_run_gradle_build_targets_selected_loader(
     assert run.call_args.args[0][2:4] == ["-x", PROJECT_STATE.get(mod_loader).test_task]
     assert run.call_args.kwargs["cwd"] == project
     assert "-Parch=arm64" in run.call_args.args[0]
+
+
+@pytest.mark.parametrize("mod_loader", PROJECT_STATE.ids)
+def test_run_gradle_build_keeps_development_runtime_variants_thin(
+    mod_loader: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    project = tmp_path / "checkout"
+    monkeypatch.setattr(util, "PROJECT_DIR", project)
+    run = Mock()
+    monkeypatch.setattr(util, "run", run)
+
+    runner.run_gradle_build("win64", ci=False, mod_loader=mod_loader, packaged=False)
+
+    assert run.call_args.args[0][:2] == [str(project / "gradlew.bat"), PROJECT_STATE.get(mod_loader).build_task]
 
 
 @pytest.mark.parametrize("mod_loader", PROJECT_STATE.ids)

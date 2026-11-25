@@ -33,6 +33,10 @@ def valid_version() -> dict:
                     "directory": "versions/1.21.1/fabric/build/libs",
                     "pattern": "*.jar",
                 },
+                "packagedArtifact": {
+                    "directory": "versions/1.21.1/fabric/build/distributions",
+                    "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-fabric-{architecture}.jar",
+                },
                 "installedJar": "rtx-remix-renderer-fabric.jar",
                 "builtinResourcePack": "fabric",
                 "gradle": {
@@ -62,6 +66,7 @@ def valid_manifest() -> dict:
     return {
         "schema": "multi-version/v1",
         "defaultMinecraftVersion": "1.21.1",
+        "architectures": ["win64", "arm64"],
         "mod": {
             "id": "rtx-remix-renderer",
             "group": "com.nvidia.rtxremix",
@@ -82,6 +87,7 @@ def test_version_catalog_reports_current_checkout_versions(tmp_path):
     second["loaders"]["fabric"]["module"] = "versions/1.20.1/fabric"
     second["loaders"]["fabric"]["projectPath"] = ":versions:1.20.1:fabric"
     second["loaders"]["fabric"]["developmentArtifact"]["directory"] = "versions/1.20.1/fabric/build/libs"
+    second["loaders"]["fabric"]["packagedArtifact"]["directory"] = "versions/1.20.1/fabric/build/distributions"
     second["loaders"]["fabric"]["gradle"] = {
         "build": ":versions:1.20.1:fabric:build",
         "test": ":versions:1.20.1:fabric:test",
@@ -95,6 +101,7 @@ def test_version_catalog_reports_current_checkout_versions(tmp_path):
     assert value["schema"] == "version-catalog-report/v1"
     assert value["catalogSchema"] == "multi-version/v1"
     assert value["defaultMinecraftVersion"] == "1.21.1"
+    assert value["architectures"] == ["win64", "arm64"]
     assert value["mod"] == {
         "id": "rtx-remix-renderer",
         "version": "0.1.1",

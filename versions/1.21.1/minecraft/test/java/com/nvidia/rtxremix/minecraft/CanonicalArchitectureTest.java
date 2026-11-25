@@ -171,9 +171,10 @@ class CanonicalArchitectureTest {
     void releaseTasksStageEveryManifestLoaderWithoutHardcodedLoaderIds() {
         String rootBuild = read(ROOT.resolve("build.gradle"));
         assertTrue(rootBuild.contains(
-                "dependsOn declaredLoaders.collect { \"${it.projectPath}:verifyPackageJar\" }"));
+                "dependsOn declaredLoaders.collect { \"${it.projectPath}:verifyInstallerThinJar\" }"));
         assertTrue(rootBuild.contains("into \"mods/${loader.id}\""));
-        assertTrue(rootBuild.contains("from(loaderArchives[loader.id])"));
+        assertTrue(rootBuild.contains("from(installerThinArchives[loader.id])"));
+        assertTrue(rootBuild.contains("from(loaderArchives[loader.id][arch])"));
         for (LoaderArchitectureContract.Loader loader : MANIFEST.loaders()) {
             assertFalse(rootBuild.contains("into 'mods/" + loader.id() + "'"),
                     "release staging must enumerate the loader manifest");

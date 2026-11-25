@@ -1,6 +1,10 @@
 {
   "schema": "multi-version/v1",
   "defaultMinecraftVersion": "1.21.1",
+  "architectures": [
+    "win64",
+    "arm64"
+  ],
   "mod": {
     "id": "rtx-remix-renderer",
     "group": "com.nvidia.rtxremix",
@@ -29,6 +33,10 @@
           "developmentArtifact": {
             "directory": "versions/1.21.1/fabric/build/libs",
             "pattern": "rtx-remix-renderer-*.jar"
+          },
+          "packagedArtifact": {
+            "directory": "versions/1.21.1/fabric/build/distributions",
+            "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-fabric-{architecture}.jar"
           },
           "installedJar": "rtx-remix-renderer-fabric.jar",
           "builtinResourcePack": "fabric",
@@ -74,6 +82,10 @@
             "directory": "versions/1.21.1/forge/build/libs",
             "pattern": "rtx-remix-renderer-forge-*-all.jar"
           },
+          "packagedArtifact": {
+            "directory": "versions/1.21.1/forge/build/distributions",
+            "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-forge-{architecture}.jar"
+          },
           "installedJar": "rtx-remix-renderer-forge.jar",
           "builtinResourcePack": "mod_resources",
           "gradle": {
@@ -111,6 +123,10 @@
           "developmentArtifact": {
             "directory": "versions/1.21.1/neoforge/build/libs",
             "pattern": "rtx-remix-renderer-neoforge-*.jar"
+          },
+          "packagedArtifact": {
+            "directory": "versions/1.21.1/neoforge/build/distributions",
+            "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-neoforge-{architecture}.jar"
           },
           "installedJar": "rtx-remix-renderer-neoforge.jar",
           "builtinResourcePack": "mod_resources",

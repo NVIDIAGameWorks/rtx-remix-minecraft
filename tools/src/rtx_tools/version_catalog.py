@@ -60,6 +60,7 @@ def report(project_dir: Path) -> dict[str, Any]:
             "displayName": default.mod_display_name,
         },
         "defaultMinecraftVersion": default.default_version,
+        "architectures": list(default.architectures),
         "versions": [_entry(value, version, source=str(path)) for version in default.available_versions],
     }
 
@@ -67,7 +68,8 @@ def report(project_dir: Path) -> dict[str, Any]:
 def print_report(value: dict[str, Any]) -> None:
     print(
         f"Version catalog: {value['mod']['displayName']} {value['mod']['version']} "
-        f"(default Minecraft {value['defaultMinecraftVersion']})"
+        f"(default Minecraft {value['defaultMinecraftVersion']}; "
+        f"architectures {', '.join(value['architectures'])})"
     )
     for entry in value["versions"]:
         loader_pins = ", ".join(f"{loader['id']} {loader['version']}" for loader in entry["loaders"])

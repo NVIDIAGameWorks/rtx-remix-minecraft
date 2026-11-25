@@ -8,9 +8,9 @@ plugins {
 apply from: rootProject.file('gradle/loader-module.gradle')
 
 def neoForgeVersion = loaderState.loader.version
-def isSingleArchJar = archProperty != null
+def isNarrowedArchBuild = archProperty != null
 logger.lifecycle("Build target arches: ${buildArches.join(', ')}" +
-        (isSingleArchJar ? ' (single-arch JAR mode)' : ' (fat JAR)'))
+        (isNarrowedArchBuild ? ' (selected architecture)' : ' (artifact matrix)'))
 
 neoForge {
     version = neoForgeVersion
@@ -66,48 +66,50 @@ processResources {
 
 verifyPackageJarTask.configure {
     doLast {
-        File archive = packageJarArchive.get().asFile
-        def zip = new java.util.zip.ZipFile(archive)
-        try {
-            [
-                'rtx-remix-renderer.mixins.json',
-                'rtx-remix-renderer.neoforge.mixins.json'
-            ].each { name ->
-                def entry = zip.getEntry(name)
-                if (entry == null) {
-                    throw new GradleException("NeoForge package is missing ${name}")
+        packageJarArchives.each { packageArch, packageArchive ->
+            File archive = packageArchive.get().asFile
+            def zip = new java.util.zip.ZipFile(archive)
+            try {
+                [
+                    'rtx-remix-renderer.mixins.json',
+                    'rtx-remix-renderer.neoforge.mixins.json'
+                ].each { name ->
+                    def entry = zip.getEntry(name)
+                    if (entry == null) {
+                        throw new GradleException("NeoForge package is missing ${name}")
+                    }
+                    String config = zip.getInputStream(entry).getText('UTF-8')
+                    if (config.contains('"refmap"')) {
+                        throw new GradleException(
+                                "${name} must not select a development refmap")
+                    }
+                    if (config.contains('"WindowMixin"')) {
+                        throw new GradleException(
+                                "${name} must not apply WindowMixin under NeoForge")
+                    }
                 }
-                String config = zip.getInputStream(entry).getText('UTF-8')
-                if (config.contains('"refmap"')) {
-                    throw new GradleException(
-                            "${name} must not select a development refmap")
-                }
-                if (config.contains('"WindowMixin"')) {
-                    throw new GradleException(
-                            "${name} must not apply WindowMixin under NeoForge")
-                }
-            }
 
-            [
-                'com/nvidia/rtxremix/minecraft/mixin/MinecraftClientMixin.class': 'runTick',
-                'com/nvidia/rtxremix/minecraft/mixin/BiomeMixin.class': 'specialEffects',
-                'com/nvidia/rtxremix/minecraft/mixin/TorchBlockAccessor.class': 'flameParticle'
-            ].each { className, mojmapSelector ->
-                def entry = zip.getEntry(className)
-                if (entry == null) {
-                    throw new GradleException(
-                            "NeoForge package is missing ${className}")
+                [
+                    'com/nvidia/rtxremix/minecraft/mixin/MinecraftClientMixin.class': 'runTick',
+                    'com/nvidia/rtxremix/minecraft/mixin/BiomeMixin.class': 'specialEffects',
+                    'com/nvidia/rtxremix/minecraft/mixin/TorchBlockAccessor.class': 'flameParticle'
+                ].each { className, mojmapSelector ->
+                    def entry = zip.getEntry(className)
+                    if (entry == null) {
+                        throw new GradleException(
+                                "NeoForge package is missing ${className}")
+                    }
+                    String constantPool = new String(
+                            zip.getInputStream(entry).bytes,
+                            java.nio.charset.StandardCharsets.ISO_8859_1)
+                    if (!constantPool.contains(mojmapSelector)) {
+                        throw new GradleException(
+                                "${className} lost Mojmap selector '${mojmapSelector}'")
+                    }
                 }
-                String constantPool = new String(
-                        zip.getInputStream(entry).bytes,
-                        java.nio.charset.StandardCharsets.ISO_8859_1)
-                if (!constantPool.contains(mojmapSelector)) {
-                    throw new GradleException(
-                            "${className} lost Mojmap selector '${mojmapSelector}'")
-                }
+            } finally {
+                zip.close()
             }
-        } finally {
-            zip.close()
         }
     }
 }

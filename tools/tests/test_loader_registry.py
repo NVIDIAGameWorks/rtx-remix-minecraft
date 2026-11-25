@@ -32,6 +32,10 @@ def version() -> dict:
                     "directory": "versions/1.21.1/fabric/build/libs",
                     "pattern": "rtx-remix-renderer-*.jar",
                 },
+                "packagedArtifact": {
+                    "directory": "versions/1.21.1/fabric/build/distributions",
+                    "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-fabric-{architecture}.jar",
+                },
                 "installedJar": "rtx-remix-renderer-fabric.jar",
                 "builtinResourcePack": "fabric",
                 "gradle": {
@@ -69,6 +73,10 @@ def version() -> dict:
                 "developmentArtifact": {
                     "directory": "versions/1.21.1/example/out",
                     "pattern": "*-runnable.jar",
+                },
+                "packagedArtifact": {
+                    "directory": "versions/1.21.1/example/distributions",
+                    "pattern": "rtx-remix-renderer-{modVersion}-mc{minecraftVersion}-example-{architecture}.jar",
                 },
                 "installedJar": "example-loader.jar",
                 "builtinResourcePack": "example_resources",
@@ -109,6 +117,9 @@ def manifest() -> dict:
         loader["developmentArtifact"]["directory"] = loader["developmentArtifact"]["directory"].replace(
             old_module, loader["module"], 1
         )
+        loader["packagedArtifact"]["directory"] = loader["packagedArtifact"]["directory"].replace(
+            old_module, loader["module"], 1
+        )
         for task_name in ("build", "test", "package"):
             loader["gradle"][task_name] = loader["gradle"][task_name].replace(
                 ":versions:1.21.1:", ":versions:1.20.1:", 1
@@ -119,6 +130,7 @@ def manifest() -> dict:
     return {
         "schema": "multi-version/v1",
         "defaultMinecraftVersion": "1.21.1",
+        "architectures": ["win64", "arm64"],
         "mod": {
             "id": "rtx-remix-renderer",
             "group": "com.nvidia.rtxremix",
@@ -137,6 +149,7 @@ def test_registry_preserves_manifest_order_and_declarative_behavior():
     assert registry.java_target == 21
     assert registry.available_versions == ("1.21.1", "1.20.1")
     assert registry.default_version == "1.21.1"
+    assert registry.architectures == ("win64", "arm64")
     example = registry.get(" EXAMPLE ")
     assert example.display_name == "Example Loader"
     assert example.development_jar_pattern == "*-runnable.jar"
