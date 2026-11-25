@@ -1128,8 +1128,8 @@ public class RemixEntitySubmitter {
      *                 hand-held item whose lit element is out
      */
     static EntitySurfaceMode dousedSurfaceMode(EntityTextureKey texId,
-                                                          EntitySurfaceMode narrowed,
-                                                          boolean doused) {
+                                               EntitySurfaceMode narrowed,
+                                               boolean doused) {
         return doused
                 && narrowed == EntitySurfaceMode.CUTOUT
                 && BLOCK_ATLAS_TEXTURE.equals(texId)

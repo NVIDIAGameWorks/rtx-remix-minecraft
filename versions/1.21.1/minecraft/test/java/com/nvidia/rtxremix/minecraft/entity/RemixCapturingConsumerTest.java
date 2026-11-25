@@ -35,7 +35,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 
@@ -766,7 +765,6 @@ class RemixCapturingConsumerTest {
 
         assertEquals(1, consumer.getPartCount());
         assertFalse(consumer.isPartDoused(0));
-        context.setHeldItemDoused(false);
     }
 
     /**
