@@ -1,0 +1,26 @@
+{
+  "variants": {
+    "mount=up": {
+      "model": "rtx-remix-renderer:block/copper_beacon"
+    },
+    "mount=down": {
+      "model": "rtx-remix-renderer:block/copper_beacon",
+      "x": 180
+    },
+    "mount=north": {
+      "model": "rtx-remix-renderer:block/copper_beacon_wall"
+    },
+    "mount=south": {
+      "model": "rtx-remix-renderer:block/copper_beacon_wall",
+      "y": 180
+    },
+    "mount=east": {
+      "model": "rtx-remix-renderer:block/copper_beacon_wall",
+      "y": 90
+    },
+    "mount=west": {
+      "model": "rtx-remix-renderer:block/copper_beacon_wall",
+      "y": 270
+    }
+  }
+}
