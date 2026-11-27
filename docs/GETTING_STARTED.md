@@ -12,7 +12,8 @@ How to build and run the mod from source. If you only want to play, read
   `jni.h`. Prism runs Minecraft 1.21.1 only on Java 21, not a newer version,
   so the developer tools launch the game on `JAVA_HOME` when it is a JDK 21
   and otherwise look for one in Gradle's toolchains and in the Eclipse
-  Adoptium, Microsoft, and Java folders under Program Files.
+  Adoptium, Microsoft, and Java folders under Program Files. Minecraft 26.3
+  needs Java 25 in the same way.
 - **Visual Studio 2022 Build Tools** with the Desktop development with C++
   workload (MSVC v143). Cross-building the ARM64 bridge additionally needs the
   MSVC ARM64 build tools for some installed toolset; `build_native.bat` uses
@@ -275,7 +276,12 @@ and `package` aggregate the selected version's declared loaders:
 .\gradlew.bat build test "-PmcVersion=1.21.1" "-Ploader=forge"
 .\gradlew.bat package "-PmcVersion=1.21.1" "-Ploader=neoforge" -Parch=win64
 .\tools\rtx.bat launch --minecraft-version 1.21.1 --loader neoforge
+.\gradlew.bat build test "-PmcVersion=26.3" "-Ploader=fabric"
 ```
+
+Minecraft 26.3 builds with Gradle 9.8, which `gradlew.bat` selects from
+`project-state.json` when the command line names `-PmcVersion=26.3`; the
+1.21.1 targets keep the repository's default wrapper.
 
 There is no nested loader wrapper. Fabric is the default loader for developer
 commands that do not receive another selection.
