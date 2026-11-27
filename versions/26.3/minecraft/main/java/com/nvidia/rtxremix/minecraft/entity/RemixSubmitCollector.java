@@ -4,10 +4,11 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import java.util.Objects;
+import java.util.function.Function;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.fabricmc.fabric.api.client.rendering.v1.SubmitRenderPhase;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.font.TextRenderable;
@@ -18,7 +19,6 @@ import net.minecraft.client.renderer.block.MovingBlockRenderState;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
-import net.minecraft.client.renderer.feature.submit.SubmitNode;
 import net.minecraft.client.renderer.gizmos.DrawableGizmoPrimitives;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.rendertype.RenderType;
@@ -59,7 +59,26 @@ import java.util.List;
  * submits, debug gizmos, and for now the burning-entity flame, the lead and
  * moving pistons' blocks (see port notes).
  */
-public final class RemixSubmitCollector implements SubmitNodeCollector {
+public abstract class RemixSubmitCollector implements SubmitNodeCollector {
+
+    /**
+     * Makes the loader's collector. A loader can add submit methods to
+     * {@link SubmitNodeCollector}, as Fabric API does, so the loader module owns
+     * the concrete class and installs its constructor here.
+     */
+    private static volatile Function<RemixVertexConsumerProvider, RemixSubmitCollector> factory;
+
+    public static void installFactory(Function<RemixVertexConsumerProvider, RemixSubmitCollector> value) {
+        factory = Objects.requireNonNull(value, "value");
+    }
+
+    public static RemixSubmitCollector create(RemixVertexConsumerProvider provider) {
+        Function<RemixVertexConsumerProvider, RemixSubmitCollector> current = factory;
+        if (current == null) {
+            throw new IllegalStateException("The loader has not installed a submit collector");
+        }
+        return current.apply(provider);
+    }
 
     private static final Direction[] DIRECTIONS = Direction.values();
 
@@ -69,7 +88,7 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
     private final RecyclingMatrixStack modelPoseStack = new RecyclingMatrixStack();
     private final GlyphCapture glyphCapture = new GlyphCapture();
 
-    public RemixSubmitCollector(RemixVertexConsumerProvider provider) {
+    protected RemixSubmitCollector(RemixVertexConsumerProvider provider) {
         this.provider = provider;
     }
 
@@ -228,11 +247,6 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
 
     @Override
     public void submitGizmoPrimitives(DrawableGizmoPrimitives.Group group, CameraRenderState camera, boolean onTop) {
-    }
-
-    /** Fabric's custom submit phases draw mod geometry Remix has no capture for. */
-    @Override
-    public <T extends SubmitNode> void submitCustom(SubmitRenderPhase<T> phase, T node) {
     }
 
     // ---- text ----

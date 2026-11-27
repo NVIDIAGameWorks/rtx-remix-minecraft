@@ -85,7 +85,7 @@ public class RemixEntityPass {
     private static final int TYPE_LOG_INTERVAL = 300;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final RemixSubmitCollector collector = RemixSubmitCollector.create(provider);
     /**
      * The per-type breakdown costs a HashMap probe per entity per frame and a
      * stream sort plus a dozen String.formats on the render thread every summary,

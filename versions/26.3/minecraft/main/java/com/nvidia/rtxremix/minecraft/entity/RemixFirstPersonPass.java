@@ -54,7 +54,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     public static final float VIEW_MODEL_SCALE = 0.1f;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final RemixSubmitCollector collector = RemixSubmitCollector.create(provider);
 
     /**
      * Vanilla's first-person hands submit with the collector left open, so the pass

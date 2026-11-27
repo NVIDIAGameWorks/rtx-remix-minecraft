@@ -13,6 +13,7 @@ import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconUpdatePayload;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
+import com.nvidia.rtxremix.minecraft.entity.RemixSubmitCollector;
 import com.nvidia.rtxremix.minecraft.particle.rapids.WaterRapidParticleSpawner;
 import com.nvidia.rtxremix.minecraft.screen.CopperBeaconScreen;
 import com.nvidia.rtxremix.minecraft.settings.MinecraftSettingsButton;
@@ -52,6 +53,7 @@ public final class RtxRemixMod implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        RemixSubmitCollector.installFactory(FabricSubmitCollector::new);
         CLIENT_RUNTIME.bootstrap();
         MinecraftParticleHooks.install(
                 WaterRapidParticleSpawner::spawnRandomDisplayParticles);

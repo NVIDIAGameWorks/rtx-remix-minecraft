@@ -64,7 +64,7 @@ class CanonicalArchitectureTest {
         assertTrue(renderer.contains("HostGraphicsIntegration graphicsIntegration"));
         assertFalse(renderer.contains("GLFWNativeWin32"));
         assertFalse(renderer.contains("GL.getCapabilities()"));
-        assertFalse(renderer.contains("getMainRenderTarget().frameBufferId"));
+        assertFalse(renderer.contains("mainRenderTarget()"));
         String runtime = read(MINECRAFT.resolve(
                 "main/java/com/nvidia/rtxremix/minecraft/"
                         + "MinecraftClientRuntime.java"));
@@ -74,7 +74,7 @@ class CanonicalArchitectureTest {
                 "main/java/com/nvidia/rtxremix/minecraft/gl/"
                         + "MinecraftOpenGlGraphicsIntegration.java"));
         assertTrue(openGlHost.contains("implements HostGraphicsIntegration"));
-        assertTrue(openGlHost.contains("getMainRenderTarget().frameBufferId"));
+        assertTrue(openGlHost.contains("gameRenderer.mainRenderTarget()"));
     }
 
     @Test

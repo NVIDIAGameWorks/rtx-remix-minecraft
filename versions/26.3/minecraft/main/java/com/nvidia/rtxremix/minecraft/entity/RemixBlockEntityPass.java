@@ -74,7 +74,7 @@ public final class RemixBlockEntityPass {
 
     private final RecyclingMatrixStack matrices = new RecyclingMatrixStack();
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final RemixSubmitCollector collector = RemixSubmitCollector.create(provider);
     private final IdentityHashMap<BlockEntityType<?>, String> typeKeyCache = new IdentityHashMap<>();
     private final FailureLogThrottle failures =
             new FailureLogThrottle(FailureLogReporter.forLogger(LOGGER), "Block entity");
