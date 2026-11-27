@@ -4,18 +4,20 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.terrain.VanillaSectionBuilds;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.renderer.chunk.RenderChunkRegion;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.block.BlockAndTintGetter;
+import net.minecraft.client.renderer.block.BlockStateModelSet;
+import net.minecraft.client.renderer.block.FluidRenderer;
+import net.minecraft.client.renderer.block.FluidStateModelSet;
+import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
-import net.minecraft.world.level.BlockAndTintGetter;
-import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
@@ -45,8 +47,9 @@ public final class SectionBuildCapture {
     /** Begins one section compilation on the current worker thread. */
     public static void begin(
             SectionPos sectionPos,
-            RenderChunkRegion renderRegion,
-            BlockRenderDispatcher blockRenderer) {
+            RenderSectionRegion renderRegion,
+            BlockStateModelSet blockModels,
+            FluidStateModelSet fluidModels) {
         boolean capturing = VanillaSectionBuilds.beginBuild(MinecraftRuntime::isRtxEnabled);
         CAPTURE_FOR_BUILD.set(capturing);
         if (!capturing) {
@@ -67,7 +70,9 @@ public final class SectionBuildCapture {
             textures = renderer.getTextureManager();
         }
 
-        BlockQuadEmitter.threadLocal().beginSection(sectionPos, textures, blockRenderer);
+        boolean cutoutLeaves = Minecraft.getInstance().options.cutoutLeaves().get();
+        BlockQuadEmitter.threadLocal().beginSection(
+                sectionPos, textures, blockModels, fluidModels, cutoutLeaves);
         TRACY_BLOCK_LOOP.set(ProfileScope.begin("block loop"));
     }
 
@@ -76,17 +81,20 @@ public final class SectionBuildCapture {
         return CAPTURE_FOR_BUILD.get();
     }
 
-    /** Captures one block while preserving vanilla's opacity result. */
-    public static boolean captureBlock(BlockState state, BlockGetter world, BlockPos pos) {
-        boolean opaque = state.isSolidRender(world, pos);
+    /**
+     * Captures one cell the block loop has just read, air included. Since 26.x
+     * the loop's only per-cell call that still sees air is this read.
+     */
+    public static void captureBlock(BlockState state, RenderSectionRegion region, BlockPos pos) {
         BlockQuadEmitter emitter = BlockQuadEmitter.current();
         if (emitter != null && emitter.isActive()) {
-            emitter.processBlock(state, world, pos, opaque);
+            emitter.processBlock(state, region, pos, state.isSolidRender());
+            // Vanilla tessellates only MODEL blocks; ENTITYBLOCK_ANIMATED blocks
+            // belong to their block-entity renderer.
             if (BlockQuadEmitter.getRenderTypeCached(state) == RenderShape.MODEL) {
-                emitter.emitBlock(state, pos, (BlockAndTintGetter) world);
+                emitter.emitBlock(state, pos, region);
             }
         }
-        return opaque;
     }
 
     /** Suppresses vanilla block geometry only for a Remix capture build. */
@@ -98,19 +106,20 @@ public final class SectionBuildCapture {
 
     /** Captures a fluid or delegates to vanilla when capture is disabled. */
     public static void renderFluid(
-            BlockRenderDispatcher blockRenderer,
-            BlockPos pos,
+            FluidRenderer renderer,
             BlockAndTintGetter world,
-            VertexConsumer consumer,
+            BlockPos pos,
+            FluidRenderer.Output output,
             BlockState blockState,
-            FluidState fluidState) {
+            FluidState fluidState,
+            Operation<Void> vanilla) {
         if (isCapturing()) {
             BlockQuadEmitter emitter = BlockQuadEmitter.threadLocal();
             if (emitter.isActive()) {
                 emitter.emitFluid(pos, world, fluidState);
             }
         } else {
-            blockRenderer.renderLiquid(pos, world, consumer, blockState, fluidState);
+            vanilla.call(renderer, world, pos, output, blockState, fluidState);
         }
     }
 
@@ -137,6 +146,9 @@ public final class SectionBuildCapture {
             TRACY_OUTER.remove();
             TRACY_BLOCK_LOOP.remove();
             CAPTURE_TOKEN.remove();
+            // A build that throws skips the RETURN inject and stays counted; vanilla
+            // turns a section build exception into a client crash, so the stale count
+            // cannot outlive the session.
             VanillaSectionBuilds.endBuild(isCapturing());
             CAPTURE_FOR_BUILD.remove();
         }

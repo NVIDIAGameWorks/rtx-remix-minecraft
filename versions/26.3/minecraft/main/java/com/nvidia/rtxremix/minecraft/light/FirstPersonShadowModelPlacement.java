@@ -32,7 +32,7 @@ final class FirstPersonShadowModelPlacement {
 
     Vec3 resolve(ClientLevel world, Camera camera, Entity player,
                   List<LightConstraint> lights, float dtSeconds) {
-        Vec3 headCenter = camera.getPosition();
+        Vec3 headCenter = camera.position();
         Vec3 target = lights.isEmpty()
                 ? Vec3.ZERO
                 : chooseTargetOffset(world, camera, player, headCenter, lights, offset);
@@ -93,7 +93,7 @@ final class FirstPersonShadowModelPlacement {
         if (averageAway.lengthSqr() > DIRECTION_EPSILON_SQ) {
             addUniqueDirection(directions, averageAway.normalize());
         }
-        Vec3 backward = HeldLightPlacement.horizontalForward(camera.getYRot()).reverse();
+        Vec3 backward = HeldLightPlacement.horizontalForward(camera.yRot()).reverse();
         addUniqueDirection(directions, backward);
 
         // A wall can block the preferred backward displacement without

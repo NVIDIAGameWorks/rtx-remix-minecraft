@@ -5,8 +5,6 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.terrain.SkyLightSurfaceAccess;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -30,8 +28,7 @@ public abstract class ChunkSkyLightMixin implements SkyLightSurfaceAccess {
     }
 
     @Shadow
-    private static boolean isEdgeOccluded(BlockGetter blockView, BlockPos upperPos, BlockState upperState,
-                                           BlockPos lowerPos, BlockState lowerState) {
+    private static boolean isEdgeOccluded(BlockState upperState, BlockState lowerState) {
         throw new AssertionError();
     }
 
@@ -45,7 +42,7 @@ public abstract class ChunkSkyLightMixin implements SkyLightSurfaceAccess {
         SeededSurfaceScan.refreshSurfaceY(chunk, chunk.getHighestFilledSectionIndex(), worldSurface::getFirstAvailable,
                 Blocks.AIR.defaultBlockState(), new ChunkSections(chunk),
                 (upperPos, upperState, lowerPos, lowerState) ->
-                        isEdgeOccluded(chunk, upperPos, upperState, lowerPos, lowerState),
+                        isEdgeOccluded(upperState, lowerState),
                 (localX, localZ, surfaceY) -> set(index(localX, localZ), surfaceY));
     }
 }

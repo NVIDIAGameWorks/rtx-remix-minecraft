@@ -8,13 +8,12 @@ import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.metadata.animation.FrameSize;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.resources.ResourceMetadata;
+import net.minecraft.resources.Identifier;
 
 /** Real {@link TextureAtlasSprite}s for key and UV-remap tests, with the atlas rectangle chosen by the test. */
 final class SpriteFixtures {
 
-    private static final ResourceLocation ATLAS = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/test.png");
+    private static final Identifier ATLAS = Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/test.png");
 
     private SpriteFixtures() {}
 
@@ -25,13 +24,12 @@ final class SpriteFixtures {
      */
     static TextureAtlasSprite sprite(int x, int y, int size, int atlasSize) {
         SpriteContents contents = new SpriteContents(
-                ResourceLocation.fromNamespaceAndPath("minecraft", "test/" + x + "_" + y),
+                Identifier.fromNamespaceAndPath("minecraft", "test/" + x + "_" + y),
                 new FrameSize(size, size),
-                new NativeImage(size, size, false),
-                ResourceMetadata.EMPTY);
+                new NativeImage(size, size, false));
         // The constructor is protected; an anonymous subclass reaches it without
         // widening access for the sake of a test.
-        TextureAtlasSprite sprite = new TextureAtlasSprite(ATLAS, contents, atlasSize, atlasSize, x, y) {};
+        TextureAtlasSprite sprite = new TextureAtlasSprite(ATLAS, contents, atlasSize, atlasSize, x, y, 0) {};
         // The rectangle is fixed at construction and no test reads pixels, so the
         // off-heap image is released at once.
         contents.close();

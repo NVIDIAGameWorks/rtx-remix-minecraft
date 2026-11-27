@@ -32,6 +32,6 @@
         "fabricloader": "${loaderVersionRange}",
         "fabric-api": "${apiVersionRange}",
         "minecraft": "${minecraftVersion}",
-        "java": ">=21"
+        "java": ">=25"
     }
 }

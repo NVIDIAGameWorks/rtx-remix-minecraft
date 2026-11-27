@@ -67,7 +67,7 @@ public final class SeededSurfaceScan {
     public static <S> void refreshSurfaceY(LevelHeightAccessor world, int highestNonEmptySection, SurfaceHeight surface,
                                            S air, Sections<S> sections, FaceBlocksLight<S> faceBlocksLight,
                                            SurfaceSink sink) {
-        int minY = world.getMinBuildHeight() - 1;
+        int minY = world.getMinY() - 1;
         if (highestNonEmptySection == -1) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {

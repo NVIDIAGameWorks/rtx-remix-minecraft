@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /** User-controlled intensity multipliers for the built-in block-light rules. */
 public final class BlockLightIntensityControls {
@@ -21,6 +21,8 @@ public final class BlockLightIntensityControls {
             control("soul_torch", "block.minecraft.soul_torch"),
             control("wall_torch", "block.minecraft.wall_torch"),
             control("soul_wall_torch", "block.minecraft.soul_wall_torch"),
+            control("copper_torch", "block.minecraft.copper_torch"),
+            control("copper_wall_torch", "block.minecraft.copper_wall_torch"),
             control("redstone_torch", "block.minecraft.redstone_torch"),
             control("redstone_wall_torch", "block.minecraft.redstone_wall_torch"),
             control("small_amethyst_bud", "block.minecraft.small_amethyst_bud"),
@@ -33,7 +35,7 @@ public final class BlockLightIntensityControls {
             control("light", "block.minecraft.light"),
             control("candles", "rtxremix.setting.blockLights.candles"),
             control("candle_cakes", "rtxremix.setting.blockLights.candleCakes"));
-    private static final Map<ResourceLocation, Control> BY_RULE_ID = indexByRuleId();
+    private static final Map<Identifier, Control> BY_RULE_ID = indexByRuleId();
 
     private BlockLightIntensityControls() {}
 
@@ -47,12 +49,12 @@ public final class BlockLightIntensityControls {
      * <p>Authored tuning belongs to the resolved rule, so a resource-pack rule
      * replacing a built-in identifier retains its own intensity at the default 1x.
      */
-    public static float apply(ResourceLocation ruleId, float baseIntensity) {
+    public static float apply(Identifier ruleId, float baseIntensity) {
         Control control = BY_RULE_ID.get(ruleId);
         return control == null ? baseIntensity : baseIntensity * (float) control.get();
     }
 
-    static void validateBuiltInRules(Set<ResourceLocation> ruleIds) {
+    static void validateBuiltInRules(Set<Identifier> ruleIds) {
         if (!BY_RULE_ID.keySet().equals(ruleIds)) {
             throw new IllegalStateException(
                     "Block-light controls do not match built-in rules: controls="
@@ -68,15 +70,15 @@ public final class BlockLightIntensityControls {
     }
 
     private static Control control(
-            String rulePath, ResourceLocation ruleId, String labelKey) {
+            String rulePath, Identifier ruleId, String labelKey) {
         return new Control(
                 "blockLights." + rulePath,
                 ruleId,
                 labelKey);
     }
 
-    private static Map<ResourceLocation, Control> indexByRuleId() {
-        Map<ResourceLocation, Control> controls = new LinkedHashMap<>();
+    private static Map<Identifier, Control> indexByRuleId() {
+        Map<Identifier, Control> controls = new LinkedHashMap<>();
         for (Control control : CONTROLS) {
             if (controls.put(control.ruleId(), control) != null) {
                 throw new IllegalStateException("Duplicate block-light rule " + control.ruleId());
@@ -87,11 +89,11 @@ public final class BlockLightIntensityControls {
 
     public static final class Control {
         private final String settingId;
-        private final ResourceLocation ruleId;
+        private final Identifier ruleId;
         private final String labelKey;
         private volatile double multiplier = DEFAULT_MULTIPLIER;
 
-        private Control(String settingId, ResourceLocation ruleId, String labelKey) {
+        private Control(String settingId, Identifier ruleId, String labelKey) {
             this.settingId = settingId;
             this.ruleId = ruleId;
             this.labelKey = labelKey;
@@ -101,7 +103,7 @@ public final class BlockLightIntensityControls {
             return settingId;
         }
 
-        public ResourceLocation ruleId() {
+        public Identifier ruleId() {
             return ruleId;
         }
 

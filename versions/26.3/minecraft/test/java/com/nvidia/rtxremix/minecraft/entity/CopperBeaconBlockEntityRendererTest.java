@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
 import net.minecraft.client.model.geom.ModelPart;
-import net.minecraft.client.resources.model.BlockModelRotation;
+import com.mojang.math.Quadrant;
 import net.minecraft.core.Direction;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -84,7 +84,7 @@ class CopperBeaconBlockEntityRendererTest {
                     continue;
                 }
                 matrices.pushPose();
-                matrices.mulPose(
+                matrices.rotate(
                         CopperBeaconBlockEntityRenderer.mountingRotation(mount, forward));
                 for (float yaw : angles) {
                     for (float pitch : angles) {
@@ -290,8 +290,7 @@ class CopperBeaconBlockEntityRendererTest {
                     readBaseModelDirection(variant.get("model").getAsString());
             directions.put(
                     mount,
-                    BlockModelRotation.by(x, y)
-                            .actualRotation()
+                    Quadrant.fromXYAngles(Quadrant.parseJson(x), Quadrant.parseJson(y))
                             .rotate(unrotatedDirection));
         }
         return directions;

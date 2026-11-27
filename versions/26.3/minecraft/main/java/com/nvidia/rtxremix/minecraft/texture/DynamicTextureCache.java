@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /**
  * Pixel cache for dynamic textures (maps, player skins, etc.) that are not
@@ -61,11 +61,11 @@ public final class DynamicTextureCache {
             Integer.getInteger("rtxremix.dynamicTextureCache.maxEntries", DEFAULT_MAX_CACHE_ENTRIES));
 
     /** Completed pixel cache keyed by texture identifier, in access order so pruning is LRU. */
-    private static final Map<ResourceLocation, Pixels> CACHE =
+    private static final Map<Identifier, Pixels> CACHE =
             Collections.synchronizedMap(new LinkedHashMap<>(64, 0.75f, true));
 
     /** Glyph pages by texture id; see the class comment for why they sit apart from {@link #CACHE}. */
-    private static final Map<ResourceLocation, GlyphPageMirror> GLYPH_PAGES =
+    private static final Map<Identifier, GlyphPageMirror> GLYPH_PAGES =
             Collections.synchronizedMap(new HashMap<>());
 
     /**
@@ -74,7 +74,7 @@ public final class DynamicTextureCache {
      * can look up the id when {@code upload()} fires.  Uses identity semantics
      * since {@code AbstractTexture} does not override {@code equals}/{@code hashCode}.
      */
-    private static final Map<AbstractTexture, ResourceLocation> TEXTURE_IDS =
+    private static final Map<AbstractTexture, Identifier> TEXTURE_IDS =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static long nextVersion = 1L;
 
@@ -86,7 +86,7 @@ public final class DynamicTextureCache {
      * The mapping stays live so later uploads from mutable textures can replace
      * the cached pixels.
      */
-    public static void onRegisterTexture(ResourceLocation id, AbstractTexture texture, NativeImage imageOrNull) {
+    public static void onRegisterTexture(Identifier id, AbstractTexture texture, NativeImage imageOrNull) {
         TEXTURE_IDS.put(texture, id);
         if (imageOrNull != null) {
             // Image available now (e.g. cape textures, non-async paths).
@@ -95,7 +95,7 @@ public final class DynamicTextureCache {
     }
 
     /** Registers the mirror of a glyph page under the id {@code FontStorage} gave it. */
-    public static void onRegisterGlyphPage(ResourceLocation id, GlyphPageMirror page) {
+    public static void onRegisterGlyphPage(Identifier id, GlyphPageMirror page) {
         GLYPH_PAGES.put(id, page);
     }
 
@@ -108,7 +108,7 @@ public final class DynamicTextureCache {
      * @return true if the texture was registered and pixels were stored
      */
     public static boolean captureFromUpload(AbstractTexture texture, NativeImage image) {
-        ResourceLocation id = TEXTURE_IDS.get(texture);
+        Identifier id = TEXTURE_IDS.get(texture);
         if (id == null) return false;
         store(id, extractPixels(image));
         return true;
@@ -122,7 +122,7 @@ public final class DynamicTextureCache {
     // ---- Public accessors ----
 
     /** The current pixels of a snapshotted texture or a glyph page, or null for anything else. */
-    public static Pixels get(ResourceLocation id) {
+    public static Pixels get(Identifier id) {
         Pixels snapshot = CACHE.get(id);
         if (snapshot != null) {
             return snapshot;
@@ -134,13 +134,13 @@ public final class DynamicTextureCache {
                         page.version());
     }
 
-    public static boolean isGlyphPage(ResourceLocation id) {
+    public static boolean isGlyphPage(Identifier id) {
         return GLYPH_PAGES.containsKey(id);
     }
 
     /** Drops the snapshots of released textures; live registrations and glyph pages stay. */
     public static void clear() {
-        Set<ResourceLocation> liveIds = liveTextureIds();
+        Set<Identifier> liveIds = liveTextureIds();
         synchronized (CACHE) {
             CACHE.keySet().retainAll(liveIds);
         }
@@ -153,14 +153,14 @@ public final class DynamicTextureCache {
      * textures oldest first. A live texture's snapshot is never pruned: its
      * pixels cannot be captured again.
      */
-    private static void store(ResourceLocation id, Pixels pixels) {
+    private static void store(Identifier id, Pixels pixels) {
         CACHE.put(id, pixels);
         if (CACHE.size() <= MAX_CACHE_ENTRIES) {
             return;
         }
-        Set<ResourceLocation> liveIds = liveTextureIds();
+        Set<Identifier> liveIds = liveTextureIds();
         synchronized (CACHE) {
-            Iterator<ResourceLocation> snapshots = CACHE.keySet().iterator();
+            Iterator<Identifier> snapshots = CACHE.keySet().iterator();
             while (CACHE.size() > MAX_CACHE_ENTRIES && snapshots.hasNext()) {
                 if (!liveIds.contains(snapshots.next())) {
                     snapshots.remove();
@@ -169,12 +169,13 @@ public final class DynamicTextureCache {
         }
     }
 
-    private static Set<ResourceLocation> liveTextureIds() {
-        Set<ResourceLocation> liveIds = new HashSet<>();
+    private static Set<Identifier> liveTextureIds() {
+        Set<Identifier> liveIds = new HashSet<>();
         synchronized (TEXTURE_IDS) {
             for (var entry : TEXTURE_IDS.entrySet()) {
+                // A closed DynamicTexture keeps its image, closed, rather than dropping it.
                 if (!(entry.getKey() instanceof DynamicTexture texture)
-                        || texture.getPixels() != null) {
+                        || !texture.getPixels().isClosed()) {
                     liveIds.add(entry.getValue());
                 }
             }
@@ -188,7 +189,7 @@ public final class DynamicTextureCache {
         byte[] out = new byte[w * h * 4];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int abgr = image.getPixelRGBA(x, y);
+                int abgr = image.getPixelABGR(x, y);
                 int idx = (y * w + x) * 4;
                 out[idx]     = (byte)  (abgr         & 0xFF);
                 out[idx + 1] = (byte) ((abgr >>  8)  & 0xFF);

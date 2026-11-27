@@ -62,9 +62,10 @@ public abstract class SpotLightBlock extends DirectionalBlock implements Overrid
         registerDefaultState(getStateDefinition().any().setValue(FACING, Direction.NORTH));
     }
 
-    /** Shared settings for every beacon variant. */
-    protected static BlockBehaviour.Properties beaconSettings() {
+    /** Shared settings for every beacon variant, keyed by the variant's registry path. */
+    protected static BlockBehaviour.Properties beaconSettings(String path) {
         return BlockBehaviour.Properties.of()
+                .setId(ResourceKey.create(Registries.BLOCK, id(path)))
                 .strength(3.0f)
                 .sound(SoundType.METAL)
                 .lightLevel(state -> LUMINANCE);

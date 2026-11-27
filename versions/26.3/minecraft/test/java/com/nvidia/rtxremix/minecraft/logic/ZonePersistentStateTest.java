@@ -4,12 +4,11 @@
  */
 package com.nvidia.rtxremix.minecraft.logic;
 
-import net.minecraft.SharedConstants;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.NbtOps;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -88,15 +87,15 @@ class ZonePersistentStateTest {
                 "rtx zone define valid --center 1 2 3 --inner 4 --outer 8", 0, 0, 0);
         ZonePersistentState source = new ZonePersistentState();
         source.put(valid);
-        CompoundTag nbt = source.save(new CompoundTag(), null);
+        CompoundTag nbt = source.toNbt();
 
         CompoundTag malformed = new CompoundTag();
         malformed.putString("name", "broken");
         malformed.putString("channel", "mc.zone.broken");
         malformed.putString("shape", "sphere");
-        nbt.getList("zones", Tag.TAG_COMPOUND).add(malformed);
+        nbt.getListOrEmpty("zones").add(malformed);
 
-        ZonePersistentState loaded = ZonePersistentState.fromNbt(nbt, null);
+        ZonePersistentState loaded = ZonePersistentState.fromNbt(nbt);
 
         assertEquals(1, loaded.snapshot().size());
         assertEquals(valid, loaded.snapshot().iterator().next());
@@ -108,7 +107,7 @@ class ZonePersistentStateTest {
         nbt.putInt("version", 999);
         nbt.put("zones", new ListTag());
 
-        ZonePersistentState loaded = ZonePersistentState.fromNbt(nbt, null);
+        ZonePersistentState loaded = ZonePersistentState.fromNbt(nbt);
 
         assertTrue(loaded.snapshot().isEmpty());
         assertFalse(loaded.isDirty());
@@ -134,7 +133,7 @@ class ZonePersistentStateTest {
         root.putInt("version", 1);
         root.put("zones", zones);
 
-        ZoneDefinition restored = ZonePersistentState.fromNbt(root, null).snapshot().iterator().next();
+        ZoneDefinition restored = ZonePersistentState.fromNbt(root).snapshot().iterator().next();
 
         assertEquals(second, restored);
         assertEquals(1.0f, restored.weight(100, 0, 0), 1e-6f);
@@ -155,52 +154,65 @@ class ZonePersistentStateTest {
     }
 
     @Test
-    void writesMinecraftPersistentStateFile(@TempDir Path tempDir) throws Exception {
+    void roundTripsThroughSavedDataTypeCodec(@TempDir Path tempDir) throws Exception {
         ZoneDefinition zone = ZoneDefinition.parse(
                 "rtx zone define saved --center 4 5 6 --inner 7 --outer 11", 0, 0, 0);
         ZonePersistentState state = new ZonePersistentState();
         state.put(zone);
-        Path file = tempDir.resolve("rtx_remix_zones.dat");
+        Path file = tempDir.resolve("zones.dat");
 
-        ensureGameVersionForPersistentStateSave();
-        state.save(file.toFile(), null);
-        awaitSave(file);
+        // The same envelope SavedDataStorage writes: the codec's tag under "data".
+        CompoundTag written = new CompoundTag();
+        written.put("data", ZonePersistentState.TYPE.codec().encodeStart(NbtOps.INSTANCE, state).getOrThrow());
+        NbtIo.writeCompressed(written, file);
 
-        assertFalse(state.isDirty());
         CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
-        ZonePersistentState loaded = ZonePersistentState.fromNbt(root.getCompound("data"), null);
+        ZonePersistentState loaded = ZonePersistentState.TYPE.codec()
+                .parse(NbtOps.INSTANCE, root.getCompoundOrEmpty("data")).getOrThrow();
         assertEquals(List.of(zone), new ArrayList<>(loaded.snapshot()));
+    }
+
+    @Test
+    void readsZonesFromThe121FileEnvelope(@TempDir Path tempDir) throws Exception {
+        ZoneDefinition zone = ZoneDefinition.parse(
+                "rtx zone define legacy --center 1 2 3 --inner 4 --outer 8", 0, 0, 0);
+        ZonePersistentState state = new ZonePersistentState();
+        state.put(zone);
+        // 1.21.1's PersistentState envelope: the state under "data", beside a DataVersion.
+        CompoundTag written = new CompoundTag();
+        written.put("data", state.toNbt());
+        written.putInt("DataVersion", 3955);
+        Path file = tempDir.resolve(ZonePersistentState.LEGACY_FILE);
+        NbtIo.writeCompressed(written, file);
+
+        ZonePersistentState loaded = ZonePersistentState.readLegacy(file);
+
+        assertEquals(List.of(zone), new ArrayList<>(loaded.snapshot()));
+    }
+
+    @Test
+    void aMissingOrUnreadableLegacyFileMigratesNothing(@TempDir Path tempDir) throws Exception {
+        Path file = tempDir.resolve(ZonePersistentState.LEGACY_FILE);
+        assertEquals(null, ZonePersistentState.readLegacy(file));
+
+        java.nio.file.Files.writeString(file, "not nbt");
+        assertEquals(null, ZonePersistentState.readLegacy(file));
     }
 
     private static ZonePersistentState roundTrip(ZoneDefinition zone) {
         ZonePersistentState state = new ZonePersistentState();
         state.put(zone);
-        CompoundTag nbt = state.save(new CompoundTag(), null);
-        return ZonePersistentState.fromNbt(nbt, null);
+        CompoundTag nbt = state.toNbt();
+        return ZonePersistentState.fromNbt(nbt);
     }
 
     private static CompoundTag writeOne(ZoneDefinition zone) {
         ZonePersistentState state = new ZonePersistentState();
         state.put(zone);
-        return state.save(new CompoundTag(), null)
-                .getList("zones", Tag.TAG_COMPOUND)
-                .getCompound(0)
+        return state.toNbt()
+                .getListOrEmpty("zones")
+                .getCompoundOrEmpty(0)
                 .copy();
     }
 
-    private static void ensureGameVersionForPersistentStateSave() {
-        try {
-            SharedConstants.getCurrentVersion();
-        } catch (IllegalStateException unset) {
-            SharedConstants.tryDetectVersion();
-        }
-    }
-
-    private static void awaitSave(Path file) throws InterruptedException {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!Files.isRegularFile(file) && System.nanoTime() < deadline) {
-            Thread.sleep(10L);
-        }
-        assertTrue(Files.isRegularFile(file), "saved data did not reach disk");
-    }
 }

@@ -17,7 +17,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -534,7 +534,7 @@ class TerrainStateTest {
 
     private static BlockLightKey lightKey(String path) {
         return new BlockLightKey(
-                BlockPos.ZERO.asLong(), ResourceLocation.fromNamespaceAndPath("test", path).toString(), 0);
+                BlockPos.ZERO.asLong(), Identifier.fromNamespaceAndPath("test", path).toString(), 0);
     }
 
     private static void addSection(TerrainState terrain, int cx, int sy, int cz,

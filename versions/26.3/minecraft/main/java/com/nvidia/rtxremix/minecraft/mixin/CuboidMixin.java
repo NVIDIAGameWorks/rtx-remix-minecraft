@@ -33,7 +33,7 @@ public class CuboidMixin {
 
     @Shadow
     @Final
-    private ModelPart.Polygon[] polygons;
+    public ModelPart.Polygon[] polygons;
 
     @Inject(method = "compile", at = @At("HEAD"), cancellable = true)
     private void rtxremix$onRenderCuboid(PoseStack.Pose entry, VertexConsumer vertexConsumer,
@@ -48,9 +48,10 @@ public class CuboidMixin {
         // ItemRenderer builds, is left to vanilla.
         VertexConsumer target = vertexConsumer;
         TextureAtlasSprite sprite = null;
-        if (target instanceof SpriteCoordinateExpander wrapped) {
-            sprite = wrapped.sprite;
-            target = wrapped.delegate;
+        if (target instanceof SpriteCoordinateExpander wrapped
+                && wrapped.mapping() instanceof TextureAtlasSprite atlasSprite) {
+            sprite = atlasSprite;
+            target = wrapped.delegate();
         }
         if (!(target instanceof RemixCapturingConsumer consumer)) {
             return;

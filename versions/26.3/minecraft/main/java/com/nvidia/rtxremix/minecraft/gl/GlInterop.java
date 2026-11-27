@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.gl;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.nvidia.rtxremix.InteropInfo;
 import com.nvidia.rtxremix.RemixBridge;
 import com.nvidia.rtxremix.TextureFormat;
@@ -31,7 +30,6 @@ import static org.lwjgl.opengl.GL45.*;
 public final class GlInterop {
     private static final Logger LOGGER = LoggerFactory.getLogger(GlInterop.class);
     private static final int[] NO_BUFFERS = new int[0];
-    private static final float[] TRANSPARENT = {0.0f, 0.0f, 0.0f, 0.0f};
 
     private final InteropImage colorImage = new InteropImage(true);
     private final InteropImage depthImage = new InteropImage(false);
@@ -41,6 +39,8 @@ public final class GlInterop {
     private int clientDoneSemaphore;
     private long clientDoneSemaphoreValue;
     private long lastWaitedVkDoneSemaphoreValue = -1;
+    /** Wraps the texture {@link #copyFromTexture} reads, which has no framebuffer of its own. */
+    private int sourceFbo;
     private int[] barrierTextures = new int[0];
     private int[] barrierLayouts = new int[0];
 
@@ -153,26 +153,28 @@ public final class GlInterop {
     }
 
     /**
-     * Copies the host frame into the shared color image and zeroes its alpha.
-     *
-     * <p>Remix writes opaque output into the same image, so zero alpha marks a
-     * frame Remix has not written, for example while it compiles shaders.
-     * {@link TextureOverlay} and the rain shader leave such a frame undrawn;
-     * drawing it would composite the previous host frame into the next one.
+     * Copies a colour texture into the shared image. Since 26.x vanilla's main
+     * render target is a texture with no framebuffer of its own, so it is
+     * attached to one this interop owns, by direct state access, which changes
+     * no binding vanilla's GL backend has cached.
      */
-    public void copyFromFramebuffer(int sourceFbo) {
+    public void copyFromTexture(int texture, int width, int height) {
         drainStaleGlErrors();
         if (!colorImage.available()) {
             return;
         }
+        if (sourceFbo == 0) {
+            sourceFbo = glCreateFramebuffers();
+        }
+        glNamedFramebufferTexture(sourceFbo, GL_COLOR_ATTACHMENT0, texture, 0);
         int destinationFbo = colorImage.framebuffer();
         glBlitNamedFramebuffer(
                 sourceFbo,
                 destinationFbo,
                 0,
                 0,
-                colorImage.width,
-                colorImage.height,
+                width,
+                height,
                 0,
                 0,
                 colorImage.width,
@@ -180,14 +182,6 @@ public final class GlInterop {
                 GL_COLOR_BUFFER_BIT,
                 GL_NEAREST);
         checkGlError("glBlitNamedFramebuffer");
-
-        // A blit ignores the color mask and a clear honors it, so the mask
-        // limits the clear to alpha. RenderSystem keeps vanilla's cached mask
-        // valid; all channels enabled is the state vanilla presents in.
-        RenderSystem.colorMask(false, false, false, true);
-        glClearNamedFramebufferfv(destinationFbo, GL_COLOR, 0, TRANSPARENT);
-        RenderSystem.colorMask(true, true, true, true);
-        checkGlError("glClearNamedFramebufferfv");
     }
 
     public int getTexture() {
@@ -212,6 +206,10 @@ public final class GlInterop {
 
     public void destroy() {
         colorImage.destroy();
+        if (sourceFbo != 0) {
+            glDeleteFramebuffers(sourceFbo);
+            sourceFbo = 0;
+        }
         depthImage.destroy();
         if (vkDoneSemaphore != 0) {
             glDeleteSemaphoresEXT(vkDoneSemaphore);

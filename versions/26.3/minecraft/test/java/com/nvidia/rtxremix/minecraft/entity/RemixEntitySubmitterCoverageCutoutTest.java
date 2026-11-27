@@ -6,7 +6,7 @@ package com.nvidia.rtxremix.minecraft.entity;
 
 import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.material.MapColor;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import org.junit.jupiter.api.Test;
@@ -54,7 +54,7 @@ class RemixEntitySubmitterCoverageCutoutTest {
 
     @Test
     void glyphPagesCutAtHalfCoverage() {
-        ResourceLocation page = ResourceLocation.fromNamespaceAndPath("minecraft", "default/7");
+        Identifier page = Identifier.fromNamespaceAndPath("minecraft", "default/7");
         DynamicTextureCache.onRegisterGlyphPage(page, new GlyphPageMirror(false));
 
         assertEquals(128, RemixEntitySubmitter.cutoutAlphaReferenceValue(

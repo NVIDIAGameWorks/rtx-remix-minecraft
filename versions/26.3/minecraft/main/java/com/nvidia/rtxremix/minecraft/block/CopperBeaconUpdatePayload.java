@@ -8,14 +8,14 @@ import com.nvidia.rtxremix.minecraft.MinecraftPlatform;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /** One validated control edit from an open Copper Beacon screen. */
 public record CopperBeaconUpdatePayload(int syncId, Field field, float value)
         implements CustomPacketPayload {
 
     public static final Type<CopperBeaconUpdatePayload> ID = new Type<>(
-            ResourceLocation.fromNamespaceAndPath(
+            Identifier.fromNamespaceAndPath(
                     MinecraftPlatform.RESOURCE_NAMESPACE, "copper_beacon_update"));
     public static final StreamCodec<RegistryFriendlyByteBuf, CopperBeaconUpdatePayload> PACKET_CODEC =
             new StreamCodec<>() {
