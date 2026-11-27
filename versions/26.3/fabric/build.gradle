@@ -4,7 +4,7 @@
  */
 
 plugins {
-    id 'fabric-loom'
+    id 'net.fabricmc.fabric-loom'
     id 'java'
 }
 
@@ -36,13 +36,6 @@ repositories {
 loom {
     accessWidenerPath = file('src/main/resources/rtx-remix-renderer.accesswidener')
 
-    // Loom 1.15+ disabled the mixin annotation processor by default. We use
-    // mixins extensively (see the selected Minecraft module's mixin config),
-    // so explicitly opt back into the legacy AP via the `mixin` extension's
-    // useLegacyMixinAp flag. The previous defaultRefmapName setting is no
-    // longer needed. Without it, Loom derives the refmap name from the
-    // project; our mixins.json doesn't reference the refmap by literal name,
-    // so the auto-derived name works fine.
     runs {
         client {
             // Keep in sync with RECOMMENDED_JVM_ARGS in packaging/installer.ps1.
@@ -54,7 +47,7 @@ loom {
                    "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump"
             if (benchmarkJfrPath.isPresent()) {
                 def jfrPath = benchmarkJfrPath.get().replace('\\', '/')
-                // maxsize=0 lifts JDK 21's 250 MB default disk cap so a long
+                // maxsize=0 lifts the JDK's 250 MB default disk cap so a long
                 // recording keeps its earliest frames.
                 def jfrRecording = "name=rtx-benchmark,settings=profile,disk=true,dumponexit=false,maxsize=0"
                 if (benchmarkJfrThrowables.get().toBoolean()) {
@@ -102,11 +95,12 @@ configurations {
 
 dependencies {
     // Minecraft and Fabric
+    // 26.x ships unobfuscated: no mappings, and mods are compiled against the
+    // same names the game runs with, so there is no remap step.
     minecraft "com.mojang:minecraft:${minecraftVersion}"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
+    implementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
 
-    modImplementation fabricApiCoordinate
+    implementation fabricApiCoordinate
 
     // Testing
     fabricTestRuntime "net.fabricmc:fabric-loader-junit:${fabricLoaderVersion}"
@@ -123,6 +117,9 @@ def fabricTest = tasks.register('fabricTest', Test) {
     }
     systemProperty 'fabric.side', 'client'
     workingDir = repoRoot
+    // Terrain capture reads vanilla model parts on 26.3 and does not go through
+    // Fabric's renderer API, so no test needs Fabric Loader yet.
+    failOnNoDiscoveredTests = false
 }
 
 test {
@@ -138,7 +135,7 @@ processResources {
 }
 
 // A development launcher instance loads mods as a player's install does, so it
-// needs the published intermediary jar, not Loom's remapped copy. A detached,
+// needs the published Fabric API jar. A detached,
 // non-transitive configuration resolves exactly the pinned coordinate and keeps
 // this task free of the native build and runtime staging.
 tasks.register('stageFabricApi', Copy) {

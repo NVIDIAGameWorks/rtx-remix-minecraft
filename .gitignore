@@ -68,3 +68,6 @@ nrc_session_log.txt
 /rtxremix-java/**/*.class
 /rtxremix-java/**/*.jar
 /rtxremix-java/**/*.log
+
+# Gradle wrappers that gradle/target-wrapper.ps1 generates for pinned targets
+/gradle/wrapper-*/

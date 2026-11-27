@@ -21,6 +21,15 @@ pluginManagement {
                 "Unknown Minecraft version '${requestedVersion}'; declared versions: " +
                 catalog.versions.keySet().join(', '))
     }
+    // A version may pin its own Gradle when its loader plugins need one the
+    // default wrapper does not run; gradlew.bat selects it for -PmcVersion.
+    def pinnedGradle = versionState.gradle?.version
+    if (pinnedGradle && gradle.gradleVersion != pinnedGradle) {
+        throw new GradleException(
+                "Minecraft ${requestedVersion} builds with Gradle ${pinnedGradle}, " +
+                "which gradlew.bat selects from project-state.json for -PmcVersion=${requestedVersion}; " +
+                "this build runs Gradle ${gradle.gradleVersion}")
+    }
     def requestedLoader = settings.startParameter.projectProperties.loader
     def selectedLoaders = requestedLoader == null
             ? versionState.loaders

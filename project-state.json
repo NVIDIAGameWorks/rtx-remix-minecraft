@@ -140,6 +140,68 @@
           "packageSourceTask": "jar"
         }
       }
+    },
+    "26.3": {
+      "supportTier": "active",
+      "defaultLoader": "fabric",
+      "gradle": {
+        "version": "9.8.2",
+        "distributionSha256Sum": "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607"
+      },
+      "minecraft": {
+        "version": "26.3",
+        "module": "versions/26.3/minecraft",
+        "versionRange": "[26.3,26.4)",
+        "javaTarget": 25,
+        "dataVersion": 5023,
+        "hostGraphicsBackend": "opengl"
+      },
+      "loaders": {
+        "fabric": {
+          "displayName": "Fabric",
+          "module": "versions/26.3/fabric",
+          "provider": "fabric",
+          "projectPath": ":versions:26.3:fabric",
+          "supportTier": "experimental",
+          "developmentArtifact": {
+            "directory": "versions/26.3/fabric/build/libs",
+            "pattern": "rtx-remix-renderer-*.jar"
+          },
+          "installedJar": "rtx-remix-renderer-fabric.jar",
+          "builtinResourcePack": "fabric",
+          "gradle": {
+            "build": ":versions:26.3:fabric:build",
+            "test": ":versions:26.3:fabric:test",
+            "package": ":versions:26.3:fabric:package",
+            "prepare": [
+              ":versions:26.3:fabric:stageFabricApi"
+            ]
+          },
+          "prism": {
+            "uid": "net.fabricmc.fabric-loader",
+            "name": "Fabric Loader",
+            "version": "0.20.1"
+          },
+          "gradlePlugin": {
+            "id": "net.fabricmc.fabric-loom",
+            "version": "1.19.3",
+            "repository": "https://maven.fabricmc.net/"
+          },
+          "loader": {
+            "coordinate": "net.fabricmc:fabric-loader",
+            "version": "0.20.1",
+            "versionRange": ">=0.20.1"
+          },
+          "api": {
+            "coordinate": "net.fabricmc.fabric-api:fabric-api",
+            "version": "0.165.0+26.3",
+            "versionRange": ">=0.165.0+26.3"
+          },
+          "metadataFile": "fabric.mod.json",
+          "archiveBaseName": "rtx-remix-renderer",
+          "packageSourceTask": "jar"
+        }
+      }
     }
   }
 }
