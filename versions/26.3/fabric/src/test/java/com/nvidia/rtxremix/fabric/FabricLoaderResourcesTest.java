@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FabricLoaderResourcesTest {
     private static final Path ROOT = Path.of("").toAbsolutePath().normalize();
-    private static final Path FABRIC = ROOT.resolve("versions/1.21.1/fabric");
+    private static final Path FABRIC = ROOT.resolve("versions/26.3/fabric");
     private static final Path RESOURCES = FABRIC.resolve("src/main/resources");
 
     @Test
@@ -105,11 +105,7 @@ class FabricLoaderResourcesTest {
                 .getAsJsonObject();
 
         assertEquals(
-                Set.of(
-                        "IndigoMeshFabricMixin",
-                        "MultipartBakedModelFabricMixin",
-                        "WeightedBakedModelFabricMixin",
-                        "WindowFabricMixin"),
+                Set.of("WindowFabricMixin"),
                 strings(config.getAsJsonArray("client")));
         assertEquals(
                 Set.of("CopperBeaconBlockEntityFabricMixin"),
@@ -141,10 +137,9 @@ class FabricLoaderResourcesTest {
     private static void assertStrictMixinDefaults(JsonObject config) {
         assertTrue(config.get("required").getAsBoolean());
         assertEquals("0.8", config.get("minVersion").getAsString());
-        assertEquals("JAVA_21", config.get("compatibilityLevel").getAsString());
-        assertEquals(
-                "rtx-remix-renderer-refmap.json",
-                config.get("refmap").getAsString());
+        assertEquals("JAVA_25", config.get("compatibilityLevel").getAsString());
+        // 26.x runs unobfuscated, so mixins are not remapped and carry no refmap.
+        assertTrue(!config.has("refmap"), "a 26.3 mixin config must not name a refmap");
         assertEquals(
                 1,
                 config.getAsJsonObject("injectors")

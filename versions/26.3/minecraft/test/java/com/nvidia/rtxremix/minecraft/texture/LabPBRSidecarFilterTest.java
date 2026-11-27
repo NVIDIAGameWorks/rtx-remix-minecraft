@@ -95,13 +95,13 @@ class LabPBRSidecarFilterTest {
 
     /** The sprite list an atlas hands its sources, recording which suppliers a source discards. */
     private static final class RecordingOutput implements SpriteSource.Output {
-        private final Map<Identifier, SpriteSource.SpriteSupplier> suppliers = new LinkedHashMap<>();
+        private final Map<Identifier, SpriteSource.DiscardableLoader> suppliers = new LinkedHashMap<>();
         final Set<Identifier> discarded = new HashSet<>();
 
         void add(Identifier id) {
-            add(id, new SpriteSource.SpriteSupplier() {
+            add(id, new SpriteSource.DiscardableLoader() {
                 @Override
-                public SpriteContents apply(SpriteResourceLoader loader) {
+                public SpriteContents get(SpriteResourceLoader loader) {
                     throw new AssertionError("the filter must not load a sprite");
                 }
 
@@ -117,15 +117,15 @@ class LabPBRSidecarFilterTest {
         }
 
         @Override
-        public void add(Identifier id, SpriteSource.SpriteSupplier supplier) {
+        public void add(Identifier id, SpriteSource.DiscardableLoader supplier) {
             suppliers.put(id, supplier);
         }
 
         @Override
         public void removeAll(Predicate<Identifier> predicate) {
-            Iterator<Map.Entry<Identifier, SpriteSource.SpriteSupplier>> entries = suppliers.entrySet().iterator();
+            Iterator<Map.Entry<Identifier, SpriteSource.DiscardableLoader>> entries = suppliers.entrySet().iterator();
             while (entries.hasNext()) {
-                Map.Entry<Identifier, SpriteSource.SpriteSupplier> entry = entries.next();
+                Map.Entry<Identifier, SpriteSource.DiscardableLoader> entry = entries.next();
                 if (predicate.test(entry.getKey())) {
                     entry.getValue().discard();
                     entries.remove();

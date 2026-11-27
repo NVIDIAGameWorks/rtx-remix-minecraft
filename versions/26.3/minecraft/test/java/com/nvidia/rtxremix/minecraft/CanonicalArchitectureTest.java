@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CanonicalArchitectureTest {
     private static final Path ROOT = repositoryRoot();
-    private static final Path MINECRAFT = ROOT.resolve("versions/1.21.1/minecraft");
+    private static final Path MINECRAFT = ROOT.resolve("versions/26.3/minecraft");
     private static final LoaderArchitectureContract.Manifest MANIFEST =
             LoaderArchitectureContract.discover(ROOT.resolve("project-state.json"));
     private static final Pattern LOADER_IMPORT = Pattern.compile(
@@ -260,7 +260,7 @@ class CanonicalArchitectureTest {
                 "frame start/end policy belongs in the shared render hook");
 
         String worldRendererMixin = read(MINECRAFT.resolve(
-                "main/java/com/nvidia/rtxremix/minecraft/mixin/WorldRendererMixin.java"));
+                "main/java/com/nvidia/rtxremix/minecraft/mixin/LevelRendererMixin.java"));
         assertTrue(worldRendererMixin.contains("MinecraftRuntime.beginWorldRenderFrame();"));
         assertTrue(worldRendererMixin.contains("MinecraftRuntime.markFrameReady();"));
     }

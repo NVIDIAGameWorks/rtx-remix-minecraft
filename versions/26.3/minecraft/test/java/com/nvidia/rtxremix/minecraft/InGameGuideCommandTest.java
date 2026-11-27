@@ -41,9 +41,9 @@ class InGameGuideCommandTest {
     private static final Path GUIDE = Path.of("docs", "IN_GAME_GUIDE.md");
 
     private static final List<Path> COMMAND_SOURCES = List.of(
-            Path.of("versions", "1.21.1", "minecraft", "main", "java", "com",
+            Path.of("versions", "26.3", "minecraft", "main", "java", "com",
                     "nvidia", "rtxremix", "minecraft", "RtxClientCommands.java"),
-            Path.of("versions", "1.21.1", "minecraft", "main", "java", "com",
+            Path.of("versions", "26.3", "minecraft", "main", "java", "com",
                     "nvidia", "rtxremix", "minecraft", "camera",
                     "CameraController.java"));
 
