@@ -5,12 +5,12 @@
 
 import json
 import os
-import shutil
 import subprocess
 from copy import deepcopy
 from pathlib import Path
 
 import pytest
+from conftest import write_default_version_release_state
 
 from rtx_tools import loader_registry
 from rtx_tools.benchmark import util
@@ -206,7 +206,7 @@ def test_uninstall_removes_legacy_water_normals_but_preserves_other_textures(tmp
 def test_release_jar_is_selected_from_the_requested_loader_directory(tmp_path: Path):
     root = tmp_path / "release"
     root.mkdir()
-    shutil.copy2(util.PROJECT_DIR / "project-state.json", root / "project-state.json")
+    write_default_version_release_state(root / "project-state.json")
     for loader, name in (
         ("fabric", "rtx-remix-renderer-fabric.jar"),
         ("forge", "rtx-remix-renderer-forge-all.jar"),
@@ -732,7 +732,7 @@ def test_unattended_mode_requires_an_explicit_minecraft_version():
         check=False,
     )
     assert result.returncode == 2
-    assert f"-MinecraftVersion {MC_VERSION} is required" in result.stderr
+    assert f"-MinecraftVersion {'|'.join(PROJECT_STATE.available_versions)} is required" in result.stderr
 
 
 def test_only_versions_with_staged_mods_are_available(tmp_path: Path):

@@ -686,6 +686,10 @@ function Initialize-LoaderCatalog {
         Set-MinecraftVersion -VersionId $PreferredMinecraftVersion
     } elseif ($available.Count -eq 1) {
         Set-MinecraftVersion -VersionId $available[0]
+    } elseif (-not $isReleaseBundle) {
+        # A source checkout carries every declared target; like a Gradle build
+        # without -PmcVersion, it selects the catalog's default version.
+        Set-MinecraftVersion -VersionId $defaultVersion
     }
 }
 
