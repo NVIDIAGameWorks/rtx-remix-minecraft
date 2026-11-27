@@ -39,10 +39,11 @@ public final class MinecraftParticleAtlasSource
             TextureAtlasSprite sprite = entry.getValue();
             sprites.add(new ParticleAtlasManager.ParticleSpriteData(
                     entry.getKey(),
-                    sprite.getX(),
-                    sprite.getY(),
+                    SpriteTexels.x(sprite),
+                    SpriteTexels.y(sprite),
                     sprite.contents().width(),
-                    sprite.contents().height()));
+                    sprite.contents().height(),
+                    sprite.padding));
         }
         return new ParticleAtlasManager.ParticleAtlasData(
                 access.getWidth(),

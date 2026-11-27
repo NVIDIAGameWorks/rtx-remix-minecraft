@@ -99,12 +99,13 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
                 sprite.getV0(),
                 sprite.getU1(),
                 sprite.getV1(),
-                sprite.getX(),
-                sprite.getY(),
+                SpriteTexels.x(sprite),
+                SpriteTexels.y(sprite),
                 width,
                 height,
                 transparentPixels,
-                animationData);
+                animationData,
+                sprite.padding);
     }
 
     private static BlockTextureManager.AnimationData snapshotAnimation(
@@ -148,8 +149,8 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
             if (image == null) {
                 continue;
             }
-            int spriteX = sprite.getX();
-            int spriteY = sprite.getY();
+            int spriteX = SpriteTexels.x(sprite);
+            int spriteY = SpriteTexels.y(sprite);
             int spriteWidth = sprite.contents().width();
             int spriteHeight = sprite.contents().height();
             for (int y = 0; y < spriteHeight; y++) {
@@ -163,6 +164,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
                 }
             }
         }
+        SpriteTexels.fillPadding(access.getSprites().values(), pixels, width, height, 4);
         return pixels;
     }
 

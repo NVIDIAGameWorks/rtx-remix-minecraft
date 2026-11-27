@@ -117,7 +117,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         public final String name;
         public final float u0, v0, u1, v1;
         public final boolean hasTransparency;
-        final int pixW, pixH, pixX, pixY;
+        final int pixW, pixH, pixX, pixY, pad;
         private final BitSet transparentPixels;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
@@ -135,6 +135,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
             pixY = sprite.y;
             pixW = sprite.width;
             pixH = sprite.height;
+            pad = sprite.padding;
             transparentPixels = sprite.transparentPixels;
             hasTransparency = transparentPixels != null && !transparentPixels.isEmpty();
         }
@@ -446,6 +447,15 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
             }
         }
 
+        // The layers were written sprite by sprite; their borders follow the edits.
+        fillSpritePadding(albedoRGBA, 4);
+        fillSpritePadding(normalAtlas, 4);
+        fillSpritePadding(heightAtlas, 1);
+        fillSpritePadding(roughnessAtlas, 1);
+        fillSpritePadding(metallicAtlas, 1);
+        fillSpritePadding(emissiveAtlas, 4);
+        fillSpritePadding(sssThicknessAtlas, 4);
+        fillSpritePadding(sssAlbedoAtlas, 4);
         atlasAlbedo = upload(api, "atlas_albedo", albedoRGBA, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
 
@@ -1133,6 +1143,9 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
                 "smoker", "blast_furnace", "brewing_stand", "cave_vines", "cave_vines_plant");
         addColors(colors, SOUL, "soul_torch", "soul_wall_torch", "soul_lantern", "soul_campfire");
         addColors(colors, RED, "redstone_torch", "redstone_wall_torch");
+        // Copper torches and lanterns exist only on Minecraft versions that have them.
+        addColors(colors, GREEN, "copper_torch", "copper_wall_torch", "copper_lantern",
+                "exposed_copper_lantern", "weathered_copper_lantern", "oxidized_copper_lantern");
         addColors(colors, WHITE, "end_rod", "beacon", "conduit");
         addColors(colors, GREEN, "glow_lichen");
         addColors(colors, PURPLE, "amethyst_cluster", "large_amethyst_bud",
@@ -1367,6 +1380,14 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         albedoRGBA = null; initialized = false;
     }
 
+    /** See {@link SpritePadding#fill}. */
+    private void fillSpritePadding(byte[] layer, int bytesPerPixel) {
+        for (SpriteEntry se : sprites) {
+            SpritePadding.fill(layer, atlasW, atlasH, bytesPerPixel,
+                    se.pixX, se.pixY, se.pixW, se.pixH, se.pad);
+        }
+    }
+
     /**
      * Loader/version boundary for block-atlas pixels and resource-pack sidecars.
      * Calls happen only while (re)building materials, never in terrain hot loops.
@@ -1422,6 +1443,8 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
         public final int height;
         public final BitSet transparentPixels;
         public final AnimationData animation;
+        /** Texels the stitcher reserves around the sprite, outside {@link #x} and {@link #y}. */
+        public final int padding;
 
         public SpriteData(
                 Object id,
@@ -1436,6 +1459,23 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
                 int height,
                 BitSet transparentPixels,
                 AnimationData animation) {
+            this(id, name, u0, v0, u1, v1, x, y, width, height, transparentPixels, animation, 0);
+        }
+
+        public SpriteData(
+                Object id,
+                String name,
+                float u0,
+                float v0,
+                float u1,
+                float v1,
+                int x,
+                int y,
+                int width,
+                int height,
+                BitSet transparentPixels,
+                AnimationData animation,
+                int padding) {
             this.id = id;
             this.name = name;
             this.u0 = u0;
@@ -1448,6 +1488,7 @@ public class BlockTextureManager implements TerrainTexturePolicy, TerrainMateria
             this.height = height;
             this.transparentPixels = transparentPixels;
             this.animation = animation;
+            this.padding = padding;
         }
     }
 

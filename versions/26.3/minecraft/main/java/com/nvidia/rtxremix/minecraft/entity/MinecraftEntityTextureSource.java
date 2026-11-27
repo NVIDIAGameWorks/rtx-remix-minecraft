@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.texture.SpriteTexels;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteAtlasAccessor;
 import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -88,13 +90,14 @@ public final class MinecraftEntityTextureSource implements EntityTextureSource {
                 TextureAtlasSprite sprite = entry.getValue();
                 EntityTextureKey spriteId = entityTextureKey(entry.getKey());
                 sprites.add(new SpriteSnapshot(
-                        sprite.getX(),
-                        sprite.getY(),
+                        SpriteTexels.x(sprite),
+                        SpriteTexels.y(sprite),
                         sprite.contents().width(),
                         sprite.contents().height(),
                         loadVariant(resources, spriteId, "_n"),
                         loadVariant(resources, spriteId, "_s"),
-                        loadVariant(resources, spriteId, "_sss")));
+                        loadVariant(resources, spriteId, "_sss"),
+                        sprite.padding));
             }
             return new AtlasSnapshot(
                     MinecraftBlockAtlasSource.stitchAtlasRgba(atlas), width, height, sprites);
@@ -122,6 +125,17 @@ public final class MinecraftEntityTextureSource implements EntityTextureSource {
                 ? null
                 : new EndPortalEmissive(
                         rgba, EndPortalSurface.TILE_SIZE, EndPortalSurface.EMISSIVE_INTENSITY);
+    }
+
+    /** Beds are block models since 26.x; chests are the common block-entity atlas now. */
+    @Override
+    public EntityTextureKey warmUpAtlas() {
+        return entityTextureKey(Sheets.CHEST_SHEET);
+    }
+
+    @Override
+    public EntitySurfaceMode warmUpAtlasSurfaceMode() {
+        return EntitySurfaceMode.CUTOUT;
     }
 
     @Override

@@ -27,6 +27,20 @@ public interface EntityTextureSource {
 
     void invalidateResources();
 
+    /**
+     * The block-entity atlas whose material the renderer builds during warm-up, so
+     * the first frame that shows one does not stall. A Minecraft version that draws
+     * beds as block models names its own largest block-entity atlas instead.
+     */
+    default EntityTextureKey warmUpAtlas() {
+        return EntityTextureKey.of("minecraft", "textures/atlas/beds.png");
+    }
+
+    /** The surface mode of {@link #warmUpAtlas()}'s material. */
+    default EntitySurfaceMode warmUpAtlasSurfaceMode() {
+        return EntitySurfaceMode.OPAQUE;
+    }
+
     void clear();
 
     interface PixelImage extends LabPBRConverter.PixelImage, AutoCloseable {
@@ -121,6 +135,8 @@ public interface EntityTextureSource {
         public final PixelImage normal;
         public final PixelImage specular;
         public final PixelImage subsurfaceAlbedo;
+        /** Texels the stitcher reserves around the sprite, outside {@link #x} and {@link #y}. */
+        public final int padding;
 
         public SpriteSnapshot(
                 int x,
@@ -130,6 +146,19 @@ public interface EntityTextureSource {
                 PixelImage normal,
                 PixelImage specular,
                 PixelImage subsurfaceAlbedo) {
+            this(x, y, width, height, normal, specular, subsurfaceAlbedo, 0);
+        }
+
+        public SpriteSnapshot(
+                int x,
+                int y,
+                int width,
+                int height,
+                PixelImage normal,
+                PixelImage specular,
+                PixelImage subsurfaceAlbedo,
+                int padding) {
+            this.padding = padding;
             this.x = x;
             this.y = y;
             this.width = width;
