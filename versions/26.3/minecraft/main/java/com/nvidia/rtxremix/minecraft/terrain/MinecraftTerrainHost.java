@@ -17,7 +17,7 @@ import java.util.Objects;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.chunk.LevelChunk;
 
@@ -84,19 +84,21 @@ public final class MinecraftTerrainHost implements ChunkManager.Host {
         }
         LevelChunk chunk =
                 world.getChunkSource().getChunk(chunkX, chunkZ, false);
-        return chunk != null && chunk.isSectionEmpty(sectionY);
+        return chunk != null
+                && chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY)).hasOnlyAir();
     }
 
     @Override
     public int bottomSectionCoord() {
         ClientLevel world = world();
-        return world == null ? 0 : world.getMinSection();
+        return world == null ? 0 : world.getMinSectionY();
     }
 
     @Override
     public int topSectionCoord() {
         ClientLevel world = world();
-        return world == null ? 0 : world.getMaxSection();
+        // Exclusive: 26.x reports the top section itself, one below this bound.
+        return world == null ? 0 : world.getMaxSectionY() + 1;
     }
 
     @Override
@@ -112,7 +114,7 @@ public final class MinecraftTerrainHost implements ChunkManager.Host {
     @Override
     public TerrainLightReconciler.Radiance resolveRadiance(LightEntry entry) {
         Block source = BuiltInRegistries.BLOCK.byId(entry.sourceToken());
-        ResourceLocation sourceId = BuiltInRegistries.BLOCK.getKey(source);
+        Identifier sourceId = BuiltInRegistries.BLOCK.getKey(source);
         float[] blockColor = textures.getLightColorForBlock(
                 sourceId.getNamespace(), sourceId.getPath());
         float r = entry.hasColor() ? entry.colorR() : blockColor[0];
@@ -124,7 +126,7 @@ public final class MinecraftTerrainHost implements ChunkManager.Host {
                         * LightPowerPolicy.RADIANCE_PER_LIGHT_LEVEL;
         baseIntensity *= entry.authoredIntensityMultiplier();
         float intensity = BlockLightIntensityControls.apply(
-                ResourceLocation.parse(entry.key().ruleId()), baseIntensity);
+                Identifier.parse(entry.key().ruleId()), baseIntensity);
         return new TerrainLightReconciler.Radiance(
                 r * intensity, g * intensity, b * intensity);
     }

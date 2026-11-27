@@ -38,7 +38,7 @@ import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
@@ -855,11 +855,11 @@ public class LightManager {
                 : entry.lightLevel() * LightPowerPolicy.RADIANCE_PER_LIGHT_LEVEL;
         baseIntensity *= entry.authoredIntensityMultiplier();
         return BlockLightIntensityControls.apply(
-                ResourceLocation.parse(entry.key().ruleId()), baseIntensity);
+                Identifier.parse(entry.key().ruleId()), baseIntensity);
     }
 
     private float[] itemLightColor(Block block) {
-        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+        Identifier id = BuiltInRegistries.BLOCK.getKey(block);
         return textures.getLightColorForBlock(id.getNamespace(), id.getPath());
     }
 

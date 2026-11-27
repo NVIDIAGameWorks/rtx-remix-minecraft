@@ -402,6 +402,11 @@ public final class AtlasAnimationForwarder {
         LOGGER.info("AtlasAnimationForwarder cleared");
     }
 
+    /** Whether patches are being queued; a caller that builds one checks this first. */
+    public static boolean isActive() {
+        return active;
+    }
+
     public static void beginAtlasUpload(Object atlasId) {
         currentAtlasId.set(atlasId);
     }

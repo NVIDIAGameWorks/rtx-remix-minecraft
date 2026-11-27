@@ -13,7 +13,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /** Reads the Minecraft particle atlas for the canonical particle material manager. */
 public final class MinecraftParticleAtlasSource
@@ -35,7 +35,7 @@ public final class MinecraftParticleAtlasSource
         SpriteAtlasAccessor access = (SpriteAtlasAccessor) atlas;
         List<ParticleAtlasManager.ParticleSpriteData> sprites =
                 new ArrayList<>(access.getSprites().size());
-        for (Map.Entry<ResourceLocation, TextureAtlasSprite> entry : access.getSprites().entrySet()) {
+        for (Map.Entry<Identifier, TextureAtlasSprite> entry : access.getSprites().entrySet()) {
             TextureAtlasSprite sprite = entry.getValue();
             sprites.add(new ParticleAtlasManager.ParticleSpriteData(
                     entry.getKey(),
@@ -61,10 +61,10 @@ public final class MinecraftParticleAtlasSource
     public BlockTextureManager.ImageResource loadVariant(
             Object spriteId,
             String suffix) {
-        if (variants == null || !(spriteId instanceof ResourceLocation id)) {
+        if (variants == null || !(spriteId instanceof Identifier id)) {
             return null;
         }
-        ResourceLocation textureId = ResourceLocation.fromNamespaceAndPath(
+        Identifier textureId = Identifier.fromNamespaceAndPath(
                 id.getNamespace(), "particle/" + id.getPath());
         NativeImage image = variants.loadVariant(textureId, suffix);
         return image == null ? null : NativeImagePixels.of(image);

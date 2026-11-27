@@ -5,17 +5,21 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.state.level.BlockOutlineRenderState;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Evaluates Minecraft's targeted-block shape and forwards neutral edges to core. */
+/**
+ * Forwards Minecraft's targeted-block outline to core as neutral edges.
+ *
+ * <p>Since 26.x the shape is evaluated during extraction and handed over in the
+ * outline render state, so modded block shape behavior is preserved exactly as
+ * vanilla draws it.
+ */
 public final class MinecraftBlockOutlineCapture {
     private static final float OUTLINE_WIDTH_PIXELS = 2.5F;
     private static final double REFERENCE_FRAMEBUFFER_WIDTH_PIXELS = 1920.0;
@@ -28,28 +32,24 @@ public final class MinecraftBlockOutlineCapture {
     public static void capture(
             RemixBlockOutlinePass pass,
             ClientLevel world,
-            BlockPos blockPos,
-            BlockState blockState,
-            Entity entity,
-            Camera camera,
-            float tickDelta) {
-        if (world == null
-                || blockState.isAir()
-                || !world.getWorldBorder().isWithinBounds(blockPos)) {
+            BlockOutlineRenderState outline,
+            Vec3 camera,
+            double fovDegrees) {
+        BlockPos blockPos = outline.pos();
+        if (world == null || !world.getWorldBorder().isWithinBounds(blockPos)) {
             pass.discardCapture();
             return;
         }
 
-        VoxelShape shape = blockState.getShape(
-                world, blockPos, CollisionContext.of(entity));
+        VoxelShape shape = outline.shape();
         if (shape.isEmpty()) {
             pass.discardCapture();
             return;
         }
 
-        double cameraX = camera.getPosition().x;
-        double cameraY = camera.getPosition().y;
-        double cameraZ = camera.getPosition().z;
+        double cameraX = camera.x;
+        double cameraY = camera.y;
+        double cameraZ = camera.z;
         double offsetX = blockPos.getX() - cameraX;
         double offsetY = blockPos.getY() - cameraY;
         double offsetZ = blockPos.getZ() - cameraZ;
@@ -75,8 +75,7 @@ public final class MinecraftBlockOutlineCapture {
             return;
         }
 
-        double fovDegrees = client.gameRenderer.getFov(camera, tickDelta, true);
-        fovDegrees = Math.max(MIN_FOV_DEGREES, Math.min(MAX_FOV_DEGREES, fovDegrees));
+        double clampedFov = Math.max(MIN_FOV_DEGREES, Math.min(MAX_FOV_DEGREES, fovDegrees));
         double lineWidthPixels = OUTLINE_WIDTH_PIXELS * Math.max(
                 1.0, framebufferWidth / REFERENCE_FRAMEBUFFER_WIDTH_PIXELS);
         pass.capture(
@@ -84,7 +83,7 @@ public final class MinecraftBlockOutlineCapture {
                 cameraX,
                 cameraY,
                 cameraZ,
-                Math.tan(Math.toRadians(fovDegrees) * 0.5),
+                Math.tan(Math.toRadians(clampedFov) * 0.5),
                 lineWidthPixels,
                 framebufferHeight,
                 edges);

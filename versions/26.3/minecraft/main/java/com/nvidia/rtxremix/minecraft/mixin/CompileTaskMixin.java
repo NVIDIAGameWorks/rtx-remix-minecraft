@@ -5,7 +5,7 @@
 package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
-import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionSnapshotRelease;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
@@ -50,6 +50,6 @@ public abstract class CompileTaskMixin {
             method = "doTask",
             at = @At(value = "INVOKE", target = "Ljava/util/List;isEmpty()Z"))
     private boolean rtxremix$keepCapturedVisibility(boolean noBlockEntities) {
-        return noBlockEntities && !RtxRemixMod.isRtxEnabled();
+        return noBlockEntities && !MinecraftRuntime.isRtxEnabled();
     }
 }

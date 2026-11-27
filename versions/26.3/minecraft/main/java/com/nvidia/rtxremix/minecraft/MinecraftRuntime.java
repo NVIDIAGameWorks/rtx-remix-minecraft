@@ -162,7 +162,7 @@ public final class MinecraftRuntime {
             value.getChunkManager().clear();
         }
         LongSet built = builtSections(client);
-        client.levelRenderer.allChanged();
+        client.levelExtractor.allChanged();
         recaptureTerrainForRemix(client, built);
         return true;
     }

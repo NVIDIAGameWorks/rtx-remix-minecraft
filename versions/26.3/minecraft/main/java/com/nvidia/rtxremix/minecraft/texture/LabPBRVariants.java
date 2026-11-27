@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 
@@ -19,9 +19,9 @@ public final class LabPBRVariants {
     static final List<String> VARIANT_SUFFIXES = List.of("_n", "_s", "_sss");
     private static final String TEXTURE_EXTENSION = ".png";
 
-    private final Map<ResourceLocation, Resource> resources;
+    private final Map<Identifier, Resource> resources;
 
-    private LabPBRVariants(Map<ResourceLocation, Resource> resources) {
+    private LabPBRVariants(Map<Identifier, Resource> resources) {
         this.resources = resources;
     }
 
@@ -30,7 +30,7 @@ public final class LabPBRVariants {
                 resourceManager.listResources("textures", LabPBRVariants::isVariantResource));
     }
 
-    public NativeImage loadVariant(ResourceLocation spriteId, String suffix) {
+    public NativeImage loadVariant(Identifier spriteId, String suffix) {
         return loadResource(resources.get(variantId(spriteId, suffix)));
     }
 
@@ -38,7 +38,7 @@ public final class LabPBRVariants {
         return resources.size();
     }
 
-    private static boolean isVariantResource(ResourceLocation id) {
+    private static boolean isVariantResource(Identifier id) {
         String path = id.getPath();
         if (!path.endsWith(TEXTURE_EXTENSION)) return false;
         int nameEnd = path.length() - TEXTURE_EXTENSION.length();
@@ -57,8 +57,8 @@ public final class LabPBRVariants {
         }
     }
 
-    private static ResourceLocation variantId(ResourceLocation spriteId, String suffix) {
-        return ResourceLocation.fromNamespaceAndPath(
+    private static Identifier variantId(Identifier spriteId, String suffix) {
+        return Identifier.fromNamespaceAndPath(
                 spriteId.getNamespace(), "textures/" + spriteId.getPath() + suffix + TEXTURE_EXTENSION);
     }
 }

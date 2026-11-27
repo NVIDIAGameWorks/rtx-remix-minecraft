@@ -18,7 +18,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 
@@ -83,8 +83,8 @@ public final class MinecraftEntityTextureSource implements EntityTextureSource {
         ResourceManager resources = client.getResourceManager();
         List<SpriteSnapshot> sprites = new ArrayList<>();
         try {
-            Map<ResourceLocation, TextureAtlasSprite> atlasSprites = ((SpriteAtlasAccessor) atlas).getSprites();
-            for (Map.Entry<ResourceLocation, TextureAtlasSprite> entry : atlasSprites.entrySet()) {
+            Map<Identifier, TextureAtlasSprite> atlasSprites = ((SpriteAtlasAccessor) atlas).getSprites();
+            for (Map.Entry<Identifier, TextureAtlasSprite> entry : atlasSprites.entrySet()) {
                 TextureAtlasSprite sprite = entry.getValue();
                 EntityTextureKey spriteId = entityTextureKey(entry.getKey());
                 sprites.add(new SpriteSnapshot(
@@ -148,15 +148,15 @@ public final class MinecraftEntityTextureSource implements EntityTextureSource {
         return image == null ? null : NativeImagePixels.of(image);
     }
 
-    private static EntityTextureKey entityTextureKey(ResourceLocation id) {
+    private static EntityTextureKey entityTextureKey(Identifier id) {
         return new EntityTextureKey(id.getNamespace(), id.getPath(), id);
     }
 
-    private static ResourceLocation minecraftId(EntityTextureKey key) {
+    private static Identifier minecraftId(EntityTextureKey key) {
         Object platformKey = key.platformKey();
-        return platformKey instanceof ResourceLocation
-                ? (ResourceLocation) platformKey
-                : ResourceLocation.fromNamespaceAndPath(key.namespace(), key.path());
+        return platformKey instanceof Identifier
+                ? (Identifier) platformKey
+                : Identifier.fromNamespaceAndPath(key.namespace(), key.path());
     }
 
     private static byte[] abgrToRgba(NativeImage image) {
@@ -165,7 +165,7 @@ public final class MinecraftEntityTextureSource implements EntityTextureSource {
         byte[] rgba = new byte[width * height * 4];
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int abgr = image.getPixelRGBA(x, y);
+                int abgr = image.getPixelABGR(x, y);
                 int index = (y * width + x) * 4;
                 rgba[index] = (byte) (abgr & 0xFF);
                 rgba[index + 1] = (byte) ((abgr >> 8) & 0xFF);

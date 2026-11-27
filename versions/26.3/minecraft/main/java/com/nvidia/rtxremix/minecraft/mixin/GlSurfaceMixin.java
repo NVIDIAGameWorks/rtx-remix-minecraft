@@ -6,7 +6,7 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.mojang.renderpearl.backend.opengl.GlSurface;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
-import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
 import org.lwjgl.sdl.SDLVideo;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -29,9 +29,9 @@ public abstract class GlSurfaceMixin {
         at = @At(value = "INVOKE", target = "Lorg/lwjgl/sdl/SDLVideo;SDL_GL_SwapWindow(J)Z")
     )
     private boolean rtxremix$redirectSwapBuffers(long window) {
-        RemixRenderer renderer = RtxRemixMod.renderer;
+        RemixRenderer renderer = MinecraftRuntime.renderer();
         if (renderer != null && renderer.isInitialized()) {
-            renderer.presentFrameVk();
+            renderer.presentHostFrame();
             return true;
         }
         return SDLVideo.SDL_GL_SwapWindow(window);

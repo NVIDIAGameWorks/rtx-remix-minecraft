@@ -9,21 +9,26 @@ import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
 import com.nvidia.rtxremix.minecraft.mixin.BillboardParticleAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleAccessor;
+import com.nvidia.rtxremix.minecraft.mixin.ParticleGroupAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleManagerAccessor;
 import com.nvidia.rtxremix.minecraft.mixin.SpriteBillboardParticleAccessor;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
+import net.minecraft.client.particle.ParticleGroup;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
-import net.minecraft.client.particle.TextureSheetParticle;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.resources.Identifier;
 import java.util.Map;
 import java.util.Queue;
 
 /** Reads Minecraft particle state into the canonical particle pipeline. */
 public final class MinecraftParticleCapture {
+    private static final boolean[] TERRAIN_PASSES = {true, false};
+
     private final RemixRenderer renderer;
     private final ParticleAtlasManager atlasManager;
     private final RemixParticleRenderer particles;
@@ -46,14 +51,24 @@ public final class MinecraftParticleCapture {
 
         ParticleManagerAccessor manager =
                 (ParticleManagerAccessor) client.particleEngine;
-        Map<ParticleRenderType, Queue<Particle>> particleMap =
+        Map<ParticleRenderType, ParticleGroup<?>> particleMap =
                 manager.getParticles();
         if (particleMap == null || particleMap.isEmpty()) {
             return particles.finishPreparation(frame);
         }
 
+        // Since 26.x every billboard particle shares the SINGLE_QUADS group; the
+        // others (item pickup, elder guardian, no-render) are drawn as models or not
+        // at all. A particle's sprite atlas now says whether it is a terrain particle.
+        ParticleGroup<?> quads = particleMap.get(ParticleRenderType.SINGLE_QUADS);
+        Queue<? extends Particle> queue =
+                quads == null ? null : ((ParticleGroupAccessor) quads).getParticles();
+        if (queue == null || queue.isEmpty()) {
+            return particles.finishPreparation(frame);
+        }
+
         BlockTextureManager blockTextures = renderer.getTextureManager();
-        var cameraRotation = client.gameRenderer.getMainCamera().rotation();
+        var cameraRotation = client.gameRenderer.mainCamera().rotation();
         ParticleQuadWriter.Basis billboardBasis =
                 ParticleQuadWriter.basisFromCamera(
                         cameraRotation.x,
@@ -61,17 +76,7 @@ public final class MinecraftParticleCapture {
                         cameraRotation.z,
                         cameraRotation.w);
 
-        for (Map.Entry<ParticleRenderType, Queue<Particle>> entry
-                : particleMap.entrySet()) {
-            ParticleRenderType sheet = entry.getKey();
-            Queue<Particle> queue = entry.getValue();
-            if (queue == null || queue.isEmpty()) continue;
-            if (sheet == ParticleRenderType.NO_RENDER
-                    || sheet == ParticleRenderType.CUSTOM) {
-                continue;
-            }
-
-            boolean terrain = sheet == ParticleRenderType.TERRAIN_SHEET;
+        for (boolean terrain : TERRAIN_PASSES) {
             RemixMaterial material = terrain
                     ? blockTextures != null
                             ? blockTextures.getAtlasMaterial(
@@ -85,40 +90,45 @@ public final class MinecraftParticleCapture {
 
             for (Particle particle : queue) {
                 if (!(particle instanceof SingleQuadParticle)) continue;
+                TextureAtlasSprite sprite =
+                        ((SpriteBillboardParticleAccessor) particle).getSprite();
+                if (sprite == null) continue;
+                Identifier atlas = sprite.atlasLocation();
+                if (terrain != TextureAtlas.LOCATION_BLOCKS.equals(atlas)
+                        || TextureAtlas.LOCATION_ITEMS.equals(atlas)) {
+                    // Item-break particles sample the items atlas, which has no
+                    // Remix material yet.
+                    continue;
+                }
                 ParticleAccessor state = (ParticleAccessor) particle;
                 if (state.getDead()) continue;
 
                 BillboardParticleAccessor billboard =
                         (BillboardParticleAccessor) particle;
-                int boundsMin = 0;
-                int boundsMax = 0;
-                if (particle instanceof TextureSheetParticle) {
-                    TextureAtlasSprite sprite =
-                            ((SpriteBillboardParticleAccessor) particle).getSprite();
-                    if (sprite == null) continue;
-                    float spriteMinU = sprite.getU0();
-                    float spriteMinV = sprite.getV0();
-                    float spriteMaxU = sprite.getU1();
-                    float spriteMaxV = sprite.getV1();
-                    boundsMin = HardcodedVertex.packHalf2x16(
-                            Math.min(spriteMinU, spriteMaxU),
-                            Math.min(spriteMinV, spriteMaxV));
-                    boundsMax = HardcodedVertex.packHalf2x16(
-                            Math.max(spriteMinU, spriteMaxU),
-                            Math.max(spriteMinV, spriteMaxV));
-                }
+                float spriteMinU = sprite.getU0();
+                float spriteMinV = sprite.getV0();
+                float spriteMaxU = sprite.getU1();
+                float spriteMaxV = sprite.getV1();
+                int boundsMin = HardcodedVertex.packHalf2x16(
+                        Math.min(spriteMinU, spriteMaxU),
+                        Math.min(spriteMinV, spriteMaxV));
+                int boundsMax = HardcodedVertex.packHalf2x16(
+                        Math.max(spriteMinU, spriteMaxU),
+                        Math.max(spriteMinV, spriteMaxV));
 
+                // Alpha stays the particle's own; a held puff is drawn at a lower
+                // alpha, see HeldItemSmoke.OPACITY for why the two are not one value.
                 int color = ParticleTint.isSoot(particle)
                         ? ParticleQuadWriter.packColor(
                                 ParticleTint.SOOT_GREY,
                                 ParticleTint.SOOT_GREY,
                                 ParticleTint.SOOT_GREY,
-                                state.getAlpha())
+                                billboard.getAlpha())
                         : ParticleQuadWriter.packColor(
-                                state.getRed(),
-                                state.getGreen(),
-                                state.getBlue(),
-                                state.getAlpha());
+                                billboard.getRed(),
+                                billboard.getGreen(),
+                                billboard.getBlue(),
+                                billboard.getAlpha());
                 particles.capture(
                         frame,
                         captureBucket,
@@ -129,8 +139,8 @@ public final class MinecraftParticleCapture {
                         state.getX(),
                         state.getY(),
                         state.getZ(),
-                        state.getPrevAngle(),
-                        state.getAngle(),
+                        billboard.getPrevAngle(),
+                        billboard.getAngle(),
                         billboard.getScale(),
                         tickDelta,
                         billboardBasis,

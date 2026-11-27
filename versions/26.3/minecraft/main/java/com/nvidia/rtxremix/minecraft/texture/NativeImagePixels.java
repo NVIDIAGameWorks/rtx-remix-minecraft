@@ -26,7 +26,7 @@ public record NativeImagePixels(NativeImage image)
 
     @Override
     public int color(int x, int y) {
-        return image.getPixelRGBA(x, y);
+        return image.getPixelABGR(x, y);
     }
 
     @Override

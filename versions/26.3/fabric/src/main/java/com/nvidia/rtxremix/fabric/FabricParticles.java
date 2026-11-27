@@ -8,7 +8,7 @@ import com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamDotParticle;
 import com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticle;
 import com.nvidia.rtxremix.minecraft.particle.rapids.RapidFoamParticles;
 import com.nvidia.rtxremix.minecraft.particle.rapids.RapidMistParticle;
-import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
+import net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry;
 
 /** Fabric particle-provider registrations for shared particle behavior. */
 public final class FabricParticles {
@@ -16,7 +16,7 @@ public final class FabricParticles {
     }
 
     public static void registerProviders() {
-        ParticleFactoryRegistry registry = ParticleFactoryRegistry.getInstance();
+        ParticleProviderRegistry registry = ParticleProviderRegistry.getInstance();
         registry.register(
                 RapidFoamParticles.RAPID_FOAM, RapidFoamParticle.Factory::new);
         registry.register(

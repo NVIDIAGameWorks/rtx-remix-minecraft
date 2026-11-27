@@ -40,7 +40,7 @@ public final class MinecraftSettingsButton {
         }
         Button button = Button.builder(
                         label,
-                        ignored -> client.setScreen(
+                        ignored -> client.gui.setScreen(
                                 new RtxSettingsScreen(screen, settings, save)))
                 .build();
         if (done != null) {

@@ -40,15 +40,17 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.state.level.BlockOutlineRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.storage.LevelResource;
-import org.lwjgl.glfw.GLFW;
 
 /**
  * Canonical client runtime. Loaders translate their events into these methods;
@@ -206,20 +208,23 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
         }
     }
 
+    private static final KeyMapping.Category KEY_CATEGORY = KeyMapping.Category.register(
+            Identifier.fromNamespaceAndPath(MinecraftPlatform.RESOURCE_NAMESPACE, "main"));
+
     public static KeyMapping createToggleHeldLightsKey() {
         return new KeyMapping(
                 "key.rtxremix.toggleHeldLights",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_G,
-                "category.rtxremix");
+                InputConstants.Type.KEYBOARD,
+                InputConstants.KEY_G,
+                KEY_CATEGORY);
     }
 
     public static KeyMapping createToggleRtxKey() {
         return new KeyMapping(
                 "key.rtxremix.toggleRtx",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_F8,
-                "category.rtxremix");
+                InputConstants.Type.KEYBOARD,
+                InputConstants.KEY_F8,
+                KEY_CATEGORY);
     }
 
     public void handleKeyMappings(
@@ -260,10 +265,8 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
         boolean enabled = !MinecraftRuntime.isRtxEnabled();
         MinecraftRuntime.setRtxEnabled(enabled);
         if (client.player != null) {
-            client.player.displayClientMessage(
-                    Component.literal(
-                            "RTX Rendering: " + (enabled ? "ON" : "OFF")),
-                    true);
+            client.player.sendOverlayMessage(Component.literal(
+                            "RTX Rendering: " + (enabled ? "ON" : "OFF")));
         }
     }
 
@@ -298,11 +301,9 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
 
     public void captureBlockOutline(
             ClientLevel world,
-            BlockPos pos,
-            BlockState state,
-            Entity entity,
-            Camera camera,
-            float tickDelta) {
+            BlockOutlineRenderState outline,
+            Vec3 camera,
+            double fovDegrees) {
         RemixRenderer renderer = renderer();
         if (world == null
                 || renderer == null
@@ -313,11 +314,9 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
         com.nvidia.rtxremix.minecraft.entity.MinecraftBlockOutlineCapture.capture(
                 renderer.getBlockOutlinePass(),
                 world,
-                pos,
-                state,
-                entity,
+                outline,
                 camera,
-                tickDelta);
+                fovDegrees);
     }
 
     @Override
@@ -452,7 +451,7 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
                 LongSet built = enabled
                         ? MinecraftRuntime.builtSections(client)
                         : LongSets.emptySet();
-                client.levelRenderer.allChanged();
+                client.levelExtractor.allChanged();
                 if (enabled) {
                     MinecraftRuntime.recaptureTerrainForRemix(client, built);
                 }
@@ -593,12 +592,12 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
 
     @Override
     public boolean handleCameraTimeShortcut(int key, int action, int mods) {
-        if (action != GLFW.GLFW_PRESS && action != GLFW.GLFW_REPEAT) {
+        if (action != InputConstants.PRESS && action != InputConstants.REPEAT) {
             return false;
         }
         int direction = switch (key) {
-            case GLFW.GLFW_KEY_EQUAL -> 1;
-            case GLFW.GLFW_KEY_MINUS -> -1;
+            case InputConstants.KEY_EQUALS -> 1;
+            case InputConstants.KEY_MINUS -> -1;
             default -> 0;
         };
         RemixRenderer renderer = renderer();
@@ -611,7 +610,7 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
         if (controller == null || !controller.isRecording()) {
             return false;
         }
-        long step = (mods & GLFW.GLFW_MOD_CONTROL) != 0
+        long step = (mods & InputConstants.MOD_CONTROL) != 0
                 ? CAMERA_TIME_FAST_STEP_TICKS
                 : CAMERA_TIME_STEP_TICKS;
         Long time = controller.adjustTimeOfDay(direction * step);
@@ -651,22 +650,20 @@ public final class MinecraftClientRuntime implements MinecraftRuntime.Host {
 
     private static void relockCursorUnlessScreenOpen() {
         Minecraft client = Minecraft.getInstance();
-        if (client.screen == null) {
+        if (client.gui.screen() == null) {
             client.mouseHandler.grabMouse();
         }
     }
 
     private static void sendCameraMessage(Minecraft client, String message) {
         if (client != null && client.player != null) {
-            client.player.displayClientMessage(
-                    Component.literal("[Camera] " + message), false);
+            client.player.sendSystemMessage(Component.literal("[Camera] " + message));
         }
     }
 
     private static void sendCameraActionBar(Minecraft client, String message) {
         if (client != null && client.player != null) {
-            client.player.displayClientMessage(
-                    Component.literal("[Camera] " + message), true);
+            client.player.sendOverlayMessage(Component.literal("[Camera] " + message));
         }
     }
 

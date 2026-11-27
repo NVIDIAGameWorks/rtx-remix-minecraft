@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
@@ -180,7 +181,7 @@ public class RemixVertexConsumerProvider {
         void bind(RenderType renderLayer) {
             if (this.renderLayer != renderLayer) {
                 this.renderLayer = renderLayer;
-                ResourceLocation id = consumer.getTextureId();
+                Identifier id = consumer.getTextureId();
                 textureKey = new EntityTextureKey(
                         id.getNamespace(), id.getPath(), id);
             }
@@ -206,7 +207,7 @@ public class RemixVertexConsumerProvider {
         @Override
         public boolean isVanillaPlayerSkinLayer(Object owner) {
             return owner instanceof Player
-                    && renderLayer == RenderType.entityTranslucent(
+                    && renderLayer == RenderTypes.entityTranslucent(
                             consumer.getTextureId());
         }
     }

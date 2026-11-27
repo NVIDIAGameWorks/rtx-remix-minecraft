@@ -29,6 +29,7 @@ import com.nvidia.rtxremix.minecraft.logic.ViewDistanceFade;
 import com.nvidia.rtxremix.minecraft.profiling.PerformanceTimer;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.settings.PostProcessingSettings;
+import com.nvidia.rtxremix.minecraft.sky.SkyAttributes;
 import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.sky.AtmosphericSkyGenerator;
 import com.nvidia.rtxremix.minecraft.sky.MinecraftSkyResourceSource;
@@ -181,7 +182,6 @@ public class RemixRenderer {
             new RendererFrameCoordinator();
     private final RendererFrameCoordinator.Host frameHost = new MinecraftFrameHost();
     private final Runnable additionalHostPasses = this::renderAdditionalHostPasses;
-    private int compositeColorTexture;
     private ClientLevel frameWorld;
     private Camera frameCamera;
     private Vec3 frameCameraPos;
@@ -209,9 +209,7 @@ public class RemixRenderer {
 
                 @Override
                 public void cleanupHostRenderResources() {
-                    if (weatherRenderer != null) {
-                        weatherRenderer.cleanup();
-                    }
+                    // 26.3 draws no host pass of its own after the composite.
                 }
             };
     
@@ -1082,8 +1080,8 @@ public class RemixRenderer {
                         world.getRainLevel(tickDelta),
                         world.getThunderLevel(tickDelta));
         SkyFrame.Type skyType;
-        switch (world.effects().skyType()) {
-            case NORMAL:
+        switch (world.dimensionType().skybox()) {
+            case OVERWORLD:
                 skyType = SkyFrame.Type.NORMAL;
                 break;
             case END:
@@ -1101,9 +1099,9 @@ public class RemixRenderer {
                 cameraPos.x,
                 cameraPos.y,
                 cameraPos.z,
-                world.getTimeOfDay(tickDelta),
-                world.getStarBrightness(tickDelta),
-                world.getMoonPhase(),
+                SkyAttributes.timeOfDay(tickDelta),
+                SkyAttributes.starBrightness(tickDelta),
+                SkyAttributes.moonPhase(tickDelta),
                 weather.rain(),
                 weather.thunder(),
                 skyLightRenderer != null ? skyLightRenderer.state() : SkyLightState.empty());
@@ -1490,22 +1488,12 @@ public class RemixRenderer {
 
     /** Composites host graphics passes while the host owns graphics state. */
     public void compositeHostOutput(int colorTexture) {
-        compositeColorTexture = colorTexture;
         graphicsIntegration.compositeOutput(
                 colorTexture, additionalHostPasses);
     }
 
     private void renderAdditionalHostPasses() {
-        if (weatherRenderer == null) {
-            return;
-        }
-        try (ProfileScope weatherScope = ProfileScope.begin("Weather")) {
-            weatherRenderer.render(
-                    compositeColorTexture, graphicsIntegration.depthTexture());
-            weatherScope
-                    .drawCalls(weatherRenderer.getLastDrawCount())
-                    .vertexCount(weatherRenderer.getLastQuadCount() * 4);
-        }
+        // The 1.21.1 rain refraction pass is not ported to 26.3's render pipelines.
     }
 
     /** Runs on the client executor so the clear lands during teardown, before the next world initializes. */

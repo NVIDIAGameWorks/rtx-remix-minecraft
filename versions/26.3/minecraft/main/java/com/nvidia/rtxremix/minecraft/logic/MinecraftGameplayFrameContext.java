@@ -38,11 +38,11 @@ public final class MinecraftGameplayFrameContext
         this.underwater = underwater;
         this.viewDistanceStrength = viewDistanceStrength;
         overworld = Level.OVERWORLD.equals(world.dimension());
-        timeOfDay = world.getDayTime();
+        timeOfDay = world.getOverworldClockTime();
         biomePath = world.getBiome(BlockPos.containing(cameraPosition)).unwrapKey()
                 .filter(key -> "minecraft".equals(
-                        key.location().getNamespace()))
-                .map(key -> key.location().getPath())
+                        key.identifier().getNamespace()))
+                .map(key -> key.identifier().getPath())
                 .orElse(null);
         cameraX = cameraPosition.x;
         cameraY = cameraPosition.y;
@@ -61,10 +61,10 @@ public final class MinecraftGameplayFrameContext
             }
             try {
                 names.add(((ResourceKey<?>) field.get(null))
-                        .location().getPath());
+                        .identifier().getPath());
             } catch (IllegalAccessException e) {
                 throw new AssertionError(
-                        "BiomeKeys public field not readable: "
+                        "Biomes public field not readable: "
                                 + field.getName(),
                         e);
             }

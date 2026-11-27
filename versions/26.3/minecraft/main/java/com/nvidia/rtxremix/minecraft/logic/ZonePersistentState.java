@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.logic;
 
-import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
+import com.nvidia.rtxremix.minecraft.MinecraftPlatform;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
@@ -59,7 +59,7 @@ public final class ZonePersistentState extends SavedData {
     private static final String BOX_SHAPE = "box";
 
     static final SavedDataType<ZonePersistentState> TYPE = new SavedDataType<>(
-            Identifier.fromNamespaceAndPath(RtxRemixCommonMod.MOD_ID, "zones"),
+            Identifier.fromNamespaceAndPath(MinecraftPlatform.RESOURCE_NAMESPACE, "zones"),
             ZonePersistentState::new,
             CompoundTag.CODEC.xmap(ZonePersistentState::fromNbt, ZonePersistentState::toNbt),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE);

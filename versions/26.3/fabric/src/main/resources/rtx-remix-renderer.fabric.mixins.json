@@ -7,9 +7,6 @@
     "CopperBeaconBlockEntityFabricMixin"
   ],
   "client": [
-    "IndigoMeshFabricMixin",
-    "MultipartBakedModelFabricMixin",
-    "WeightedBakedModelFabricMixin",
     "WindowFabricMixin"
   ],
   "injectors": {

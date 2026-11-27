@@ -20,14 +20,14 @@ import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** Reads Minecraft's block atlas and resource-pack sidecars for the canonical manager. */
 public final class MinecraftBlockAtlasSource implements BlockTextureManager.AtlasSource {
-    public static final ResourceLocation BLOCK_ATLAS_ID =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
+    public static final Identifier BLOCK_ATLAS_ID =
+            Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
 
     private LabPBRVariants variants;
 
@@ -51,7 +51,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
         SpriteAtlasAccessor access = (SpriteAtlasAccessor) atlas;
         List<BlockTextureManager.SpriteData> sprites =
                 new ArrayList<>(access.getSprites().size());
-        for (Map.Entry<ResourceLocation, TextureAtlasSprite> entry : access.getSprites().entrySet()) {
+        for (Map.Entry<Identifier, TextureAtlasSprite> entry : access.getSprites().entrySet()) {
             sprites.add(snapshot(entry.getKey(), entry.getValue()));
         }
         return new BlockTextureManager.AtlasData(
@@ -64,7 +64,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
 
     @Override
     public BlockTextureManager.ImageResource loadVariant(Object spriteId, String suffix) {
-        if (variants == null || !(spriteId instanceof ResourceLocation id)) {
+        if (variants == null || !(spriteId instanceof Identifier id)) {
             return null;
         }
         NativeImage image = variants.loadVariant(id, suffix);
@@ -82,7 +82,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
                 MemoryUtil::memByteBuffer);
     }
 
-    private static BlockTextureManager.SpriteData snapshot(ResourceLocation id, TextureAtlasSprite sprite) {
+    private static BlockTextureManager.SpriteData snapshot(Identifier id, TextureAtlasSprite sprite) {
         SpriteContents contents = sprite.contents();
         NativeImage image = ((SpriteContentsAccessor) contents).getImage();
         int width = contents.width();
@@ -127,7 +127,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
         BitSet transparent = null;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                if (((image.getPixelRGBA(x, y) >>> 24) & 0xff) < 255) {
+                if (((image.getPixelABGR(x, y) >>> 24) & 0xff) < 255) {
                     if (transparent == null) {
                         transparent = new BitSet(width * height);
                     }
@@ -154,7 +154,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
             int spriteHeight = sprite.contents().height();
             for (int y = 0; y < spriteHeight; y++) {
                 for (int x = 0; x < spriteWidth; x++) {
-                    int abgr = image.getPixelRGBA(x, y);
+                    int abgr = image.getPixelABGR(x, y);
                     int index = ((spriteY + y) * width + spriteX + x) * 4;
                     pixels[index] = (byte) (abgr & 0xff);
                     pixels[index + 1] = (byte) ((abgr >>> 8) & 0xff);
@@ -182,7 +182,7 @@ public final class MinecraftBlockAtlasSource implements BlockTextureManager.Atla
                 maximum = Math.max(maximum, state.getLightEmission());
             }
             if (maximum > 0) {
-                ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+                Identifier id = BuiltInRegistries.BLOCK.getKey(block);
                 luminance.merge(
                         id.getNamespace() + ":block/" + id.getPath(),
                         maximum,

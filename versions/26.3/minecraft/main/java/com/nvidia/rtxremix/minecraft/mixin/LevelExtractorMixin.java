@@ -6,7 +6,7 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockQuadEmitter;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionBuilderRelease;
 import net.minecraft.client.Camera;
@@ -41,7 +41,7 @@ public abstract class LevelExtractorMixin {
     @Inject(method = "setBlocksDirty(IIIIII)V", at = @At("HEAD"), cancellable = true)
     private void rtxremix$expandWaterOcclusionRebuildMargin(
             int minX, int minY, int minZ, int maxX, int maxY, int maxZ, CallbackInfo ci) {
-        if (!RtxRemixMod.isRtxEnabled()) {
+        if (!MinecraftRuntime.isRtxEnabled()) {
             return;
         }
 

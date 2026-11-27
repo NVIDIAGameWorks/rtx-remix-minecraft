@@ -4,7 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /** Translates Minecraft sprite identifiers for the canonical emission policy. */
 public final class BuiltinEmission {
@@ -16,11 +16,11 @@ public final class BuiltinEmission {
 
     private BuiltinEmission() {}
 
-    public static float gain(ResourceLocation spriteId) {
+    public static float gain(Identifier spriteId) {
         return BuiltinEmissionPolicy.gain(spriteId.toString());
     }
 
-    public static Mask mask(ResourceLocation spriteId) {
+    public static Mask mask(Identifier spriteId) {
         return BuiltinEmissionPolicy.mask(spriteId.toString()) == null ? null : SEA_PICKLE;
     }
 }

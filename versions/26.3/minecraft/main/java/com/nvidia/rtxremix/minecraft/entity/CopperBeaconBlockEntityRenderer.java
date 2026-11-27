@@ -5,7 +5,6 @@
 package com.nvidia.rtxremix.minecraft.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.nvidia.rtxremix.minecraft.RtxRemixCommonMod;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconPose;

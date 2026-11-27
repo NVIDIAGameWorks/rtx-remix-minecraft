@@ -4,9 +4,13 @@
  */
 package com.nvidia.rtxremix.minecraft.block;
 
+import com.nvidia.rtxremix.minecraft.MinecraftPlatform;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.light.OverridesItemLight;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.DirectionalBlock;
@@ -69,6 +73,10 @@ public abstract class SpotLightBlock extends DirectionalBlock implements Overrid
                 .strength(3.0f)
                 .sound(SoundType.METAL)
                 .lightLevel(state -> LUMINANCE);
+    }
+
+    private static Identifier id(String path) {
+        return Identifier.fromNamespaceAndPath(MinecraftPlatform.RESOURCE_NAMESPACE, path);
     }
 
     /**

@@ -7,7 +7,7 @@ package com.nvidia.rtxremix.minecraft.texture;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.atlas.SpriteResourceLoader;
 import net.minecraft.client.renderer.texture.atlas.SpriteSource;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
@@ -47,13 +47,13 @@ class LabPBRSidecarFilterTest {
     @Test
     void theBaseIsLookedUpInTheSidecarsOwnNamespace() {
         RecordingOutput atlas = new RecordingOutput();
-        atlas.add(ResourceLocation.withDefaultNamespace("block/stone"));
-        atlas.add(ResourceLocation.fromNamespaceAndPath("other", "block/stone_n"));
+        atlas.add(Identifier.withDefaultNamespace("block/stone"));
+        atlas.add(Identifier.fromNamespaceAndPath("other", "block/stone_n"));
 
         LabPBRSidecarFilter.INSTANCE.run(null, atlas);
 
-        assertEquals(Set.of(ResourceLocation.withDefaultNamespace("block/stone"),
-                ResourceLocation.fromNamespaceAndPath("other", "block/stone_n")), atlas.sprites());
+        assertEquals(Set.of(Identifier.withDefaultNamespace("block/stone"),
+                Identifier.fromNamespaceAndPath("other", "block/stone_n")), atlas.sprites());
     }
 
     @Test
@@ -80,25 +80,25 @@ class LabPBRSidecarFilterTest {
     private static RecordingOutput atlasOf(String... paths) {
         RecordingOutput output = new RecordingOutput();
         for (String path : paths) {
-            output.add(ResourceLocation.withDefaultNamespace(path));
+            output.add(Identifier.withDefaultNamespace(path));
         }
         return output;
     }
 
-    private static Set<ResourceLocation> ids(String... paths) {
-        Set<ResourceLocation> ids = new HashSet<>();
+    private static Set<Identifier> ids(String... paths) {
+        Set<Identifier> ids = new HashSet<>();
         for (String path : paths) {
-            ids.add(ResourceLocation.withDefaultNamespace(path));
+            ids.add(Identifier.withDefaultNamespace(path));
         }
         return ids;
     }
 
     /** The sprite list an atlas hands its sources, recording which suppliers a source discards. */
     private static final class RecordingOutput implements SpriteSource.Output {
-        private final Map<ResourceLocation, SpriteSource.SpriteSupplier> suppliers = new LinkedHashMap<>();
-        final Set<ResourceLocation> discarded = new HashSet<>();
+        private final Map<Identifier, SpriteSource.SpriteSupplier> suppliers = new LinkedHashMap<>();
+        final Set<Identifier> discarded = new HashSet<>();
 
-        void add(ResourceLocation id) {
+        void add(Identifier id) {
             add(id, new SpriteSource.SpriteSupplier() {
                 @Override
                 public SpriteContents apply(SpriteResourceLoader loader) {
@@ -112,20 +112,20 @@ class LabPBRSidecarFilterTest {
             });
         }
 
-        Set<ResourceLocation> sprites() {
+        Set<Identifier> sprites() {
             return suppliers.keySet();
         }
 
         @Override
-        public void add(ResourceLocation id, SpriteSource.SpriteSupplier supplier) {
+        public void add(Identifier id, SpriteSource.SpriteSupplier supplier) {
             suppliers.put(id, supplier);
         }
 
         @Override
-        public void removeAll(Predicate<ResourceLocation> predicate) {
-            Iterator<Map.Entry<ResourceLocation, SpriteSource.SpriteSupplier>> entries = suppliers.entrySet().iterator();
+        public void removeAll(Predicate<Identifier> predicate) {
+            Iterator<Map.Entry<Identifier, SpriteSource.SpriteSupplier>> entries = suppliers.entrySet().iterator();
             while (entries.hasNext()) {
-                Map.Entry<ResourceLocation, SpriteSource.SpriteSupplier> entry = entries.next();
+                Map.Entry<Identifier, SpriteSource.SpriteSupplier> entry = entries.next();
                 if (predicate.test(entry.getKey())) {
                     entry.getValue().discard();
                     entries.remove();

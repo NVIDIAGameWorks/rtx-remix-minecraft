@@ -8,7 +8,6 @@ import com.nvidia.rtxremix.minecraft.MinecraftClientRuntime;
 import com.nvidia.rtxremix.minecraft.MinecraftNetworking;
 import com.nvidia.rtxremix.minecraft.MinecraftParticleHooks;
 import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
-import com.nvidia.rtxremix.minecraft.MinecraftTerrainHooks;
 import com.nvidia.rtxremix.minecraft.RtxClientCommands;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
@@ -17,19 +16,17 @@ import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
 import com.nvidia.rtxremix.minecraft.particle.rapids.WaterRapidParticleSpawner;
 import com.nvidia.rtxremix.minecraft.screen.CopperBeaconScreen;
 import com.nvidia.rtxremix.minecraft.settings.MinecraftSettingsButton;
-import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.client.rendering.v1.CoreShaderRegistrationCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.ModelLayerRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
@@ -41,7 +38,7 @@ import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.ResourceManager;
 
@@ -56,7 +53,6 @@ public final class RtxRemixMod implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         CLIENT_RUNTIME.bootstrap();
-        MinecraftTerrainHooks.install(new FabricTerrainHooks());
         MinecraftParticleHooks.install(
                 WaterRapidParticleSpawner::spawnRandomDisplayParticles);
         MinecraftNetworking.installClientSender(payload -> {
@@ -79,10 +75,10 @@ public final class RtxRemixMod implements ClientModInitializer {
     }
 
     private static void registerRenderers() {
-        EntityModelLayerRegistry.registerModelLayer(
+        ModelLayerRegistry.registerModelLayer(
                 CopperBeaconBlockEntityRenderer.BODY_MODEL_LAYER,
                 CopperBeaconBlockEntityRenderer::getBodyTexturedModelData);
-        EntityModelLayerRegistry.registerModelLayer(
+        ModelLayerRegistry.registerModelLayer(
                 CopperBeaconBlockEntityRenderer.LENS_MODEL_LAYER,
                 CopperBeaconBlockEntityRenderer::getLensTexturedModelData);
         BlockEntityRenderers.register(
@@ -91,11 +87,6 @@ public final class RtxRemixMod implements ClientModInitializer {
         MenuScreens.register(
                 CopperBeaconScreenHandler.TYPE,
                 CopperBeaconScreen::new);
-        CoreShaderRegistrationCallback.EVENT.register(context ->
-                context.register(
-                        RemixWeatherRenderer.rainShaderId(),
-                        RemixWeatherRenderer.rainShaderFormat(),
-                        RemixWeatherRenderer::setRainShader));
     }
 
     private static void registerCommands() {
@@ -120,9 +111,9 @@ public final class RtxRemixMod implements ClientModInitializer {
     }
 
     private void registerKeyBindings() {
-        toggleHeldLightsKey = KeyBindingHelper.registerKeyBinding(
+        toggleHeldLightsKey = KeyMappingHelper.registerKeyMapping(
                 MinecraftClientRuntime.createToggleHeldLightsKey());
-        toggleRtxKey = KeyBindingHelper.registerKeyBinding(
+        toggleRtxKey = KeyMappingHelper.registerKeyMapping(
                 MinecraftClientRuntime.createToggleRtxKey());
 
         ClientTickEvents.END_CLIENT_TICK.register(client ->
@@ -138,7 +129,7 @@ public final class RtxRemixMod implements ClientModInitializer {
                                 screen,
                                 scaledWidth,
                                 scaledHeight,
-                                Screens.getButtons(screen),
+                                Screens.getWidgets(screen),
                                 CLIENT_RUNTIME.settings(),
                                 CLIENT_RUNTIME::saveSettings));
     }
@@ -158,10 +149,10 @@ public final class RtxRemixMod implements ClientModInitializer {
     private static void registerChunkHooks() {
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> {
             var pos = chunk.getPos();
-            CLIENT_RUNTIME.onClientChunkUnload(pos.x, pos.z);
+            CLIENT_RUNTIME.onClientChunkUnload(pos.x(), pos.z());
         });
         ServerChunkEvents.CHUNK_LOAD.register(
-                (world, chunk) ->
+                (world, chunk, generated) ->
                         CLIENT_RUNTIME.onServerChunkLoad(world.getServer(), chunk));
     }
 
@@ -169,8 +160,8 @@ public final class RtxRemixMod implements ClientModInitializer {
         ResourceManagerHelper.get(PackType.CLIENT_RESOURCES)
                 .registerReloadListener(new SimpleSynchronousResourceReloadListener() {
                     @Override
-                    public ResourceLocation getFabricId() {
-                        return ResourceLocation.fromNamespaceAndPath(
+                    public Identifier getFabricId() {
+                        return Identifier.fromNamespaceAndPath(
                                 RtxRemixCommonMod.MOD_ID, "atlas_reload");
                     }
 
@@ -182,17 +173,14 @@ public final class RtxRemixMod implements ClientModInitializer {
     }
 
     private void registerWorldRenderHooks() {
-        WorldRenderEvents.BEFORE_BLOCK_OUTLINE.register((context, hitResult) -> {
-            return true;
-        });
-        WorldRenderEvents.BLOCK_OUTLINE.register((context, outlineContext) -> {
+        // Since 26.x the outline shape is evaluated during extraction and handed
+        // over in the outline render state, so modded shapes arrive as drawn.
+        LevelRenderEvents.BEFORE_BLOCK_OUTLINE.register((context, outline) -> {
             CLIENT_RUNTIME.captureBlockOutline(
-                    context.world(),
-                    outlineContext.blockPos(),
-                    outlineContext.blockState(),
-                    outlineContext.entity(),
-                    context.camera(),
-                    context.tickCounter().getGameTimeDeltaPartialTick(true));
+                    Minecraft.getInstance().level,
+                    outline,
+                    context.levelState().cameraRenderState.pos,
+                    context.gameRenderer().mainCamera().getFov());
             return true;
         });
     }

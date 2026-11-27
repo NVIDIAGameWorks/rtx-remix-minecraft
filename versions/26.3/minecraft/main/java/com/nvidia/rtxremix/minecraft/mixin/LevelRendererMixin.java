@@ -25,10 +25,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
-import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.MinecraftRuntime;
 import com.nvidia.rtxremix.minecraft.cloud.WorldRendererCloudAccess;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
-import com.nvidia.rtxremix.minecraft.profiling.WorldRendererProfilingAccess;
 import com.nvidia.rtxremix.minecraft.sky.SkyStarCapture;
 import com.nvidia.rtxremix.minecraft.sky.WorldRendererStarAccess;
 import com.nvidia.rtxremix.minecraft.terrain.WorldRendererTerrainAccess;
@@ -76,7 +75,7 @@ import java.util.List;
  */
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin
-        implements WorldRendererCloudAccess, WorldRendererProfilingAccess,
+        implements WorldRendererCloudAccess,
         WorldRendererStarAccess, WorldRendererTerrainAccess {
 
     private static final ThreadLocal<ArrayDeque<ProfileScope>> rtxremix$renderScope = new ThreadLocal<>();
@@ -113,9 +112,10 @@ public abstract class LevelRendererMixin
             boolean consistentDepthRequired,
             CallbackInfo ci) {
         rtxremix$openJfrOnly(rtxremix$renderScope, "WorldRenderer.render", "Java.WorldRenderer.render.ms");
-        RtxRemixMod mod = RtxRemixMod.getInstance();
-        if (mod != null && mod.getRenderer() != null) {
-            mod.getRenderer().beginEntityFrame();
+        MinecraftRuntime.beginWorldRenderFrame();
+        RemixRenderer renderer = MinecraftRuntime.renderer();
+        if (renderer != null) {
+            renderer.beginEntityFrame();
         }
     }
 
@@ -131,6 +131,8 @@ public abstract class LevelRendererMixin
             CallbackInfo ci) {
         rtxremix$closeProfilerPhase();
         rtxremix$close(rtxremix$renderScope);
+        ProfileScope.markWorldRenderEnd();
+        MinecraftRuntime.markFrameReady();
     }
 
     /**
@@ -154,13 +156,13 @@ public abstract class LevelRendererMixin
             double x, double y, double z, PoseStack poseStack, SubmitNodeCollector collector,
             Operation<Void> original) {
         Entity entity = ((EntityRenderStateOwner) state).rtxremix$entity();
-        RtxRemixMod mod = RtxRemixMod.getInstance();
+        RemixRenderer renderer = MinecraftRuntime.renderer();
         Minecraft client = Minecraft.getInstance();
-        if (entity != null && mod != null && mod.getRenderer() != null && client.level != null) {
+        if (entity != null && renderer != null && client.level != null) {
             // The partial tick vanilla extracted this entity at.
             float tickDelta = client.getDeltaTracker().getGameTimeDeltaPartialTick(
                     !client.level.tickRateManager().isEntityFrozen(entity));
-            if (mod.getRenderer().renderEntityInPlace(entity, state, tickDelta)) {
+            if (renderer.renderEntityInPlace(entity, state, tickDelta)) {
                 return;
             }
         }
@@ -180,8 +182,7 @@ public abstract class LevelRendererMixin
     private void rtxremix$captureBlockEntityInPlace(
             BlockEntityRenderDispatcher dispatcher, BlockEntityRenderState state, PoseStack poseStack,
             SubmitNodeCollector collector, CameraRenderState camera, Operation<Void> original) {
-        RtxRemixMod mod = RtxRemixMod.getInstance();
-        RemixRenderer renderer = mod == null ? null : mod.getRenderer();
+        RemixRenderer renderer = MinecraftRuntime.renderer();
         ClientLevel level = Minecraft.getInstance().level;
         BlockEntity be = level == null ? null : level.getBlockEntity(state.blockPos);
         boolean captured = renderer != null
@@ -212,8 +213,7 @@ public abstract class LevelRendererMixin
             SubmitNodeCollector collector, PoseStack poseStack, List<BlockStateModelPart> parts,
             int progress, boolean translucent, Operation<Void> original,
             @Local BlockBreakingRenderState state) {
-        RtxRemixMod mod = RtxRemixMod.getInstance();
-        RemixRenderer renderer = mod == null ? null : mod.getRenderer();
+        RemixRenderer renderer = MinecraftRuntime.renderer();
         BlockPos pos = state.blockPos();
         boolean captured = renderer != null
                 && renderer.renderBlockDamageInPlace(pos, progress, (captureMatrices, captureConsumer) -> {
@@ -259,11 +259,6 @@ public abstract class LevelRendererMixin
     @Inject(method = "compileSections", at = @At("RETURN"))
     private void rtxremix$compileSectionsReturn(CameraRenderState camera, CallbackInfo ci) {
         rtxremix$close(rtxremix$compileScope);
-    }
-
-    @Override
-    public void rtxremix$closeProfilerPhaseForFabricEvent() {
-        rtxremix$closeProfilerPhase();
     }
 
     private void rtxremix$closeProfilerPhase() {

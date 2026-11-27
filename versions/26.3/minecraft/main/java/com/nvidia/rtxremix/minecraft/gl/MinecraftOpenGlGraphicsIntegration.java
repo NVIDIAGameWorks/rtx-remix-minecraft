@@ -11,9 +11,11 @@ import com.nvidia.rtxremix.StartupInfo;
 import com.nvidia.rtxremix.core.HostGraphicsIntegration;
 import com.nvidia.rtxremix.core.RemixRendererSession;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.renderpearl.backend.opengl.GlTexture;
 import net.minecraft.client.Minecraft;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.glfw.GLFWNativeWin32;
+import org.lwjgl.sdl.SDLProperties;
+import org.lwjgl.sdl.SDLVideo;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.slf4j.Logger;
@@ -22,7 +24,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Minecraft's Windows/OpenGL implementation of the host graphics boundary.
  *
- * <p>All assumptions about GLFW, HWNDs, OpenGL extension support, Minecraft's
+ * <p>All assumptions about SDL windows, HWNDs, OpenGL extension support, Minecraft's
  * main framebuffer, and GL/Vulkan semaphore transfer live here. Canonical
  * renderer and scene policy do not depend on them.</p>
  */
@@ -39,13 +41,16 @@ public final class MinecraftOpenGlGraphicsIntegration
     @Override
     public StartupInfo prepareStartup() {
         Minecraft client = Minecraft.getInstance();
-        long glfwHandle = client.getWindow().getWindow();
-        long windowHandle = GLFWNativeWin32.glfwGetWin32Window(glfwHandle);
+        long sdlHandle = client.getWindow().handle();
+        long windowHandle = SDLProperties.SDL_GetPointerProperty(
+                SDLVideo.SDL_GetWindowProperties(sdlHandle),
+                SDLVideo.SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+                0L);
         if (windowHandle == 0) {
             throw new IllegalStateException("Failed to get native window handle");
         }
         LOGGER.info("Got window handle: 0x{}", Long.toHexString(windowHandle));
-        applyRequestedWindowPosition(glfwHandle);
+        applyRequestedWindowPosition(sdlHandle);
         requireExternalMemorySupport();
         return StartupInfo.builder()
                 .hwnd(windowHandle)
@@ -162,12 +167,16 @@ public final class MinecraftOpenGlGraphicsIntegration
         InteropInfo info = requireApi().dxvkGetInteropInfo();
         current.recreateImagesIf(info);
         current.waitForVk(info);
-        current.copyFromFramebuffer(
-                Minecraft.getInstance().getMainRenderTarget().frameBufferId);
+        // Since 26.x the main render target is a texture with no framebuffer of
+        // its own, which the interop attaches to one it owns.
+        RenderTarget target = Minecraft.getInstance().gameRenderer.mainRenderTarget();
+        if (target != null && target.getColorTexture() instanceof GlTexture color) {
+            current.copyFromTexture(color.glId(), target.width, target.height);
+        }
         current.signalDone();
     }
 
-    private static void applyRequestedWindowPosition(long glfwHandle) {
+    private static void applyRequestedWindowPosition(long sdlHandle) {
         String value = System.getenv("RTXREMIX_WINDOW_POS");
         if (value == null || value.isBlank()) {
             return;
@@ -176,7 +185,7 @@ public final class MinecraftOpenGlGraphicsIntegration
         try {
             int x = Integer.parseInt(parts[0].trim());
             int y = Integer.parseInt(parts[1].trim());
-            GLFW.glfwSetWindowPos(glfwHandle, x, y);
+            SDLVideo.SDL_SetWindowPosition(sdlHandle, x, y);
             LOGGER.info("RTXREMIX_WINDOW_POS: moved window to ({}, {})", x, y);
         } catch (RuntimeException exception) {
             LOGGER.warn(

@@ -1087,7 +1087,7 @@ public final class RtxClientCommands<S> {
         Minecraft client = Minecraft.getInstance();
         if (client != null && client.levelRenderer != null) {
             LongSet built = MinecraftRuntime.builtSections(client);
-            client.levelRenderer.allChanged();
+            client.levelExtractor.allChanged();
             MinecraftRuntime.recaptureTerrainForRemix(client, built);
         }
     }

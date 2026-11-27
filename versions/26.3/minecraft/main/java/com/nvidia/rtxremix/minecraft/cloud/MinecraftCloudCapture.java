@@ -4,21 +4,23 @@
  */
 package com.nvidia.rtxremix.minecraft.cloud;
 
+import com.nvidia.rtxremix.minecraft.sky.SkyAttributes;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.RemixAPI;
 import java.io.IOException;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
 import net.minecraft.world.phys.Vec3;
 
 /**
  * Translates Minecraft cloud state into the canonical cloud renderer.
  */
 public final class MinecraftCloudCapture implements CloudRenderer.VanillaCloudMaskSource {
-    private static final ResourceLocation VANILLA_CLOUD_TEXTURE =
-            ResourceLocation.withDefaultNamespace("textures/environment/clouds.png");
+    private static final Identifier VANILLA_CLOUD_TEXTURE =
+            Identifier.withDefaultNamespace("textures/environment/clouds.png");
 
     private final CloudRenderer renderer;
     private ClientLevel currentWorld;
@@ -39,16 +41,16 @@ public final class MinecraftCloudCapture implements CloudRenderer.VanillaCloudMa
         }
 
         Minecraft client = Minecraft.getInstance();
-        Vec3 cloudColor = world.getCloudColor(tickDelta);
+        int cloudColor = SkyAttributes.cloudColor(tickDelta);
         int cloudTicks =
                 ((WorldRendererCloudAccess) client.levelRenderer).rtxremix$getCloudTicks();
         renderer.render(
                 worldSession,
-                client.options.getCloudsType() != CloudStatus.OFF,
-                world.effects().getCloudHeight(),
-                cloudColor.x,
-                cloudColor.y,
-                cloudColor.z,
+                client.options.cloudStatus().get() != CloudStatus.OFF,
+                SkyAttributes.cloudHeight(tickDelta),
+                ARGB.redFloat(cloudColor),
+                ARGB.greenFloat(cloudColor),
+                ARGB.blueFloat(cloudColor),
                 cameraPos.x,
                 cameraPos.z,
                 world.getGameTime() + (double) tickDelta,
@@ -76,7 +78,7 @@ public final class MinecraftCloudCapture implements CloudRenderer.VanillaCloudMa
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
                     occupancy[y * width + x] =
-                            ((image.getPixelRGBA(x, y) >>> 24) & 0xff) >= 128;
+                            ((image.getPixelABGR(x, y) >>> 24) & 0xff) >= 128;
                 }
             }
             return new CloudRenderer.VanillaCloudMask(width, height, occupancy);

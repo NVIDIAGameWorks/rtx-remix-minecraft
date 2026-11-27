@@ -6,16 +6,16 @@ package com.nvidia.rtxremix.minecraft.sky;
 
 import com.nvidia.rtxremix.minecraft.MinecraftPlatform;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 
 /** Minecraft resource adapter for the canonical sky scene. */
 public final class MinecraftSkyResourceSource implements SkyResourceSource {
-    private static final ResourceLocation SUN =
-            ResourceLocation.withDefaultNamespace("textures/environment/sun.png");
-    private static final ResourceLocation MOON =
-            ResourceLocation.withDefaultNamespace("textures/environment/moon_phases.png");
+    private static final Identifier SUN =
+            Identifier.withDefaultNamespace("textures/environment/sun.png");
+    private static final Identifier MOON =
+            Identifier.withDefaultNamespace("textures/environment/moon_phases.png");
     private static final String OVERCAST_TEXTURE =
             "textures/overcast_thunderstorm_bc6u.dds";
 
@@ -45,7 +45,7 @@ public final class MinecraftSkyResourceSource implements SkyResourceSource {
         return ((WorldRendererStarAccess) renderer).rtxremix$copyStarVertices();
     }
 
-    private static Image load(ResourceLocation id) throws IOException {
+    private static Image load(Identifier id) throws IOException {
         Minecraft client = Minecraft.getInstance();
         net.minecraft.server.packs.resources.Resource resource =
                 client.getResourceManager().getResource(id)
@@ -56,7 +56,7 @@ public final class MinecraftSkyResourceSource implements SkyResourceSource {
             byte[] rgba = new byte[width * height * 4];
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
-                    int abgr = image.getPixelRGBA(x, y);
+                    int abgr = image.getPixelABGR(x, y);
                     int index = (y * width + x) * 4;
                     rgba[index] = (byte) (abgr & 0xFF);
                     rgba[index + 1] = (byte) ((abgr >>> 8) & 0xFF);

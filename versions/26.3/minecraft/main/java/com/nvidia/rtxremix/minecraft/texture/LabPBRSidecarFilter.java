@@ -6,8 +6,7 @@ package com.nvidia.rtxremix.minecraft.texture;
 
 import com.mojang.serialization.MapCodec;
 import net.minecraft.client.renderer.texture.atlas.SpriteSource;
-import net.minecraft.client.renderer.texture.atlas.SpriteSourceType;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 
 import java.util.HashSet;
@@ -30,14 +29,14 @@ public final class LabPBRSidecarFilter implements SpriteSource {
     public static final LabPBRSidecarFilter INSTANCE = new LabPBRSidecarFilter();
 
     /** Unregistered: the filter is appended in code and never read from or written to an atlas definition. */
-    private static final SpriteSourceType TYPE = new SpriteSourceType(MapCodec.unit(INSTANCE));
+    private static final MapCodec<LabPBRSidecarFilter> CODEC = MapCodec.unit(INSTANCE);
 
     private LabPBRSidecarFilter() {}
 
     @Override
     public void run(ResourceManager resourceManager, Output output) {
         // An Output shows its sprites only to a removeAll predicate.
-        Set<ResourceLocation> sprites = new HashSet<>();
+        Set<Identifier> sprites = new HashSet<>();
         output.removeAll(sprite -> {
             sprites.add(sprite);
             return false;
@@ -45,7 +44,7 @@ public final class LabPBRSidecarFilter implements SpriteSource {
         output.removeAll(sprite -> isSidecar(sprite, sprites));
     }
 
-    private static boolean isSidecar(ResourceLocation sprite, Set<ResourceLocation> atlasSprites) {
+    private static boolean isSidecar(Identifier sprite, Set<Identifier> atlasSprites) {
         String path = sprite.getPath();
         for (String suffix : LabPBRVariants.VARIANT_SUFFIXES) {
             if (path.endsWith(suffix)
@@ -57,7 +56,7 @@ public final class LabPBRSidecarFilter implements SpriteSource {
     }
 
     @Override
-    public SpriteSourceType type() {
-        return TYPE;
+    public MapCodec<LabPBRSidecarFilter> codec() {
+        return CODEC;
     }
 }
