@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.gl;
 import com.nvidia.rtxremix.InteropInfo;
 import com.nvidia.rtxremix.RemixBridge;
 import com.nvidia.rtxremix.TextureFormat;
+import com.mojang.renderpearl.backend.opengl.GlStateManager;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,10 @@ import static org.lwjgl.opengl.GL45.*;
  * Imports Remix color and primary-depth images into OpenGL under one semaphore pair.
  */
 public final class GlInterop {
+    private static final float[] TRANSPARENT = {0.0f, 0.0f, 0.0f, 0.0f};
+    /** GlStateManager colour masks: one bit per channel, red first. */
+    private static final int COLOR_MASK_ALPHA = 8;
+    private static final int COLOR_MASK_ALL = 15;
     private static final Logger LOGGER = LoggerFactory.getLogger(GlInterop.class);
     private static final int[] NO_BUFFERS = new int[0];
 
@@ -153,10 +158,15 @@ public final class GlInterop {
     }
 
     /**
-     * Copies a colour texture into the shared image. Since 26.x vanilla's main
-     * render target is a texture with no framebuffer of its own, so it is
-     * attached to one this interop owns, by direct state access, which changes
-     * no binding vanilla's GL backend has cached.
+     * Copies a colour texture into the shared image and zeroes its alpha.
+     * Since 26.x vanilla's main render target is a texture with no framebuffer
+     * of its own, so it is attached to one this interop owns, by direct state
+     * access, which changes no binding vanilla's GL backend has cached.
+     *
+     * <p>Remix writes opaque output into the same image, so zero alpha marks a
+     * frame Remix has not written, for example while it compiles shaders.
+     * {@link TextureOverlay} leaves such a frame undrawn; drawing it would
+     * composite the previous host frame, upside down, into the next one.
      */
     public void copyFromTexture(int texture, int width, int height) {
         drainStaleGlErrors();
@@ -182,6 +192,14 @@ public final class GlInterop {
                 GL_COLOR_BUFFER_BIT,
                 GL_NEAREST);
         checkGlError("glBlitNamedFramebuffer");
+
+        // A blit ignores the color mask and a clear honors it, so the mask
+        // limits the clear to alpha. GlStateManager keeps vanilla's cached mask
+        // valid; all channels enabled is the state vanilla presents in.
+        GlStateManager._colorMask(COLOR_MASK_ALPHA);
+        glClearNamedFramebufferfv(destinationFbo, GL_COLOR, 0, TRANSPARENT);
+        GlStateManager._colorMask(COLOR_MASK_ALL);
+        checkGlError("glClearNamedFramebufferfv");
     }
 
     public int getTexture() {
