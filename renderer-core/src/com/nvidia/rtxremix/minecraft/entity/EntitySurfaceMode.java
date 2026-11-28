@@ -10,5 +10,12 @@ public enum EntitySurfaceMode {
     CUTOUT,
     TRANSLUCENT,
     EMISSIVE,
+    /**
+     * Alpha-tested and self-lit: an unblended surface that glows. Seen
+     * through refracting glass, a blended emitter drops out wherever the ray
+     * past it reaches only sky; an emitter that must stay solid, such as the
+     * beacon beam's core, takes this instead.
+     */
+    EMISSIVE_CUTOUT,
     GLASS
 }

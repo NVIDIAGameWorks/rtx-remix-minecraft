@@ -291,7 +291,11 @@ under a budget, because a path tracer needs them for shadows and reflections,
 and an entity that owns a Remix light this frame is swept at any distance so
 its light never arrives without its housing. Rigid occurrences retain instances
 keyed by owner, category, layer, and part; strips and beams stream transient
-meshes per frame. `RemixBlockDamagePass` submits static terrain damage decals.
+meshes per frame. The vanilla beacon beam is an emissive surface, not a light:
+its translucent glow blends as `EMISSIVE` and its opaque core stays alpha-tested
+as `EMISSIVE_CUTOUT`, so the core still occludes where the beam runs through
+glass (`RenderLayerUtils`). `RemixBlockDamagePass` submits static terrain
+damage decals.
 `CopperBeaconBlockEntityRenderer` submits the articulated beacon model; the
 mount stays in terrain. `CopperBeaconPose` is shared with the per-frame disk
 light. Server-authoritative block-entity state owns the axis parameters and
@@ -415,6 +419,9 @@ diluting the sampler's candidate pool.
 - The placed Copper Beacon is not a `BlockLightDefaults` rule: its block entity
   owns a dynamic articulated light, and a static rule would light it twice
   (`LightManager`, `CopperBeaconBlockEntityRenderer`).
+- The vanilla beacon and its beam get no analytic light: a cylinder light that
+  strong shimmers in unrelated areas, so the beam lights the scene only through
+  its emissive surfaces (`RenderLayerUtils`, `EntitySurfaceMode`).
 - Whether a held item's lit element burns is decided once, in `HeldLightState`;
   the flame, the smoke, the hand light, and the held beam all consult it
   (`HeldItemEffectsRenderer`, `LightManager`).

@@ -160,6 +160,12 @@ final class RenderLayerUtils {
      * has no material for. Its texels are either fully opaque grey or fully
      * transparent, so alpha blending them over the surface is the closest surface
      * behaviour and it is classified as translucent.
+     *
+     * <p>The beacon beam is light, not a lit surface: vanilla draws it unlit at
+     * full brightness. Its translucent glow stays a blended emitter, while its
+     * opaque core keeps the alpha-tested surface it had and glows as
+     * {@link EntitySurfaceMode#EMISSIVE_CUTOUT}, so the core still occludes what is
+     * behind it where the beam runs through glass.
      */
     static EntitySurfaceMode surfaceMode(RenderType layer) {
         if (!(layer instanceof RenderType.CompositeRenderType multiPhase)) {
@@ -176,6 +182,7 @@ final class RenderLayerUtils {
         return classifySurfaceMode(
                 phases.shaderState == RenderStateShard.RENDERTYPE_EYES_SHADER
                         || phases.shaderState == RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER,
+                phases.shaderState == RenderStateShard.RENDERTYPE_BEACON_BEAM_SHADER,
                 phases.transparencyState == RenderStateShard.ADDITIVE_TRANSPARENCY,
                 phases.transparencyState == RenderStateShard.TRANSLUCENT_TRANSPARENCY
                         || phases.transparencyState == RenderStateShard.CRUMBLING_TRANSPARENCY,
@@ -190,9 +197,14 @@ final class RenderLayerUtils {
      * not. Cutout keeps those quads out of the blended path, so text and maps are opaque
      * hits that cast shadows and appear in reflections instead of ghosted decals.
      */
-    static EntitySurfaceMode classifySurfaceMode(boolean emissiveProgram, boolean additiveTransparency,
-                                           boolean translucentTransparency, boolean solidProgram,
-                                           boolean textProgram) {
+    static EntitySurfaceMode classifySurfaceMode(boolean emissiveProgram, boolean beaconBeamProgram,
+                                                 boolean additiveTransparency,
+                                                 boolean translucentTransparency, boolean solidProgram,
+                                                 boolean textProgram) {
+        if (beaconBeamProgram) {
+            return translucentTransparency
+                    ? EntitySurfaceMode.EMISSIVE : EntitySurfaceMode.EMISSIVE_CUTOUT;
+        }
         if (emissiveProgram || additiveTransparency) {
             return EntitySurfaceMode.EMISSIVE;
         }

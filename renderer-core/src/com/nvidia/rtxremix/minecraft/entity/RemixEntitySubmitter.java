@@ -2777,6 +2777,7 @@ public class RemixEntitySubmitter {
             case OPAQUE:
                 break;
             case CUTOUT:
+            case EMISSIVE_CUTOUT:
                 opaque.alphaTestType(4)
                         .alphaReferenceValue(cutoutAlphaReferenceValue(
                                 key.textureId(), textureSource.isGlyphPage(key.textureId())));
@@ -2819,6 +2820,7 @@ public class RemixEntitySubmitter {
                 .albedoTexture(textures.albedo.getHandle()).filterMode(0);
         if (textures.normal != null) materialBuilder.normalTexture(textures.normal.getHandle());
         RemixTexture emissive = key.surfaceMode() == EntitySurfaceMode.EMISSIVE
+                || key.surfaceMode() == EntitySurfaceMode.EMISSIVE_CUTOUT
                 ? textures.albedo : textures.emissive;
         if (emissive != null) {
             materialBuilder.emissiveTexture(emissive.getHandle())
@@ -2842,7 +2844,8 @@ public class RemixEntitySubmitter {
                                           EntitySurfaceMode surfaceMode) {
         return hasSssMask
                 && surfaceMode != EntitySurfaceMode.TRANSLUCENT
-                && surfaceMode != EntitySurfaceMode.EMISSIVE;
+                && surfaceMode != EntitySurfaceMode.EMISSIVE
+                && surfaceMode != EntitySurfaceMode.EMISSIVE_CUTOUT;
     }
 
     static boolean shouldUseDiffusionProfile(EntitySurfaceMode surfaceMode) {
