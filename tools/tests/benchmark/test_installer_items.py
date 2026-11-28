@@ -11,13 +11,13 @@ made, because only the mod's steps prepare a launcher."""
 import json
 import os
 import re
-import shutil
 import subprocess
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from conftest import write_default_version_release_state
 
 from rtx_tools.benchmark import util
 
@@ -210,7 +210,7 @@ def dist(tmp_path: Path) -> Path:
     for folder in ("mods/fabric", "resourcepacks", "saves"):
         (path / folder).mkdir(parents=True)
     (path / "mods" / "fabric" / JAR).write_bytes(b"jar")
-    shutil.copy2(util.PROJECT_DIR / "project-state.json", path / "project-state.json")
+    write_default_version_release_state(path / "project-state.json")
     (path / "resourcepacks" / PACK).write_bytes(PACK_BYTES)
     write_zip(path / "saves" / WORLD_ZIP, {f"{WORLD}/level.dat": b"level"})
     return path

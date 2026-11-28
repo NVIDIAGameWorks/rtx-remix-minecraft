@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import re
 import struct
 import subprocess
@@ -27,6 +28,17 @@ def no_cached_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
         "RUN_DIR",
         util.PRISM_DATA_DIR / "instances" / "rtx-remix-dev" / ".minecraft",
     )
+
+
+def write_default_version_release_state(destination: Path) -> None:
+    """Stage the project state of a release built for the catalog's default Minecraft version alone.
+
+    The installer reads a direct mods/<loader> layout without version-qualified JAR names only from a one-version
+    catalog, so a fixture that stages such JARs stages the matching catalog."""
+    state = json.loads((util.PROJECT_DIR / "project-state.json").read_text(encoding="utf-8"))
+    default = state["defaultMinecraftVersion"]
+    state["versions"] = {default: state["versions"][default]}
+    destination.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def real_client_launch(args: object) -> str | None:

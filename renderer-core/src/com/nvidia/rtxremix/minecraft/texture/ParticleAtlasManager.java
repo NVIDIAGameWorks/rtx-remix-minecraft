@@ -134,6 +134,16 @@ public class ParticleAtlasManager {
                 }
             }
 
+            // The layers were written sprite by sprite; their borders follow the edits.
+            for (ParticleSpriteData sprite : atlas.sprites) {
+                fillPadding(albedoRGBA, atlasW, atlasH, 4, sprite);
+                fillPadding(normalAtlas, atlasW, atlasH, 4, sprite);
+                fillPadding(heightAtlas, atlasW, atlasH, 1, sprite);
+                fillPadding(roughnessAtlas, atlasW, atlasH, 1, sprite);
+                fillPadding(metallicAtlas, atlasW, atlasH, 1, sprite);
+                fillPadding(emissiveAtlas, atlasW, atlasH, 4, sprite);
+            }
+
             RemixTexture albedoTex = uploadTexture("particle_atlas_albedo",
                     albedoRGBA, atlasW, atlasH, TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
 
@@ -247,6 +257,12 @@ public class ParticleAtlasManager {
         initFailed = false;
     }
 
+    private static void fillPadding(
+            byte[] layer, int atlasW, int atlasH, int bytesPerPixel, ParticleSpriteData sprite) {
+        SpritePadding.fill(layer, atlasW, atlasH, bytesPerPixel,
+                sprite.x, sprite.y, sprite.width, sprite.height, sprite.padding);
+    }
+
     public interface ParticleAtlasSource {
         ParticleAtlasData load();
 
@@ -279,6 +295,8 @@ public class ParticleAtlasManager {
         public final int y;
         public final int width;
         public final int height;
+        /** Texels the stitcher reserves around the sprite, outside {@link #x} and {@link #y}. */
+        public final int padding;
 
         public ParticleSpriteData(
                 Object id,
@@ -286,11 +304,22 @@ public class ParticleAtlasManager {
                 int y,
                 int width,
                 int height) {
+            this(id, x, y, width, height, 0);
+        }
+
+        public ParticleSpriteData(
+                Object id,
+                int x,
+                int y,
+                int width,
+                int height,
+                int padding) {
             this.id = id;
             this.x = x;
             this.y = y;
             this.width = width;
             this.height = height;
+            this.padding = padding;
         }
     }
 }

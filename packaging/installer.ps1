@@ -686,6 +686,10 @@ function Initialize-LoaderCatalog {
         Set-MinecraftVersion -VersionId $PreferredMinecraftVersion
     } elseif ($available.Count -eq 1) {
         Set-MinecraftVersion -VersionId $available[0]
+    } elseif (-not $isReleaseBundle) {
+        # A source checkout carries every declared target; like a Gradle build
+        # without -PmcVersion, it selects the catalog's default version.
+        Set-MinecraftVersion -VersionId $defaultVersion
     }
 }
 
@@ -1226,7 +1230,7 @@ function Resolve-JavaForLoaderInstaller {
         'C:\Program Files (x86)\Minecraft Launcher\runtime',
         'C:\Program Files\Minecraft Launcher\runtime'
     )
-    $components = @('java-runtime-delta', 'java-runtime-gamma', 'java-runtime-beta', 'java-runtime-alpha', 'jre-legacy')
+    $components = @('java-runtime-epsilon', 'java-runtime-delta', 'java-runtime-gamma', 'java-runtime-beta', 'java-runtime-alpha', 'jre-legacy')
     foreach ($root in $runtimeRoots) {
         if (-not (Test-Path -LiteralPath $root)) { continue }
         foreach ($comp in $components) {
@@ -1242,10 +1246,29 @@ function Resolve-JavaForLoaderInstaller {
     return (Join-Path $script:MANAGED_JDK_DIR 'bin\java.exe')
 }
 
+function Test-AdoptiumHasWindowsJdk {
+    # Adoptium does not build every Java major for Windows ARM64; Java 25 has
+    # no Temurin aarch64 Windows JDK. An unreachable API counts as available,
+    # so the download below reports the failure.
+    param([Parameter(Mandatory)] [string]$Architecture)
+    $url = "https://api.adoptium.net/v3/assets/latest/$($script:JAVA_TARGET)/hotspot?architecture=$Architecture&image_type=jdk&os=windows&vendor=eclipse"
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $assets = Invoke-RestMethod -Uri $url -UseBasicParsing -Headers @{ 'User-Agent' = 'RtxRemixMinecraft-Installer' } -ErrorAction Stop
+        return @($assets).Count -gt 0
+    } catch {
+        return $true
+    }
+}
+
 function Install-ManagedJdk {
     # Adoptium v3 binary endpoint redirects; we pre-fetch the assets list
     # to get the SHA-256 for supply-chain verification.
     $jdkArch   = if (Test-HostIsArm64) { 'aarch64' } else { 'x64' }
+    if ($jdkArch -eq 'aarch64' -and -not (Test-AdoptiumHasWindowsJdk -Architecture $jdkArch)) {
+        Install-MicrosoftArm64Jdk
+        return
+    }
     $assetUrl  = "https://api.adoptium.net/v3/assets/latest/$($script:JAVA_TARGET)/hotspot?architecture=$jdkArch&image_type=jdk&os=windows&vendor=eclipse"
     $binaryUrl = "https://api.adoptium.net/v3/binary/latest/$($script:JAVA_TARGET)/ga/windows/$jdkArch/jdk/hotspot/normal/eclipse"
     $zip       = New-SessionTempPath "adoptium-jdk-$($script:JAVA_TARGET).zip"
@@ -1287,6 +1310,39 @@ function Install-ManagedJdk {
     # Invoke-VerifiedDownload nothing to verify against; it will throw
     # in unattended mode, prompt in interactive.
     Invoke-VerifiedDownload -Url $binaryUrl -Destination $zip -ExpectedSha256 $expectedSha
+
+    Write-Info 'Extracting...'
+    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+    try {
+        Expand-Archive -LiteralPath $zip -DestinationPath $staging -Force -ErrorAction Stop
+    } catch {
+        throw "Failed to extract JDK $($script:JAVA_TARGET) archive: $($_.Exception.Message)"
+    }
+    $nested = Get-ChildItem -LiteralPath $staging -Directory | Select-Object -First 1
+    if (-not $nested) { throw 'Extracted JDK archive had no top-level directory: unexpected format.' }
+    if (Test-Path -LiteralPath $script:MANAGED_JDK_DIR) { Remove-Item -LiteralPath $script:MANAGED_JDK_DIR -Recurse -Force }
+    $parent = Split-Path -Parent $script:MANAGED_JDK_DIR
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    Move-Item -LiteralPath $nested.FullName -Destination $script:MANAGED_JDK_DIR
+
+    $major = Get-JavaMajor (Join-Path $script:MANAGED_JDK_DIR 'bin\java.exe')
+    if ($major -ne $script:JAVA_TARGET) {
+        throw "JDK $($script:JAVA_TARGET) install completed but java -version reports major=$major."
+    }
+    Write-Info "JDK $($script:JAVA_TARGET) ready at $($script:MANAGED_JDK_DIR)"
+}
+
+function Install-MicrosoftArm64Jdk {
+    # The Microsoft Build of OpenJDK publishes a Windows ARM64 JDK for each LTS
+    # major, with a SHA-256 file beside each download.
+    $binaryUrl = "https://aka.ms/download-jdk/microsoft-jdk-$($script:JAVA_TARGET)-windows-aarch64.zip"
+    $zip       = New-SessionTempPath "microsoft-jdk-$($script:JAVA_TARGET).zip"
+    $staging   = New-SessionTempPath "microsoft-jdk-$($script:JAVA_TARGET)-extract"
+
+    Write-Warn "Java $($script:JAVA_TARGET) not found on this system."
+    Write-Info "Auto-installing Microsoft Build of OpenJDK $($script:JAVA_TARGET) (aarch64, ~200 MB) to $($script:MANAGED_JDK_DIR)"
+    Write-Info 'No admin rights needed; this is a user-level install only used by the installer and the mod launcher.'
+    Invoke-VerifiedDownload -Url $binaryUrl -Destination $zip -ChecksumUrl "$binaryUrl.sha256sum.txt"
 
     Write-Info 'Extracting...'
     if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
@@ -1779,7 +1835,7 @@ function Get-DetectedState {
         )
         # Probe launcher runtime generations newest-first; suitability is
         # decided from their reported Java major, not the component name.
-        $components = @('java-runtime-delta', 'java-runtime-gamma', 'java-runtime-beta', 'java-runtime-alpha', 'jre-legacy')
+        $components = @('java-runtime-epsilon', 'java-runtime-delta', 'java-runtime-gamma', 'java-runtime-beta', 'java-runtime-alpha', 'jre-legacy')
         foreach ($root in $runtimeRoots) {
             if (-not (Test-Path -LiteralPath $root)) { continue }
             foreach ($comp in $components) {
@@ -2559,7 +2615,7 @@ function Initialize-PrismInstance {
         @(
             'InstanceType=OneSix'
             "name=$($script:PRISM_INSTANCE_NAME)"
-            'JavaVersion=21'
+            "JavaVersion=$($script:JAVA_TARGET)"
         ) -join "`r`n" | Out-File -LiteralPath $cfg -Encoding ascii -NoNewline
     }
 
@@ -2587,6 +2643,8 @@ function Initialize-PrismInstance {
         formatVersion = 1
     }
     Write-FileAtomic -Path $packPath -Content ($pack | ConvertTo-Json -Depth 8) -Backup
+    # An instance made for another Minecraft version records that version's Java major.
+    Set-PrismCfgValues -Cfg $cfg -Values ([ordered]@{ JavaVersion = [string]$script:JAVA_TARGET })
     Write-Info "Prism instance loader set to $ModLoader."
 }
 

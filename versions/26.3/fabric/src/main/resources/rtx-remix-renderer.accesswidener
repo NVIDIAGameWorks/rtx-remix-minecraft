@@ -1,0 +1,50 @@
+accessWidener v2 official
+
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+accessible	class	net/minecraft/client/OptionInstance$SliderableValueSet
+accessible	class	net/minecraft/client/model/geom/ModelPart$Polygon
+accessible	class	net/minecraft/client/model/geom/ModelPart$Vertex
+accessible	field	net/minecraft/client/model/geom/ModelPart$Cube	polygons	[Lnet/minecraft/client/model/geom/ModelPart$Polygon;
+accessible	field	net/minecraft/client/model/geom/ModelPart$Polygon	vertices	[Lnet/minecraft/client/model/geom/ModelPart$Vertex;
+accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	u	F
+accessible	field	net/minecraft/client/model/geom/ModelPart$Vertex	v	F
+accessible	field	net/minecraft/client/renderer/SpriteCoordinateExpander	delegate	Lcom/mojang/blaze3d/vertex/VertexConsumer;
+accessible	class	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture
+accessible	class	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents	animatedTexture	Lnet/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture;
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture	frames	Ljava/util/List;
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo	index	I
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$FrameInfo	time	I
+accessible	class	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap
+accessible	class	net/minecraft/client/renderer/SectionOcclusionGraph$GraphStorage
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	setDirections	(BLnet/minecraft/core/Direction;)V
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasDirection	(Lnet/minecraft/core/Direction;)Z
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	addSourceDirection	(Lnet/minecraft/core/Direction;)V
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasSourceDirection	(I)Z
+accessible	method	net/minecraft/client/renderer/SectionOcclusionGraph$Node	hasSourceDirections	()Z
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	section	Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	directions	B
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	step	I
+accessible	method	net/minecraft/client/renderer/ViewArea	getRenderSectionAt	(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap	nodes	[Lnet/minecraft/client/renderer/SectionOcclusionGraph$Node;
+accessible	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	sourceDirections	B
+mutable	field	net/minecraft/client/renderer/SectionOcclusionGraph$Node	step	I
+accessible	field	net/minecraft/world/level/lighting/DataLayerStorageMap	map	Lit/unimi/dsi/fastutil/longs/Long2ObjectOpenHashMap;
+accessible	field	net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap	topSections	Lit/unimi/dsi/fastutil/longs/Long2IntOpenHashMap;
+accessible	field	net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap	currentLowestY	I
+accessible	class	net/minecraft/world/level/lighting/BlockLightSectionStorage$BlockDataLayerStorageMap
+accessible	class	net/minecraft/world/level/chunk/PalettedContainer$Data
+accessible	field	net/minecraft/world/level/chunk/PalettedContainer	data	Lnet/minecraft/world/level/chunk/PalettedContainer$Data;
+accessible	method	com/mojang/blaze3d/platform/NativeImage	getPixelABGR	(II)I
+accessible	field	net/minecraft/client/renderer/rendertype/RenderType	state	Lnet/minecraft/client/renderer/rendertype/RenderSetup;
+accessible	field	net/minecraft/client/renderer/rendertype/RenderSetup	textures	Ljava/util/Map;
+accessible	class	net/minecraft/client/renderer/rendertype/RenderSetup$TextureBinding
+accessible	method	net/minecraft/client/renderer/rendertype/RenderSetup$TextureBinding	location	()Lnet/minecraft/resources/Identifier;
+accessible	field	net/minecraft/client/renderer/texture/TextureAtlasSprite	padding	I
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture	frameRowSize	I
+accessible	field	net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture	interpolateFrames	Z
+accessible	class	net/minecraft/client/gui/font/providers/BitmapProvider$Glyph
+accessible	class	net/minecraft/client/gui/font/providers/BitmapProvider$ImageDataHolder
+accessible	field	net/minecraft/client/gui/font/providers/BitmapProvider$ImageDataHolder	image	Lcom/mojang/blaze3d/platform/NativeImage;

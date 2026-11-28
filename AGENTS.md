@@ -6,7 +6,8 @@ Context for AI coding agents working in this repository.
 
 `rtx-remix-minecraft` renders Minecraft through NVIDIA RTX Remix. One checkout
 contains every supported Minecraft target. The current catalog declares
-Minecraft 1.21.1 with Fabric, Forge, and NeoForge. It captures terrain,
+Minecraft 1.21.1 with Fabric, Forge, and NeoForge, and Minecraft 26.3 with an
+experimental Fabric target. It captures terrain,
 entities, particles, sky, and clouds
 from the client and submits them to the Remix runtime as a path-traced scene. The
 Java facade and JNI bridge are tracked under `rtxremix-java/`; the native
@@ -35,7 +36,8 @@ nearest one as well.
 
 ## Build, Run, Package, Test
 
-Java 21, Windows, and the C++ toolchain are required. Gradle fetches a missing
+Java 21 (Java 25 for Minecraft 26.3), Windows, and the C++ toolchain are
+required. Gradle fetches a missing
 Remix runtime automatically. [Getting Started](docs/GETTING_STARTED.md) covers local overrides.
 
 ```powershell
@@ -102,7 +104,12 @@ Release tags are immutable. The default target keeps the ordinary
 Minecraft version.
 
 Add a version by creating `versions/<version>/minecraft/`, the applicable
-loader modules beside it, and one catalog entry. Port shared renderer changes
+loader modules beside it, and one catalog entry. A version whose loader
+plugins need a Gradle the default wrapper does not run pins one under
+`versions.<version>.gradle`: `gradlew.bat` reads `-PmcVersion` and runs the
+wrapper directory `gradle/target-wrapper.ps1` generates for the pin, and
+`settings.gradle` fails a build that runs another Gradle than its target pins.
+Minecraft 26.3 pins Gradle 9.8 for Loom 1.19, which ForgeGradle 6 refuses. Port shared renderer changes
 directly; adapt only the version-owned Minecraft layer and loader providers.
 Validate semantic parity with the shared world, camera, and shot fixtures.
 `tools\rtx.bat versions` reports the whole checkout and

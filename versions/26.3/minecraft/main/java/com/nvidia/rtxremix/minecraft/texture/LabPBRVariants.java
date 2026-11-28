@@ -1,0 +1,64 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package com.nvidia.rtxremix.minecraft.texture;
+
+import com.mojang.blaze3d.platform.NativeImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
+import java.util.Map;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
+
+/** Minecraft resource lookup for the loader-neutral LabPBR converter. */
+public final class LabPBRVariants {
+    /** What a sidecar's name adds to the name of the texture it describes. */
+    static final List<String> VARIANT_SUFFIXES = List.of("_n", "_s", "_sss");
+    private static final String TEXTURE_EXTENSION = ".png";
+
+    private final Map<Identifier, Resource> resources;
+
+    private LabPBRVariants(Map<Identifier, Resource> resources) {
+        this.resources = resources;
+    }
+
+    public static LabPBRVariants scan(ResourceManager resourceManager) {
+        return new LabPBRVariants(
+                resourceManager.listResources("textures", LabPBRVariants::isVariantResource));
+    }
+
+    public NativeImage loadVariant(Identifier spriteId, String suffix) {
+        return loadResource(resources.get(variantId(spriteId, suffix)));
+    }
+
+    public int size() {
+        return resources.size();
+    }
+
+    private static boolean isVariantResource(Identifier id) {
+        String path = id.getPath();
+        if (!path.endsWith(TEXTURE_EXTENSION)) return false;
+        int nameEnd = path.length() - TEXTURE_EXTENSION.length();
+        for (String suffix : VARIANT_SUFFIXES) {
+            if (path.startsWith(suffix, nameEnd - suffix.length())) return true;
+        }
+        return false;
+    }
+
+    private static NativeImage loadResource(Resource resource) {
+        if (resource == null) return null;
+        try (InputStream stream = resource.open()) {
+            return NativeImage.read(stream);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static Identifier variantId(Identifier spriteId, String suffix) {
+        return Identifier.fromNamespaceAndPath(
+                spriteId.getNamespace(), "textures/" + spriteId.getPath() + suffix + TEXTURE_EXTENSION);
+    }
+}

@@ -1,0 +1,82 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "copper": "minecraft:block/copper_block",
+    "lens": "rtx-remix-renderer:block/copper_beacon_lens",
+    "particle": "minecraft:block/copper_block"
+  },
+  "elements": [
+    {
+      "from": [6, 0, 6], "to": [10, 2, 10],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [7, 2, 7], "to": [9, 7, 9],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [5, 4, 7], "to": [11, 6, 10],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [3, 5, 7], "to": [5, 13, 10],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [11, 5, 7], "to": [13, 13, 10],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [4, 6, 5], "to": [12, 14, 12],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [2, 9, 7], "to": [4, 11, 10],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [12, 9, 7], "to": [14, 11, 10],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    },
+    {
+      "from": [5, 7, 4], "to": [11, 13, 5],
+      "faces": {
+        "down": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "up": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "north": {"uv": [0, 0, 16, 16], "texture": "#lens"}, "south": {"uv": [0, 4, 16, 12], "texture": "#copper"},
+        "west": {"uv": [0, 4, 16, 12], "texture": "#copper"}, "east": {"uv": [0, 4, 16, 12], "texture": "#copper"}
+      }
+    }
+  ]
+}

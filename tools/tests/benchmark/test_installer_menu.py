@@ -12,11 +12,11 @@ the menu therefore waits for a key first, or its result and any error vanish wit
 
 import os
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import write_default_version_release_state
 
 from rtx_tools import loader_registry
 from rtx_tools.benchmark import util
@@ -242,7 +242,7 @@ def test_a_download_with_two_mod_jars_says_so_and_how_to_fix_it(tmp_path: Path, 
 def test_get_dist_mod_jar_names_both_jars_and_the_fix(tmp_path: Path, mod_loader: str):
     mods = tmp_path / "dist" / "mods" / mod_loader.lower()
     mods.mkdir(parents=True)
-    shutil.copy2(util.PROJECT_DIR / "project-state.json", tmp_path / "dist" / "project-state.json")
+    write_default_version_release_state(tmp_path / "dist" / "project-state.json")
     older, newer = "rtx-remix-renderer-0.1.0-1-aaaaaaa-win64.jar", "rtx-remix-renderer-0.1.0-2-bbbbbbb-win64.jar"
     for name in (older, newer):
         (mods / name).write_bytes(b"PK")

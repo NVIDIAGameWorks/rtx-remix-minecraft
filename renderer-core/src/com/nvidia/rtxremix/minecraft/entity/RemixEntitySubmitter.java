@@ -8,6 +8,7 @@ import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import com.nvidia.rtxremix.minecraft.texture.LabPBRConverter;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.SpritePadding;
 import com.nvidia.rtxremix.minecraft.profiling.PerformanceTimer;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
@@ -118,8 +119,6 @@ public class RemixEntitySubmitter {
             EntityTextureKey.of("minecraft", "textures/atlas/shield_patterns.png");
     private static final EntityTextureKey PARTICLE_ATLAS_ID =
             EntityTextureKey.of("minecraft", "textures/atlas/particles.png");
-    private static final EntityTextureKey BEDS_ATLAS_TEXTURE =
-            EntityTextureKey.of("minecraft", "textures/atlas/beds.png");
     private static final EntityTextureKey MAP_DECORATIONS_ATLAS_TEXTURE =
             EntityTextureKey.of("minecraft", "textures/atlas/map_decorations.png");
     private static final EntityTextureKey BLOCK_ATLAS_TEXTURE =
@@ -131,8 +130,6 @@ public class RemixEntitySubmitter {
     private static final EntityTextureKey END_GATEWAY_SURFACE_TEXTURE =
             EntityTextureKey.of("rtxremix", "end_gateway_surface");
     private static final String DYNAMIC_MAP_TEXTURE_PREFIX = "dynamic/map/";
-    private static final EntityMaterialKey BEDS_ATLAS_MATERIAL_KEY =
-            new EntityMaterialKey(BEDS_ATLAS_TEXTURE, EntitySurfaceMode.OPAQUE);
     static final InstanceInfoBlendEXT VERTEX_COLOR_MODULATE =
             InstanceInfoBlendEXT.textureTimesVertexColor();
     static final InstanceInfoBlendEXT BANNER_PATTERN_BLEND =
@@ -726,6 +723,7 @@ public class RemixEntitySubmitter {
 
     private final ParticleAtlasManager particleAtlasManager;
     private final EntityTextureSource textureSource;
+    private final EntityMaterialKey warmUpAtlasMaterialKey;
     private final EntitySubmissionAdapter submissionAdapter;
 
     private static final class EntityTextureSet {
@@ -810,6 +808,8 @@ public class RemixEntitySubmitter {
         this.api = api;
         this.particleAtlasManager = particleAtlasManager;
         this.textureSource = Objects.requireNonNull(textureSource, "textureSource");
+        this.warmUpAtlasMaterialKey = new EntityMaterialKey(
+                textureSource.warmUpAtlas(), textureSource.warmUpAtlasSurfaceMode());
         this.submissionAdapter =
                 Objects.requireNonNull(submissionAdapter, "submissionAdapter");
         this.rebuildScratch = submissionAdapter.createGeometryScratch();
@@ -2409,18 +2409,18 @@ public class RemixEntitySubmitter {
 
     /**
      * Creates the largest block-entity atlas during renderer warm-up instead of
-     * stalling the first frame in which a bed becomes visible.
+     * stalling the first frame in which one of its block entities becomes visible.
      *
      * @return true only when a live material is cached for the atlas
      */
     public boolean preloadLargeBlockEntityAtlases() {
-        ensureMaterial(BEDS_ATLAS_MATERIAL_KEY);
+        ensureMaterial(warmUpAtlasMaterialKey);
         return hasLiveLargeBlockEntityAtlasMaterial();
     }
 
-    /** Returns whether the preloaded bed-atlas material is still cached and usable. */
+    /** Returns whether the preloaded block-entity atlas material is still cached and usable. */
     public boolean hasLiveLargeBlockEntityAtlasMaterial() {
-        RemixMaterial material = materialCache.get(BEDS_ATLAS_MATERIAL_KEY);
+        RemixMaterial material = materialCache.get(warmUpAtlasMaterialKey);
         return material != null && !material.isDeleted();
     }
 
@@ -2517,6 +2517,18 @@ public class RemixEntitySubmitter {
                                 sssAlbedoData, w, sprite.subsurfaceAlbedo,
                                 x, y, spriteW, spriteH);
                     }
+            }
+
+            // The layers were written sprite by sprite; their borders follow the edits.
+            for (EntityTextureSource.SpriteSnapshot sprite : atlas.sprites) {
+                fillPadding(pixels, w, h, 4, sprite);
+                fillPadding(normalData, w, h, 4, sprite);
+                fillPadding(heightData, w, h, 1, sprite);
+                fillPadding(roughData, w, h, 1, sprite);
+                fillPadding(metalData, w, h, 1, sprite);
+                fillPadding(emissiveData, w, h, 4, sprite);
+                fillPadding(sssData, w, h, 4, sprite);
+                fillPadding(sssAlbedoData, w, h, 4, sprite);
             }
 
             EntityTextureSet textures = new EntityTextureSet();
@@ -2887,6 +2899,12 @@ public class RemixEntitySubmitter {
         RemixTexture texture = uploadPixels(name, data, width, height, format, purpose);
         textures.own(texture);
         return texture;
+    }
+
+    private static void fillPadding(
+            byte[] layer, int w, int h, int bytesPerPixel, EntityTextureSource.SpriteSnapshot sprite) {
+        SpritePadding.fill(layer, w, h, bytesPerPixel,
+                sprite.x, sprite.y, sprite.width, sprite.height, sprite.padding);
     }
 
     private static void fillFlatNormals(byte[] data) {

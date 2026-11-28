@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "group": "copper_beacon",
+  "pattern": [
+    "CGC",
+    "GLG",
+    "CRC"
+  ],
+  "key": {
+    "C": "minecraft:copper_ingot",
+    "G": "minecraft:glass_pane",
+    "L": "minecraft:lantern",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "rtx-remix-renderer:copper_beacon"
+  },
+  "show_notification": true
+}

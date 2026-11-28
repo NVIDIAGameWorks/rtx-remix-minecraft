@@ -69,7 +69,14 @@ goto fail
 :execute
 @rem Setup the command line
 
-set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
+@rem A Minecraft target may pin its own Gradle in project-state.json; the
+@rem selected -PmcVersion decides which wrapper directory runs the build.
+set WRAPPER_DIR=%APP_HOME%\gradle\wrapper
+call :findMinecraftVersion %*
+if defined RTX_MINECRAFT_VERSION for /f "usebackq delims=" %%d in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_HOME%\gradle\target-wrapper.ps1" -MinecraftVersion "%RTX_MINECRAFT_VERSION%"`) do set "WRAPPER_DIR=%%d"
+if not exist "%WRAPPER_DIR%\gradle-wrapper.jar" set WRAPPER_DIR=%APP_HOME%\gradle\wrapper
+
+set CLASSPATH=%WRAPPER_DIR%\gradle-wrapper.jar
 
 
 @rem Execute Gradle
@@ -91,3 +98,16 @@ exit /b %EXIT_CODE%
 if "%OS%"=="Windows_NT" endlocal
 
 :omega
+
+goto :eof
+
+:findMinecraftVersion
+@rem Finds -PmcVersion=<version>, quoted or not; cmd splits an unquoted one at "=".
+set "RTX_MINECRAFT_VERSION="
+:findMinecraftVersionNext
+if "%~1"=="" goto :eof
+set "RTX_ARGUMENT=%~1"
+if "%RTX_ARGUMENT:~0,12%"=="-PmcVersion=" set "RTX_MINECRAFT_VERSION=%RTX_ARGUMENT:~12%"
+if "%RTX_ARGUMENT%"=="-PmcVersion" set "RTX_MINECRAFT_VERSION=%~2"
+shift
+goto findMinecraftVersionNext
