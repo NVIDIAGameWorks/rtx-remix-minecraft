@@ -8,3 +8,7 @@
 # scripts, so batch entry points such as Packman's packman.cmd check out CRLF.
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# The release zips carry these texts byte for byte, so every checkout, on any
+# platform or autocrlf setting, builds the same zip.
+packaging/content/**/*.txt text eol=lf

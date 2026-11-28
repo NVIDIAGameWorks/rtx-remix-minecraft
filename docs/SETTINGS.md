@@ -38,8 +38,7 @@ Clouds still follow Minecraft's own cloud option: Off removes them regardless
 of the selected style, while Fast and Fancy draw the same geometry here.
 
 **Block Lights** opens a table of multipliers for normal light brightness,
-grouping related block lights into a row; the far left is Off. The Beacon row
-scales a vanilla beacon's beam as well as its core. The Copper
+grouping related block lights into a row; the far left is Off. The Copper
 Beacon is separate: right-click a placed beacon for its own controls. Lanterns
 and sea pickles glow through their surfaces rather than casting separate
 lights, so **Block Glow Intensity** under Materials controls them. Emitting
@@ -152,7 +151,7 @@ only once at its end. `clouds.vanillaEdgeSmoothness` and `clouds.size` accept
 that debounce. Block Glow Intensity does not use `deferSliderApply`: movement
 only stores the pending multiplier. On close,
 `BlockTextureManager.commitTerrainEmissionMultiplier()` reports whether it
-changed; only then does `RtxRemixMod.rebuildTerrainForMaterialSettings()`
+changed; only then does `MinecraftRuntime.rebuildTerrainForMaterialSettings()`
 recreate shared materials and recapture terrain. Keep this separate from the
 Block Lights transaction.
 

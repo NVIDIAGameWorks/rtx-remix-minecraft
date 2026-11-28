@@ -20,6 +20,24 @@ public final class RemixBridge {
     private RemixBridge() {}
 
     /**
+     * @return bytes required by {@link #generateWaterNormals}
+     */
+    public static native long waterNormalsTextureSize();
+
+    /**
+     * Generates the canonical animated water-normal RG8 flipbook directly
+     * into caller-owned memory without loading or initializing the Remix runtime.
+     *
+     * @param output direct ByteBuffer with capacity of at least {@link #waterNormalsTextureSize()} bytes
+     * @param seed deterministic unsigned 64-bit seed (the default surface is 225)
+     * @param timings optional double[1] containing generation seconds
+     * @param error UTF-8 error text on failure, NUL-terminated when space permits
+     * @return zero on success; nonzero for invalid input, allocation, or internal failure
+     */
+    public static native int generateWaterNormals(
+            ByteBuffer output, long seed, double[] timings, byte[] error);
+
+    /**
      * Loads d3d9.dll via SetDllDirectory + LoadLibrary, calls
      * remixapi_InitializeLibrary to fill the vtable.
      *
@@ -42,13 +60,49 @@ public final class RemixBridge {
      */
     public static native int overwriteProcessCommandLine(String replacement);
 
+    // ─── process environment ─────────────────────────────────────────────
+
+    /**
+     * @return this process's working directory as Windows holds it, which the
+     *         runtime resolves relative paths against, or null when Windows
+     *         cannot report it
+     */
+    public static native String processWorkingDirectory();
+
+    /**
+     * Sets a variable in this process's environment block. Native code reads
+     * the block; {@code System.getenv} keeps the copy it took at JVM start.
+     *
+     * @return false when Windows rejects the name or value
+     */
+    public static native boolean setProcessEnvironmentVariable(String name, String value);
+
+    // ─── crash dumps ─────────────────────────────────────────────────────
+
+    /**
+     * Sets whether the minidump the bridge writes after a native crash also
+     * copies the memory that stack values point at. Off by default, because
+     * that memory includes the process's launch arguments.
+     */
+    public static native void setCrashDumpDetail(boolean full);
+
+    /**
+     * Sets the folder the bridge writes its crash files into. Until set, it is
+     * {@code crash} under the working directory at the time of the crash.
+     *
+     * @param directory an absolute folder whose parent exists
+     * @return false when the path is too long to leave room for a file name
+     */
+    public static native boolean setCrashDirectory(String directory);
+
     // ─── lifecycle ───────────────────────────────────────────────────────
 
     public static native int startup(long hwnd, boolean disableSrgb,
                                      boolean forceNoVkSwapchain,
                                      boolean editorMode,
                                      boolean combineGui,
-                                     boolean interopImage);
+                                     boolean interopImage,
+                                     boolean useRemixOwnedChildWindow);
 
     public static native int shutdown();
 
@@ -59,6 +113,24 @@ public final class RemixBridge {
                     int interopFlipY,
                     long clientDoneSemaphore_ValueToWait,
                     int disableCpuWaitForExternalSemaphores);
+
+    /**
+     * Deliberately faults inside a guarded Remix call on the calling thread,
+     * to check where a native crash there is reported: in {@code d3d9.dll},
+     * which reaches the runtime's crash reporter, or with {@code insideJvm}
+     * in {@code jvm.dll}, which HotSpot keeps. Diagnostic only.
+     *
+     * @return an error code only if the runtime rejected the call before faulting
+     */
+    public static native int faultInRemixCall(boolean insideJvm);
+
+    /**
+     * Sets whether a fatal fault inside a Remix call goes to the runtime's
+     * crash reporter first, which is the default on x64. Off, HotSpot reports
+     * it in {@code hs_err_pid*.log} with the Java frames that led to the call.
+     * Callable before {@link #initialize}.
+     */
+    public static native void setRemixFaultForwarding(boolean enabled);
 
     public static native int dxvkGetInteropInfo(InteropInfo outInfo);
 

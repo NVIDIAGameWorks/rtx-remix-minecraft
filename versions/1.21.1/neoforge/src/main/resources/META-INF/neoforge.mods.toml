@@ -1,0 +1,30 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+
+[[mixins]]
+config="rtx-remix-renderer.mixins.json"
+
+[[mixins]]
+config="rtx-remix-renderer.neoforge.mixins.json"
+
+[[mods]]
+modId="rtx_remix_renderer"
+version="${version}"
+displayName="RTX Remix for Minecraft"
+description='''Renders Minecraft through NVIDIA RTX Remix path tracing.
+NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.'''
+
+[[dependencies.rtx_remix_renderer]]
+modId="neoforge"
+type="required"
+versionRange="${loaderVersionRange}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.rtx_remix_renderer]]
+modId="minecraft"
+type="required"
+versionRange="${minecraftVersionRange}"
+ordering="NONE"
+side="BOTH"

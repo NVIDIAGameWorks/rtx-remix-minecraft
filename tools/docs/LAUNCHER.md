@@ -19,9 +19,9 @@ tools\rtx.bat
 
 Arrow keys move, `Enter` selects, `Esc` goes back. `Ctrl+C` or end-of-input
 (EOF) exits the dashboard successfully and restores the console. The dashboard
-keeps the current world, art pack, launcher, quality preset, SDK variant, SDK
-source, and SDK auto-restage setting visible at once, so you can confirm what
-you are about to launch without leaving the screen.
+keeps the current world, art pack, mod loader, launcher, quality preset, SDK
+variant, SDK source, and SDK auto-restage setting visible at once, so you can
+confirm what you are about to launch without leaving the screen.
 
 The read-only **Launcher** row says how the game will start, for example
 `Prism, signed in as <name>`, or why it cannot, such as `Prism (not installed)`
@@ -74,6 +74,8 @@ the dashboard opens; it uses its saved choices rather than the flag-mode options
 | Flag | Values | Meaning |
 |------|--------|---------|
 | `--mode` | `menu`, `play`, `benchmark` | What to do. See the mapping below |
+| `--minecraft-version` | a version from `project-state.json` | Minecraft target to build, stage, and run. Defaults to the environment, then catalog default |
+| `--loader` | a loader ID from `project-state.json` (`fabric`, `forge`, or `neoforge`) | Mod loader to build, stage in Prism, and run. Defaults to the environment/config selection |
 | `--sdk` | `release`, `tracy` | Forwarded as `--sdk-variant`. Defaults to `release` |
 | `--world` | `<name>`, `none` | World to launch or benchmark. The sentinel `none` is case-insensitive; in play mode it opens the main menu, and benchmarks reject it |
 | `--resource-pack` | `none`, `local:<path>`, `<name>@<version>`, `pinned` | Art pack layered over the mod's built-in baseline and world packs. Defaults to merged config, which ships the art-pack pin. A relative `local:` path starts at the repository root |
@@ -91,9 +93,17 @@ The modes map onto the CLI directly:
 | `benchmark` | `rtx.bat run ...`, adding `--world` and `--camera` when supplied |
 
 ```batch
-tools\rtx.bat menu --mode play --sdk release --world MyWorld --resource-pack none
-tools\rtx.bat menu --mode benchmark --sdk tracy --world MyWorld --camera benchmark --resource-pack none --dry-run
+tools\rtx.bat menu --minecraft-version 1.21.1 --mode play --loader forge --sdk release --world MyWorld --resource-pack none
+tools\rtx.bat menu --minecraft-version 1.21.1 --mode benchmark --loader neoforge --sdk tracy --world MyWorld --camera benchmark --resource-pack none --dry-run
 ```
+
+The resolved `launch` and `run` commands also accept both target selectors
+directly.
+Switching updates the checkout-specific Prism instance component and mod set:
+Fabric stages Fabric API, Forge installs its fresh JarJar artifact, and
+NeoForge installs its ordinary module JAR. Non-Fabric selections remove Fabric
+API. The switch does not modify `%APPDATA%\.minecraft` or any unrelated Prism
+instance.
 
 `--dry-run` is the fastest way to answer "what would this actually run". With
 `--mode`, it prints the invocation and exits without opening the UI or writing

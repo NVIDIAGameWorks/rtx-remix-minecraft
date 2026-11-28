@@ -139,7 +139,10 @@ their distance.
 | `rtxremix.profile.tracyJavaMaxDepth` | Nesting depth limit for those Tracy zones. -1 means unlimited | `ProfileScope` |
 | `rtxremix.profile.clientTasks` | Enable per-client-task JFR events; only read when Java phase events are on | `ProfileScope` |
 | `rtxremix.profile.clientTaskSlowThresholdNs` | A client task slower than this gets its own JFR event | `ProfileScope` |
+| `rtxremix.crashDumpDetail` | Set to true to make the minidump the mod writes to `crash\` after a native crash also copy the memory that thread stacks point at, as version 0.1.0 did, which fills in the objects a crashing thread was using. That memory includes the launch arguments, with the launcher's access token, so keep these dumps private and out of public issues | `RemixRenderer` |
 | `rtxremix.debug.entityTypeSummary` | Enable a periodic per-entity-type capture summary in the log. It costs a map probe per entity per frame and a sort and format pass on the render thread, so it is a diagnostic, not a setting | `RemixEntityPass` |
+| `rtxremix.forwardRemixFaults` | Hand a fatal native fault inside a Remix call to the runtime's crash reporter, on x64. Set to false to leave it to HotSpot, whose `hs_err_pid*.log` keeps the Java frames that led to the call; the runtime then sends no report | `RemixRenderer` |
+| `rtxremix.debug.faultInRemixCall` | Crash the game after 120 presented frames to check crash reporting. `runtime` faults inside `d3d9.dll` during a Remix call on the render thread, which the runtime's crash reporter should catch; `jvm` faults inside `jvm.dll` under the same call, which HotSpot should still report in `hs_err_pid*.log`. Set `RTX_SENTRY_TEST_DSN` to an unreachable endpoint to keep the report on disk under `rtx-remix\logs\.sentry-native\` | `RemixRenderer` |
 
 Tracy zones only appear when the staged runtime was built with Tracy support.
 JFR works with any runtime.
@@ -153,22 +156,26 @@ Section builds, chunk loads, lighting updates, and resource reloads share that
 pool. With Remix capture inline in section builds, a burst of workers contends
 with the render thread for CPU time, so the mod bounds the pool.
 
-`WorkerPoolCap` chooses the smaller of 8 and logical CPUs minus one, with a
-minimum of one. It must run at pre-launch because `net.minecraft.util.Util`
-creates the pool in a static initializer. The section-builder cap alone does
-not limit the other work sharing that pool.
+`WorkerPoolPolicy` chooses the smaller of 8 and logical CPUs minus one, with a
+minimum of one. `RemixMixinPlugin` applies it while the shared mixin
+configuration loads, before `net.minecraft.util.Util` creates the pool in its
+static initializer. The section-builder cap alone does not limit the other work
+sharing that pool.
 
 The cap is only applied when the property is unset, so `-Dmax.bg.threads=N`
-opts out and keeps your value. `WorkerPoolCap` logs which of the two happened.
+opts out and keeps your value.
 
 ## Gradle Pass-Throughs
 
-`gradlew` accepts these `-P` properties. Architecture selection applies to any
-task; the rest apply to `runClient`, Fabric's standard Gradle task, and not to
-clients the developer tools launch.
+The repository's root `gradlew` accepts these `-P` properties. Architecture
+selection applies to every selected loader's build and package tasks; the
+runtime options apply to Fabric's selected `runClient` task and not to other
+loaders or to clients the developer tools launch.
 
 | Property | Effect |
 |---|---|
+| `-PmcVersion=<version>` | Select a Minecraft target from `project-state.json` |
+| `-Ploader=<loader-id>` | Configure and build only one loader for the selected Minecraft target |
 | `-Parch=win64` or `-Parch=arm64` | Build and package one architecture instead of both |
 | `-PrtxPreset=<low|medium|high|ultra>` | Sets `rtxremix.preset`, which selects Remix's graphics tier for that session only |
 | `-PmcQuickPlayServer=<host:port>` | Join a server on launch |
@@ -177,13 +184,14 @@ clients the developer tools launch.
 | `-PbenchmarkJfrThrowables=true` | Adds exception and error throw events to that recording |
 | `-PbenchmarkQuickPlayWorld=<name>` | Loads a single-player world on launch |
 
-`mod_version` lives in `gradle.properties`; the build appends a timestamp, the
-short commit hash, and a dirty marker to it.
+`mod.version` lives in `project-state.json`; the build appends a
+timestamp, the short commit hash, and a dirty marker to it.
 
 ## JVM Arguments
 
 A development client and a fresh install share the unconditional tuning
-arguments in `loom.runs.client.vmArgs` in [build.gradle](../build.gradle) and
+arguments in `loom.runs.client.vmArgs` in
+[versions/1.21.1/fabric/build.gradle](../versions/1.21.1/fabric/build.gradle) and
 `RECOMMENDED_JVM_ARGS` in
 [packaging/installer.ps1](../packaging/installer.ps1). The developer tools
 read `RECOMMENDED_JVM_ARGS` for every launch. Keep those unconditional
@@ -270,7 +278,7 @@ directory for an installed client. Portable Prism keeps the former at
 | `rtx.conf` | mod | Replaced on full extraction; with a matching marker and runtime present, copied only if missing | Restored on the next launch |
 | `.rtx-remix-version` | mod | Marker recording the extracted version and architecture | Forces full re-extraction of the runtime and `rtx.conf`, preserving existing files under `rtx-remix/` |
 | `remix-sdk.old-*/` | mod | Left behind when the previous runtime was locked at upgrade time | Safe, and cleaned up opportunistically |
-| `rtx-remix/mods/minecraft-logic/` | map or profile author | Missing shipped files are added on launch even with a matching marker; existing files, including edited confs, are never overwritten | A deleted shipped conf returns to its default on the next launch |
+| `rtx-remix/mods/minecraft-logic/` | map or profile author | Missing shipped files are added on launch even with a matching marker; a file still holding an earlier shipped default takes the current one; edited confs are never overwritten | A deleted shipped conf returns to its default on the next launch |
 | `textures/` | mod | The shipped runtime DDS textures, read by name and replaced on full extraction; other files there are left alone | Restored on the next launch even with a matching marker |
 | `config/rtxremix.json` | settings screen | Written when a settings screen closes, and deleted when nothing differs from the defaults | Resets every setting |
 | `camera-paths/<world-key>/` | you | Your recordings | Loses them, so keep this one |

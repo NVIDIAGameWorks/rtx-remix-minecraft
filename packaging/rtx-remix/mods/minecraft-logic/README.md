@@ -144,9 +144,9 @@ map content.
 `/rtx conf reload` always reads the copy belonging to the Minecraft instance
 that is running. In Prism, `<gameDir>` is the instance's own `.minecraft`
 folder, not the shared `%APPDATA%\.minecraft`. An upgrade adds profiles you do
-not have and never overwrites one you do, so your tuning survives; the price is
-that a changed shipped default only reaches you if you delete your copy first.
-The deleted shipped profile returns on the next launch.
+not have and updates a profile you never changed, but never overwrites one you
+edited, so your tuning survives. To take a new shipped default for a profile
+you edited, delete your copy; it returns on the next launch.
 
 ## Write A Profile
 

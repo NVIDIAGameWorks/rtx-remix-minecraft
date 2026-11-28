@@ -541,10 +541,11 @@ off to measure cold first-visit costs intentionally.
 
 ### Resource Packs
 
-The baseline LabPBR textures ship inside the mod JAR and load through Fabric's
-`fabric` resource pack. The runner lists `vanilla`, then `fabric` in
-`options.txt`, below every `file/` pack. Omitting `fabric` would make Fabric
-append it above user packs.
+The baseline LabPBR textures ship inside the mod JAR and load through the
+selected loader's built-in resources. The runner lists `vanilla`, then
+`fabric` on Fabric or `mod_resources` on Forge and NeoForge in `options.txt`, below every
+`file/` pack. Omitting that entry would let the loader place built-in resources
+above user packs.
 
 Per-world resource packs override the mod's built-in baseline in their
 configured order. An optional selected art pack is enabled last, so it
@@ -760,8 +761,8 @@ arms and label that experiment. Entity stripping removes that coverage.
 
 ### Benchmark FPS Is Not Play FPS
 
-[`packaging/rtx.conf`](../../packaging/rtx.conf) currently disables frame
-generation with `rtx.dlfg.enable = false`. The benchmark measures rendered
+The benchmark runner forces `rtx.dlfg.enable = false` for
+measured processes (`BENCHMARK_RTX_CONFIG`). The benchmark measures rendered
 `MinecraftClient.render` spans, never generated display frames. A play session
 with frame generation can therefore report a different presented rate.
 

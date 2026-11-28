@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+from . import loader_registry
 from .benchmark import util
 
 
@@ -79,3 +81,30 @@ def require_setting(config: dict, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise RuntimeError(f"Missing setting '{key}'. Set it in tools/config.local.json.")
     return value.strip()
+
+
+_RUNTIME_MOD_LOADER: str | None = None
+
+
+def set_runtime_mod_loader(value: str | None) -> None:
+    """Set the explicit CLI loader for this process without changing configuration files."""
+    global _RUNTIME_MOD_LOADER
+    _RUNTIME_MOD_LOADER = value
+
+
+def mod_loader(config: dict) -> str:
+    """The selected loader: explicit CLI, environment, merged config, then the manifest default."""
+    registry = loader_registry.load_registry()
+    value = (
+        str(
+            _RUNTIME_MOD_LOADER
+            if _RUNTIME_MOD_LOADER is not None
+            else os.environ.get("RTXREMIX_MOD_LOADER", config.get("modLoader", registry.default_id))
+        )
+        .strip()
+        .lower()
+    )
+    try:
+        return registry.get(value).id
+    except loader_registry.ManifestError as exc:
+        raise RuntimeError(f"modLoader must name a loader from project-state.json, got {value!r}: {exc}") from exc

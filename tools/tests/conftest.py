@@ -17,6 +17,10 @@ from rtx_tools.client import LaunchBlocked, LaunchRequest
 @pytest.fixture(autouse=True)
 def no_cached_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every test starts without a cached client launcher, so none reaches a real one an earlier test built."""
+    monkeypatch.setenv(
+        "RTXREMIX_PROJECT_STATE",
+        str(util.PROJECT_DIR / "project-state.json"),
+    )
     monkeypatch.setattr(client, "_active", None)
     monkeypatch.setattr(
         util,

@@ -24,7 +24,8 @@ from typing import Any
 
 from PIL import Image
 
-from .. import client, sdk
+from .. import client, loader_registry, sdk
+from .. import config as tools_config
 from . import runner, util
 
 SHOT_SET = "docs"
@@ -268,7 +269,8 @@ def resolve_selection(config: dict) -> runner.BenchmarkSelection:
 
 
 def enabled_pack_names(config: dict) -> list[str]:
-    names = ["fabric"]
+    loader = tools_config.mod_loader(config)
+    names = [loader_registry.load_registry().get(loader).builtin_resource_pack]
     art = runner.configured_resource_pack(config)
     mode = str(art.get("mode") or "none").strip().lower()
     if mode == "pinned":

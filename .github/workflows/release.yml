@@ -1,0 +1,123 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Builds the selected target's release files and drafts a release. Nothing here publishes:
+# a person writes the notes, smoke-tests the draft, and publishes it, and
+# GitHub creates the tag at that moment.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_draft:
+        description: Draft a release from main. Turn off to build files only.
+        type: boolean
+        default: true
+      minecraft_version:
+        description: Minecraft version from project-state.json to release.
+        type: string
+        default: "1.21.1"
+
+# Each job asks for what it needs; the build only reads.
+permissions: {}
+
+concurrency: release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      title: ${{ steps.version.outputs.title }}
+      support_tier: ${{ steps.version.outputs.support_tier }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the selected project target
+        id: project_state
+        env:
+          RELEASE_MINECRAFT_VERSION: ${{ inputs.minecraft_version }}
+        run: >
+          & "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1"
+          -MinecraftVersion $env:RELEASE_MINECRAFT_VERSION
+          -GitHubEnvironment $env:GITHUB_ENV
+          -GitHubOutput $env:GITHUB_OUTPUT
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ steps.project_state.outputs.javaTarget }}
+      - name: Read the release version
+        id: version
+        run: |
+          if ($env:PROJECT_MINECRAFT_VERSION -eq $env:PROJECT_DEFAULT_MINECRAFT_VERSION) {
+            $tag = "v$env:PROJECT_MOD_VERSION"
+            $title = "RTX Remix for Minecraft $env:PROJECT_MOD_VERSION"
+          } else {
+            $tag = "mc/$env:PROJECT_MINECRAFT_VERSION/v$env:PROJECT_MOD_VERSION"
+            $title = "RTX Remix for Minecraft $env:PROJECT_MOD_VERSION (Minecraft $env:PROJECT_MINECRAFT_VERSION)"
+          }
+          @(
+            "tag=$tag"
+            "title=$title"
+            "support_tier=$env:PROJECT_SUPPORT_TIER"
+          ) | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      # The pinned runtime comes from public Packman; no credentials are used.
+      - name: Stage the release files
+        run: '& "$env:GITHUB_WORKSPACE\gradlew.bat" stageReleaseAssets "-PmcVersion=$env:PROJECT_MINECRAFT_VERSION"'
+      - name: Verify every declared loader is staged
+        run: >
+          & "$env:GITHUB_WORKSPACE\.github\scripts\validate-project-state.ps1"
+          -MinecraftVersion $env:PROJECT_MINECRAFT_VERSION
+          -ReleaseAssetsDirectory "$env:GITHUB_WORKSPACE\build\release-assets"
+      # The JAR and the zips are already compressed, so storing them as they
+      # are saves runner time.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: build/release-assets/*
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  # Draft only from main. Archived targets remain buildable but cannot create
+  # new releases.
+  draft:
+    needs: build
+    if: inputs.create_draft && needs.build.outputs.support_tier != 'archived' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.build.outputs.tag }}
+      RELEASE_TITLE: ${{ needs.build.outputs.title }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+      # Reusing a version would attach a second release to a published tag or
+      # leave a duplicate draft, so stop before creating anything.
+      - name: Refuse an existing release
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists. Raise mod.version in project-state.json, or delete that release and its tag."
+            exit 1
+          fi
+          existing=$(git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY" "refs/tags/$RELEASE_TAG")
+          if [ -n "$existing" ]; then
+            echo "::error::Tag $RELEASE_TAG already exists. Raise mod.version in project-state.json, or delete that tag."
+            exit 1
+          fi
+      - name: Create the draft release
+        run: |
+          files=(release-assets/*)
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes "Write the release notes before publishing." \
+            "${files[@]}"

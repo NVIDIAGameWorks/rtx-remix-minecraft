@@ -15,9 +15,10 @@ How to build and run the mod from source. If you only want to play, read
   Adoptium, Microsoft, and Java folders under Program Files.
 - **Visual Studio 2022 Build Tools** with the Desktop development with C++
   workload (MSVC v143). Cross-building the ARM64 bridge additionally needs the
-  toolset pinned in `rtxremix-java/native/build_native.bat` (currently 14.44).
-- **Git.** Everything is in the clone except the native runtime and the two
-  large runtime textures, which the build pulls through Packman on first use.
+  MSVC ARM64 build tools for some installed toolset; `build_native.bat` uses
+  the default toolset when it has them, otherwise the newest one that does.
+- **Git.** Everything is in the clone except the native runtime and its large
+  runtime texture asset, which the build pulls through Packman on first use.
 - **uv 0.13 or newer and Python 3.15 or newer**, for the developer tools that
   launch the mod. The first `tools\rtx.bat` command installs
   [uv](https://docs.astral.sh/uv/) for your user when it is missing, and uv
@@ -47,9 +48,10 @@ without the developer preflight reports `Failed to initialize RTX Remix` in
 
 Gradle fetches the pinned runtime through the bootstrap in `packman/` whenever
 the selected `remix-runtime/<arch>/` directory is absent. A fresh clone needs no
-SDK setup command: run `gradlew.bat build` or `test`, or `tools\rtx.bat launch`,
-normally. Gradle needs no Python installation. Packaging fetches only the
-architectures being packaged.
+SDK setup command before `tools\rtx.bat launch`, any declared loader's `runClient`,
+or a `package` task. Ordinary `build` and `test` tasks do not need the runtime.
+Gradle needs no Python installation. Packaging fetches only the architectures
+being packaged.
 
 Pinned runtimes are published on NVIDIA's public Packman service, so the fetch
 needs no credentials. A matching local runtime is an alternative for
@@ -117,7 +119,7 @@ Before building a runtime branch, compare its
 SDK staging checks the DLL architecture, not its API version. While the API
 major version is zero, the runtime requires an exact minor match; the patch
 component is not compared. Before Prism starts, `tools\rtx.bat launch` uses the
-freshly built JNI bridge to initialize the runtime the installer selected,
+freshly built JNI bridge to initialize the configured runtime,
 including a checkout-relative or absolute `REMIX_BUILD`, in a short-lived
 process. An interactive launch warns on `INCOMPATIBLE_VERSION` and asks whether
 to continue; automated launches warn without waiting for input. Continuing is
@@ -151,19 +153,19 @@ cd rtx-remix-minecraft
 .\tools\rtx.bat launch
 ```
 
-The two large runtime textures are not in git: the first build pulls them
+The large overcast runtime texture is not in git: the first build pulls it
 through Packman into `remix-runtime/textures/`, the same way the runtime is
-fetched, and later builds reuse the cached copy. The build checks that both
-files arrived. The pin lives in
-`packman/textures.packman.xml`. The water normals in the package are generated
-by `tools\rtx.bat textures water-normals`. The build automatically fetches
-`rtx_remix_minecraft_runtime_textures` version `1.1.0` through Packman.
+fetched, and later builds reuse the cached copy. The build checks that the
+required file arrived and stages only that declared file from the package.
+The pin lives in `packman/textures.packman.xml`. Animated water normals are
+generated directly in memory by the native bridge when the renderer starts.
 
 The Java wrapper and JNI bridge are tracked under `rtxremix-java/` and arrive
 with the clone; no recursive checkout or hook setup is needed.
 
-`tools\rtx.bat launch` fetches a missing runtime and builds the mod and bridge
-with Gradle. It installs the mod, the pinned Fabric API, the runtime,
+`tools\rtx.bat launch` fetches a missing runtime and builds the selected loader
+and bridge with Gradle. It installs the mod, Fabric API when Fabric is
+selected, the runtime,
 `rtx.conf`, the gameplay conf payload, and the runtime textures into this
 checkout's Prism instance, then starts Minecraft at the main menu through
 Prism and waits until the game exits. Prism's own console output stays out of
@@ -173,8 +175,14 @@ and it needs no separate build or install step. `tools\rtx.bat` with no
 arguments opens the [developer dashboard](../tools/docs/LAUNCHER.md) instead,
 which launches into the pinned demo world.
 
+Use `--minecraft-version 1.21.1` and `--loader fabric`, `--loader forge`, or
+`--loader neoforge` on `launch`, `run`, and `world launch`; the dashboard
+chooses the loader for the selected version. The checkout-specific Prism instance is rewritten
+with the matching game and loader components and mod set on each launch; this
+does not modify `%APPDATA%\.minecraft`.
+
 Each launch writes the enabled resource packs in the game directory's
-`options.txt`: vanilla, then Fabric's `fabric` pack with the built-in baseline,
+`options.txt`: vanilla, then the selected loader's built-in mod resources,
 then any world packs and the selected art pack. It removes an old generated
 `rtx-remix` baseline pack, which it recognizes by its metadata and texture
 inventory, leaving other packs alone.
@@ -233,11 +241,12 @@ In game, run `/rtx status`. It should report `Renderer Initialized: true` and
 `SDK Available: true`.
 In `logs/latest.log` in the game directory, the exact success message is
 `RTX Remix renderer initialized successfully!`; there must be no
-`Failed to initialize RTX Remix` message. The similarly worded mod-entrypoint
-startup message with a capital `Renderer` is not proof of native initialization.
+`Failed to initialize RTX Remix` message. The earlier
+`RTX Remix Renderer mod setup complete` line only closes mod setup and is not
+proof of native initialization.
 
-The baseline PBR textures are built into the mod JAR and load through Fabric's
-`fabric` resource pack, below user packs. No separate baseline pack needs
+The baseline PBR textures are built into the mod JAR and load through the
+loader's built-in mod resources, below user packs. No separate baseline pack needs
 enabling.
 
 The first launch of a new runtime compiles shaders, so expect a partial or empty
@@ -248,34 +257,60 @@ interactive readiness from the settled image.
 ## Other Commands
 
 ```powershell
-.\gradlew.bat build                         # development JAR in build/libs/
-.\gradlew.bat test                          # JUnit suites
-.\gradlew.bat package -Parch=win64           # installable JAR in build/distributions/
-.\gradlew.bat releaseArchive -Parch=win64    # installable release ZIP in build/distributions/
+.\gradlew.bat build "-PmcVersion=1.21.1"                         # development JARs
+.\gradlew.bat test "-PmcVersion=1.21.1"                          # loader JUnit suites
+.\gradlew.bat package "-PmcVersion=1.21.1" -Parch=win64          # self-contained JARs
+.\gradlew.bat releaseArchive "-PmcVersion=1.21.1" -Parch=win64   # installer ZIP
+.\gradlew.bat stageReleaseAssets "-PmcVersion=1.21.1"            # release files
 ```
 
-`.\gradlew.bat compileJava` checks Java compilation without fetching or staging
-the runtime or compiling the JNI bridge. It is a useful iteration check, not
-validation of native integration.
+The root is a neutral Gradle project that applies no loader plugin. It reads
+the version and loader catalogs from `project-state.json`. `-PmcVersion`
+selects a Minecraft target (the catalog default when omitted), and `-Ploader`
+narrows configuration to one loader. Without `-Ploader`, root `build`, `test`,
+and `package` aggregate the selected version's declared loaders:
 
-The JAR from `package` is the one players get: it embeds the runtime, gameplay
-conf payload, runtime textures, and baseline PBR textures. To try it in a
-normal installation of Minecraft 1.21.1 that already has Fabric Loader and
-Fabric API, drop it into the instance's `mods` folder; nothing else is needed.
-The release archive's installer also migrates old generated baseline packs and
-preserves user-pack ordering.
+```powershell
+.\gradlew.bat build test "-PmcVersion=1.21.1" "-Ploader=fabric"
+.\gradlew.bat build test "-PmcVersion=1.21.1" "-Ploader=forge"
+.\gradlew.bat package "-PmcVersion=1.21.1" "-Ploader=neoforge" -Parch=win64
+.\tools\rtx.bat launch --minecraft-version 1.21.1 --loader neoforge
+```
 
-Every task that reaches `classes` runs `setupRuntime` first, which compiles the
-bridge and stages the runtime. `test` and `build` therefore need a staged
-runtime and the C++ toolchain just as `tools\rtx.bat launch` does.
-`setupRuntime` also syncs a full copy of the runtime, PDBs included, with the
-bridge, `rtx.conf`, the gameplay conf payload, and the runtime textures into
-`run/`, the game directory of Gradle's `runClient` task, so every build
-refreshes it. The developer tools' Prism launches use `run-prism\` instead.
+There is no nested loader wrapper. Fabric is the default loader for developer
+commands that do not receive another selection.
+Set `"modLoader": "neoforge"` in ignored `tools/config.local.json` to make that
+selection persistent. `RTXREMIX_MOD_LOADER=neoforge` overrides the config for one
+shell. Use `fabric` to switch back.
 
-`build` produces a lightweight JAR that is not installable on its own.
-`package` embeds the runtime, `rtx.conf`, the gameplay conf payload, and the
-runtime textures.
+`.\gradlew.bat compileJava "-PmcVersion=1.21.1" "-Ploader=fabric"`
+(or another loader) checks Java
+compilation without fetching or staging the runtime or compiling the JNI
+bridge. It is a useful iteration check, not validation of native integration.
+
+The root `package` task produces one self-contained JAR per declared loader
+under that module's `build/distributions/`. Each embeds the
+runtime, gameplay conf payload, runtime textures, and baseline PBR textures. To
+try one in a normal Minecraft 1.21.1 installation, use the matching loader and
+add Fabric API for the Fabric build.
+
+`releaseArchive` contains every verified loader artifact under
+`mods/<loader-id>/`. Its installer supports the packaged catalog, migrates old generated
+baseline packs, and preserves user-pack ordering.
+
+The neutral root owns native compilation, runtime fetching, and
+`setupRuntime`. Ordinary `build` and `test` tasks for declared modules compile
+without native staging. Each loader's `package` needs the root-owned bridge and
+runtime because it embeds them. The `runClient` task in each declared loader
+module depends on `setupRuntime`, which syncs a full copy of the
+runtime, PDBs included, with the bridge, `rtx.conf`, the gameplay conf payload,
+and the runtime textures into their shared `run/` game directory. Each launch
+also applies the selected loader's built-in resource-pack migration. The
+developer tools' Prism launches use `run-prism\` instead.
+
+Each module's `build` produces a lightweight JAR that is not installable on its
+own. Its `package` embeds the runtime, `rtx.conf`, the gameplay conf payload,
+and the runtime textures.
 
 `verifyPackageJar` rejects Python interpreter and binding payloads because the
 runtime uses Python-free OpenUSD. Plain `.py` templates are not interpreters:
@@ -284,16 +319,34 @@ The task also requires every `packaging/licenses/` file in the JAR.
 
 | `package` invocation | Output |
 |---|---|
-| `package` | Dual-architecture fat JAR. Needs both architectures staged from the same kind of source |
-| `package -Parch=win64` | win64 only, skips the arm64 bridge compile |
-| `package -Parch=arm64` | arm64 only, useful for cross-building for device testing |
+| `package` | One dual-architecture fat JAR per declared loader. Needs both architectures staged from the same kind of source |
+| `package -Ploader=<loader-id>` | One dual-architecture fat JAR for the selected loader |
+| `package -Parch=win64` | Declared loader JARs, win64 only; skips the arm64 bridge compile |
+| `package -Parch=arm64` | Declared loader JARs, arm64 only; useful for cross-building for device testing |
 
-`releaseArchive` runs `package` and its `verifyPackageJar` check, then stages
-the verified JAR under `build/release/mods/` and the installer scripts,
-documentation, and license notices beside it. It writes that layout as a ZIP
-in `build/distributions/`. The same `-Parch` selection applies; omitting it
-includes both architectures. No separate baseline resource-pack directory is
-needed.
+`releaseArchive` runs every declared loader package verification task, then
+stages each JAR under `build/release/mods/<loader-id>/`, RTX Remix Materials under
+`build/release/resourcepacks/`, RTX Remix Showcase World under
+`build/release/saves/`, and the installer scripts, documentation, and license
+notices beside them. It writes that layout as
+`rtx-remix-renderer-mc<minecraft-version>-<mod-version>-installer.zip` in
+`build/distributions/`. The same `-Parch` selection applies to every JAR;
+omitting it includes both architectures. The baseline resource pack is built
+into every JAR.
+
+`fetchReleaseContent` pulls the pack and world through Packman into
+`remix-runtime/art-pack/` and `remix-runtime/world/` from the pins in
+`tools/config.json`: `resourcePack.package` and `resourcePack.version` for the
+pack, `world.name` and `world.version` for the world. Development launches and
+benchmarks stage the same pins, so players and developers see the same
+content. Because the installer finds the zips by name, `fetchReleaseContent`
+refuses a pack version that does not read `1.2.3` or a world version that does
+not read `v1.2.3`, its `v` optional. `materialsArchive` and `worldArchive` zip
+the two with the files in `packaging/content/`, and `stageReleaseAssets`
+collects one JAR per declared loader plus the Materials zip, Showcase World
+zip, and installer bundle in
+`build/release-assets/`. Only these release tasks fetch the pack and world;
+`build`, `test`, and `package` never do.
 
 ## Tooling And CI
 
@@ -324,14 +377,18 @@ the selected fixture's configuration, and explicit CLI overrides in that order.
 `check --tests` runs the pytest suite and needs no staged assets or runtime.
 See [Configuration](../tools/README.md#configuration).
 
-Pull requests and pushes to `main` run the GitHub
+Pull requests and pushes run manifest-derived GitHub
 [`check`](../.github/workflows/check.yml) and
 [`build`](../.github/workflows/build.yml) workflows on Windows.
-They run `tools\rtx.bat check --tests` and `gradlew.bat build test`,
-respectively, with read-only repository permissions and no secrets. Pull
-request checks also scan the added commit messages. These workflows do not
-launch a GPU client, run benchmarks, or produce a release archive; run those
-locally when they are relevant. Runtime fetching has the publication
+The `check` workflow runs `tools\rtx.bat check --tests`. The `build` workflow
+validates project state, then builds, tests, packages, and verifies every
+declared Minecraft-version/loader target. All jobs use read-only
+repository permissions and no secrets. Pull request checks also scan
+the added commit messages. These workflows do not launch a GPU client, run
+benchmarks, or produce a release archive; run those locally when relevant. The
+[`release`](../.github/workflows/release.yml) workflow builds the
+manifest-derived release files and runs only when a maintainer starts it; see
+[Releases](../CONTRIBUTING.md#releases). Runtime fetching has the publication
 prerequisite described in [Get A Runtime](#get-a-runtime).
 
 ## Choosing A Launch Workflow
@@ -339,34 +396,39 @@ prerequisite described in [Get A Runtime](#get-a-runtime).
 | Goal | Use | Minecraft directory |
 |---|---|---|
 | Iterate on this repository | `tools\rtx.bat launch`, or `tools\rtx.bat` for the developer dashboard, through this checkout's Prism instance | Installed Prism's profile, or `run-prism\instances\rtx-remix-dev\.minecraft` for portable Prism |
-| Produce an artifact | `gradlew build`, `gradlew package`, or `gradlew releaseArchive` | None |
-| Test inside an existing Microsoft Launcher install | `tools\rtx.bat install` after `gradlew build` | `%APPDATA%\.minecraft`, or `--game-dir DIR` |
+| Produce all loader artifacts for one Minecraft target | `gradlew build -PmcVersion=<version>`, or the corresponding `package` or `releaseArchive` | None |
+| Produce one loader artifact | `gradlew build -PmcVersion=<version> -Ploader=<loader-id>` or the corresponding `package` | None |
+| Test inside an existing launcher install | `tools\rtx.bat install --minecraft-version <version> --loader <loader-id>` after the matching build | `%APPDATA%\.minecraft`, or `--game-dir DIR` |
 
-`build.gradle` also keeps `runClient`, Fabric's standard Gradle task. It runs
-from the repository-local `run/` directory, not the Prism instance, so the two
-share no saves, settings, or logs. The developer tools do not use it.
+`versions/1.21.1/fabric/build.gradle` also keeps Fabric's standard `runClient`
+task. It runs from the repository-local `run/` directory, not the Prism
+instance, so the two share no saves, settings, or logs. The developer tools do
+not use it.
 
 `rtx install` is an alternative to `tools\rtx.bat launch`, not a step before
 it. Build, then install from the repository root:
 
 ```powershell
-.\gradlew.bat build
-.\tools\rtx.bat install
+.\gradlew.bat build "-PmcVersion=1.21.1" "-Ploader=fabric"
+.\tools\rtx.bat install --minecraft-version 1.21.1 --loader fabric
+# Or use forge or neoforge for both commands.
 ```
 
 The CLI bootstrap manages uv and its Python environment. The target installation
-must already have a compatible Fabric Loader profile and Fabric API. The command
-warns if Fabric API is missing; it does not install Fabric or launch Minecraft.
-Add `--game-dir DIR` to select another installation and `--arch win64` or
-`--arch arm64` to select its architecture. Relative paths use the repository
-root. Without `--arch`, `REMIX_ARCH` wins, then the host architecture.
+must already have a compatible profile for the selected loader. Fabric targets
+also need Fabric API; the command warns if it is missing. The command does not
+install loader dependencies or launch Minecraft. Add `--game-dir DIR` to select
+another installation and `--arch win64` or `--arch arm64` to select its
+architecture. Relative paths use the repository root. Without `--loader`, the
+command follows `RTXREMIX_MOD_LOADER`, merged tools configuration, then Fabric.
+Without `--arch`, `REMIX_ARCH` wins, then the host architecture.
 
 The command installs the newest non-sources development JAR, the staged runtime
 from `remix-runtime/<arch>/`, the matching bridge from `build/native/<arch>/`,
 `packaging/rtx.conf`, the `packaging/rtx-remix/` gameplay conf payload, and runtime
 textures. Baseline PBR textures are built into the JAR. The command removes its
-former generated `rtx-remix-labpbr` pack and orders vanilla and Fabric below
-existing user packs. Shipped gameplay confs are refreshed while extra
+former generated `rtx-remix-labpbr` pack and orders vanilla and the selected
+loader's built-in resources below existing user packs. Shipped gameplay confs are refreshed while extra
 author-created profiles are preserved. An unchanged runtime is not recopied,
 but the bridge and other payloads are always refreshed.
 
@@ -424,9 +486,9 @@ triage; confirm the indices against the runtime you are actually testing.
 
 ## Trying A Runtime Option
 
-The runtime reads `dxvk.conf` from the process working directory, which for
-`tools\rtx.bat launch` is the checkout-specific Prism instance's game
-directory. Put dxvk-level options such as
+The runtime reads `dxvk.conf` from the game directory, which for
+`tools\rtx.bat launch` is the checkout-specific Prism instance's. Put
+dxvk-level options such as
 `d3d9.*` swapchain settings or `dxvk.enableAftermath` there without rebuilding.
 It is the lowest config layer: built-in application defaults and `rtx.conf`
 outrank it. An `rtx.*` key already authored in `rtx.conf` can therefore appear
@@ -470,7 +532,7 @@ removes its stale registration.
 
 | Symptom | Cause |
 |---|---|
-| `vswhere.exe not found` or `vcvarsall.bat failed` | Visual Studio Build Tools missing, or without the Desktop C++ workload. ARM64 also needs toolset 14.44 |
+| `vswhere.exe not found` or `vcvarsall.bat failed` | Visual Studio Build Tools missing, or without the Desktop C++ workload |
 | `JAVA_HOME is not set`, or `jni.h not found` | `JAVA_HOME` unset or pointing at a JRE rather than a JDK 21 |
 | Gradle cannot fetch the SDK | Check network access to the Packman remote, or stage a matching local runtime. See [Get A Runtime](#get-a-runtime) |
 | A launch reports that Prism Launcher is not installed | Install it from [prismlauncher.org](https://prismlauncher.org), or point `prism.executable` in `tools/config.local.json` at its `prismlauncher.exe` |
@@ -482,12 +544,13 @@ removes its stale registration.
 | `UnsatisfiedLinkError` naming `remixbridge` | The bridge did not compile, or it was compiled for the other architecture. Re-run the build and check that `-Parch` matches the staged runtime |
 | Minecraft still uses an old local runtime build | The staged runtime is a copy; run `tools\rtx.bat sdk restage` |
 | The build fails at `fetchRuntimeTextures` | Packman could not pull the runtime textures pinned in `packman/textures.packman.xml`. Check access to Packman's download host |
+| `releaseArchive` fails at `fetchReleaseContent` | Packman could not pull the pack or world pinned in `tools/config.json`, or the cached copy has no `pack.mcmeta` or `world/level.dat`. Check access to Packman's download host, or delete the folder the message names and build again. A message quoting both pins means a version the installer would not find by name; see [Other Commands](#other-commands) |
 | The build reports that the runtime textures are missing files | The shared Packman cache holds the package without its textures. Delete the folder the message names and build again; Packman downloads the package afresh |
 | `package` reports mixed sources | Stage both architectures from one kind of source, or package one with `-Parch=` |
 | Empty or partial scene on first launch | Shader compilation. Wait for it to settle before reporting a defect |
 | Frame-time spikes at high render distance | Garbage collection is one possible cause. Every launch gives the Prism instance the tuned JVM arguments and their heap limit; check that `launch.jvmArgs` does not override them |
 | A clone or checkout reports `Filename too long` | Enable `git config --global core.longpaths true` before cloning, or choose a shorter checkout path |
-| `package` cannot find the ARM64 toolset | Install the version pinned by `build_native.bat`, or use `package -Parch=win64` for a single-architecture artifact |
+| `No MSVC toolset ... has the ARM64 C++ libraries` | Add the MSVC ARM64 build tools in the Visual Studio Installer, or use `package -Parch=win64` for a single-architecture artifact |
 | Initialization reports `DRIVER_VERSION_BELOW_MINIMUM` | Update the driver. The minimum is a capability gate; lowering `dxvk.nvidiaMinDriver` can enable unsupported paths and cause GPU faults |
 | `Startup` unexpectedly returns `REMIX_DEVICE_WAS_NOT_REGISTERED` after an API change | Check header, bridge and runtime together for a mismatched `remixapi_Interface` layout before continuing native calls |
 | `/rtx off` is slower than `/rtx on` | The off path renders vanilla GL at full resolution through the Remix swapchain; the on path can use DLSS's lower internal resolution. The toggle is not a standalone vanilla performance baseline |
@@ -500,9 +563,10 @@ says `FATAL: loaded Remix runtime is missing required vtable tail entries`.
 An `UnsatisfiedLinkError` after changing a Java native declaration instead
 points to a bridge that was not rebuilt or loaded, or the wrong architecture.
 
-For an ARM64 toolset failure, `verifyPackageJar -Parch=win64` checks the
+For an ARM64 toolset failure,
+`:<loader-id>:verifyPackageJar -Parch=win64` checks one loader's
 single-architecture package contents without running the tests. The
-dual-architecture artifact still needs both toolchains.
+dual-architecture artifacts still need both toolchains.
 
 ## Where To Go Next
 

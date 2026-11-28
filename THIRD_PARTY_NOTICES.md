@@ -8,12 +8,17 @@ locations given.
 
 ### Gradle wrapper
 
-- Files: `gradlew.bat`, `gradle/wrapper/`
+- Files: `gradlew*`, `gradle/wrapper/`
 - Copyright Gradle Inc. and the original authors
 - License: Apache License, Version 2.0 (see [LICENSE](LICENSE))
 - Source: https://github.com/gradle/gradle
 
 ## Redistributed binaries (packaged releases)
+
+The Forge release JAR embeds MixinExtras 0.4.1:
+
+- [packaging/licenses/mixinextras/LICENSE.txt](packaging/licenses/mixinextras/LICENSE.txt)
+  covers MixinExtras, Copyright (c) 2022-present LlamaLad7, MIT License
 
 Packaged release JARs bundle the NVIDIA RTX Remix runtime (staged under
 `native/` inside the JAR). The runtime is built from
@@ -136,14 +141,21 @@ reproduced in this repository.
 ## Runtime dependencies that are NOT distributed with this project
 
 The following are required at runtime but are not contained in this
-repository or its release artifacts. The release archive's installer
+repository or its release artifacts. The installer in the installer bundle
 downloads the ones marked below from their publishers at install time, with
 their own licenses; it does not redistribute them.
 
 - Minecraft (Mojang Studios), subject to the Minecraft EULA; supplied by the
   player's own installation
 - Fabric Loader and Fabric API (FabricMC), Apache License, Version 2.0;
-  downloaded by the installer from FabricMC's Maven repository
+  downloaded by the installer from FabricMC's Maven repository when Fabric is
+  selected
+- Minecraft Forge (MinecraftForge), GNU Lesser General Public License,
+  version 2.1; downloaded by the installer from Forge's Maven repository when
+  Forge is selected
+- NeoForge (NeoForged), GNU Lesser General Public License, version 2.1 only;
+  downloaded by the installer from NeoForged's Maven repository when NeoForge
+  is selected
 - Java 21 runtime: Eclipse Temurin (Eclipse Adoptium), GPL-2.0 with the
   Classpath Exception; downloaded by the installer when no suitable JDK is
   present

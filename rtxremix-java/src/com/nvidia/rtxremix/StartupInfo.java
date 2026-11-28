@@ -15,6 +15,7 @@ public class StartupInfo {
     /** If true, GUI is composited into FINAL_COLOR output (useful for debugging) */
     public boolean combineGuiInFinalColor;
     public boolean interopImage;
+    public boolean useRemixOwnedChildWindow;
 
     public StartupInfo() {}
 
@@ -25,6 +26,7 @@ public class StartupInfo {
         private boolean editorModeEnabled;
         private boolean combineGuiInFinalColor;
         private boolean interopImage = false;
+        private boolean useRemixOwnedChildWindow;
 
         public Builder hwnd(long hwnd) {
             this.hwnd = hwnd;
@@ -56,6 +58,11 @@ public class StartupInfo {
             return this;
         }
 
+        public Builder useRemixOwnedChildWindow(boolean value) {
+            this.useRemixOwnedChildWindow = value;
+            return this;
+        }
+
         public StartupInfo build() {
             StartupInfo info = new StartupInfo();
             info.hwnd = this.hwnd;
@@ -64,6 +71,7 @@ public class StartupInfo {
             info.editorModeEnabled = this.editorModeEnabled;
             info.combineGuiInFinalColor = this.combineGuiInFinalColor;
             info.interopImage = this.interopImage;
+            info.useRemixOwnedChildWindow = this.useRemixOwnedChildWindow;
             return info;
         }
     }

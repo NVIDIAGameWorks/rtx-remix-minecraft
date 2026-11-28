@@ -7,6 +7,7 @@ package com.nvidia.rtxremix;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.Map;
 
 /**
  * Main RTX Remix API class providing access to Remix functionality.
@@ -26,7 +27,7 @@ import java.util.Collection;
 public class RemixAPI {
     public static final int VERSION_MAJOR = 0;
     public static final int VERSION_MINOR = 16;
-    public static final int VERSION_PATCH = 0;
+    public static final int VERSION_PATCH = 1;
 
     /**
      * Fits every value except long hash lists, so most reads through
@@ -111,6 +112,67 @@ public class RemixAPI {
         return redaction.blankedValues();
     }
 
+    /**
+     * Reports the working directory the runtime will resolve relative paths
+     * against. A JVM's {@code user.dir} is only the value at JVM start, and a
+     * launcher can override it.
+     *
+     * @param dllPath Path to the d3d9.dll file from RTX Remix; binds the JNI
+     *                bridge beside it without loading the runtime
+     * @return The process working directory
+     * @throws RemixException if the DLL cannot be found or Windows cannot
+     *                        report the directory
+     */
+    public static String processWorkingDirectory(String dllPath) {
+        bindBridge(dllPath);
+        String directory = RemixBridge.processWorkingDirectory();
+        if (directory == null) {
+            throw new RemixException("Failed to read the process working directory",
+                    ErrorCode.GENERAL_FAILURE);
+        }
+        return directory;
+    }
+
+    /**
+     * Sets variables in this process's environment, where the runtime reads
+     * the locations of its files. Call before {@link #load(String)}: the
+     * runtime reads some of them while it loads.
+     *
+     * @param dllPath   Path to the d3d9.dll file from RTX Remix; binds the JNI
+     *                  bridge beside it without loading the runtime
+     * @param variables Variable names and values
+     * @throws RemixException if the DLL cannot be found or a variable cannot
+     *                        be set
+     */
+    public static void setProcessEnvironment(String dllPath, Map<String, String> variables) {
+        bindBridge(dllPath);
+        for (Map.Entry<String, String> variable : variables.entrySet()) {
+            if (!RemixBridge.setProcessEnvironmentVariable(variable.getKey(), variable.getValue())) {
+                throw new RemixException(
+                        "Failed to set the environment variable " + variable.getKey(),
+                        ErrorCode.GENERAL_FAILURE);
+            }
+        }
+    }
+
+    /**
+     * Sets the folder for the crash files the bridge writes after a native
+     * crash. Call before {@link #load(String)}, so a crash while the runtime
+     * starts lands there too.
+     *
+     * @param dllPath   Path to the d3d9.dll file from RTX Remix; binds the JNI
+     *                  bridge beside it without loading the runtime
+     * @param directory An absolute folder whose parent exists
+     * @return false when the path is too long to leave room for a file name;
+     *         the bridge then keeps its folder, {@code crash} under the
+     *         working directory
+     * @throws RemixException if the DLL cannot be found
+     */
+    public static boolean setCrashDirectory(String dllPath, String directory) {
+        bindBridge(dllPath);
+        return RemixBridge.setCrashDirectory(directory);
+    }
+
     private static java.io.File bindBridge(String dllPath) {
         java.io.File dllFile = new java.io.File(dllPath);
         if (!dllFile.exists()) {
@@ -140,6 +202,21 @@ public class RemixAPI {
         return dllFile;
     }
 
+    // ─── crash dumps ─────────────────────────────────────────────────────
+
+    /**
+     * Sets whether the minidump the bridge writes after a native crash also
+     * copies the memory that stack values point at. That fills in the objects
+     * a crashing thread was using, but the launch arguments are among it,
+     * including any access token a launcher passed, so turn it on only where
+     * the dumps stay private. Off by default.
+     *
+     * @param full true to copy the memory that stack values point at
+     */
+    public void setCrashDumpDetail(boolean full) {
+        RemixBridge.setCrashDumpDetail(full);
+    }
+
     // ─── lifecycle ───────────────────────────────────────────────────────
 
     public void startup(StartupInfo info) {
@@ -150,7 +227,8 @@ public class RemixAPI {
                 info.forceNoVkSwapchain,
                 info.editorModeEnabled,
             info.combineGuiInFinalColor,
-            info.interopImage
+            info.interopImage,
+            info.useRemixOwnedChildWindow
         );
         if (result != ErrorCode.SUCCESS) {
             throw new RemixException("Startup failed", result);
@@ -186,6 +264,27 @@ public class RemixAPI {
         if (result != ErrorCode.SUCCESS) {
             throw new RemixException("Present failed", result);
         }
+    }
+
+    /**
+     * Crashes the process from inside a Remix call on this thread, to check
+     * crash reporting; see {@link RemixBridge#faultInRemixCall}. Diagnostic
+     * only: it does not return unless the runtime rejected the call.
+     *
+     * @throws RemixException if the runtime rejected the call without faulting
+     */
+    public void faultInRemixCall(boolean insideJvm) {
+        checkInitialized();
+        int result = RemixBridge.faultInRemixCall(insideJvm);
+        throw new RemixException("Remix call did not fault", result);
+    }
+
+    /**
+     * Sets whether a fatal fault inside a Remix call goes to the runtime's
+     * crash reporter; see {@link RemixBridge#setRemixFaultForwarding}.
+     */
+    public void setFaultForwarding(boolean enabled) {
+        RemixBridge.setRemixFaultForwarding(enabled);
     }
 
     // ─── materials ───────────────────────────────────────────────────────
@@ -293,6 +392,46 @@ public class RemixAPI {
     }
 
     // ─── textures ────────────────────────────────────────────────────────
+
+    public int waterNormalsTextureSize() {
+        long size = RemixBridge.waterNormalsTextureSize();
+        if (size <= 0 || size > Integer.MAX_VALUE) {
+            throw new IllegalStateException("Invalid water-normal texture size: " + size);
+        }
+        return (int) size;
+    }
+
+    /**
+     * Fills a direct buffer with the canonical RG8 octahedral water-normal flipbook.
+     *
+     * @return native generation time in seconds
+     */
+    public double generateWaterNormals(ByteBuffer output, long seed) {
+        if (output == null || !output.isDirect()) {
+            throw new IllegalArgumentException("Water-normal output must be a direct ByteBuffer");
+        }
+        int size = waterNormalsTextureSize();
+        if (output.capacity() < size) {
+            throw new IllegalArgumentException(
+                    "Water-normal output capacity " + output.capacity() + " is less than " + size);
+        }
+        double[] timings = new double[1];
+        byte[] error = new byte[512];
+        int result = RemixBridge.generateWaterNormals(output, seed, timings, error);
+        if (result != 0) {
+            int length = 0;
+            while (length < error.length && error[length] != 0) {
+                length++;
+            }
+            String detail = new String(error, 0, length, StandardCharsets.UTF_8);
+            throw new RemixException(
+                    detail.isEmpty() ? "Water-normal generation failed" : detail,
+                    ErrorCode.GENERAL_FAILURE);
+        }
+        output.position(0);
+        output.limit(size);
+        return timings[0];
+    }
 
     public long createTextureFromMemory(TextureFromMemoryInfo info) {
         checkInitialized();

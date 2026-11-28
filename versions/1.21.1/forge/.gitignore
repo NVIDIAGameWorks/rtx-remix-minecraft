@@ -1,0 +1,6 @@
+.gradle/
+build/
+run/
+*.log
+*.hprof
+hs_err_pid*

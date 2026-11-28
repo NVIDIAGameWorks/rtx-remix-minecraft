@@ -12,29 +12,36 @@ the menu therefore waits for a key first, or its result and any error vanish wit
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from rtx_tools import loader_registry
 from rtx_tools.benchmark import util
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell runs the installer")
 
 INSTALLER = util.PROJECT_DIR / "packaging" / "installer.ps1"
+PROJECT_STATE = loader_registry.load_registry()
 HELD = "Window held"
 QUEUED = "Queued key read"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # Loads the installer's constants and functions without its entry point, gives the mod an older build in each launcher
 # named in -Installed, and runs one step: Upgrade and Install select the launcher as those modes do, printing any
-# question asked as "Asked: <title>" and the pick, and MainMenu prints each main-menu item as "Item: <label> | <hint>".
+# question asked as "Asked: <title>" and the pick, and MainMenu prints its header, each main-menu item as
+# "Item: <label> | <hint>", and "Disabled: <label>" for each item it greys out; with -TwoJars the download holds two mod
+# JARs. DistJar points the installer at -Dist and prints the JAR Get-DistModJar finds, or "Error: <message>".
 # -NoPrism and -NoMs leave Prism or the Microsoft launcher uninstalled. Run runs the entry point with -Mode, as an
 # interactive console would: the menu answers -Choice, the chosen
 # mode ends as -Outcome says (ok, fail, or throw), the console holds -Queued keys typed ahead, each read of one prints
 # QUEUED, and a wait for a fresh key prints HELD.
 HARNESS = r"""
-param([string]$Installer, [string]$Loaded, [string]$Action, [string]$Installed, [switch]$NoPrism, [switch]$NoMs,
-      [string]$Mode, [switch]$Unattended, [string]$Choice, [string]$Outcome, [int]$Queued)
+param([string]$Installer, [string]$Loaded, [string]$Action, [string]$Installed,
+  [switch]$NoPrism, [switch]$NoMs, [string]$Mode, [string]$MinecraftVersion,
+  [string]$ModLoader, [switch]$Unattended, [string]$Choice, [string]$Outcome, [int]$Queued,
+      [switch]$TwoJars, [string]$Dist)
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
 $entryPoint = $ast.EndBlock.Statements[-1]
 if ($entryPoint -isnot [System.Management.Automation.Language.TryStatementAst]) {
@@ -64,26 +71,52 @@ switch ($Action) {
         Write-Host "Picked: $(Select-Launcher -State $launchers)"
     }
     'MainMenu' {
+        $script:packages = @{
+            Fabric = 'rtx-remix-renderer-0.0.2.jar'
+            Forge = 'rtx-remix-renderer-forge-0.0.2.jar'
+        }
+        if ($TwoJars) { $script:packages[$ModLoader] = '(ambiguous, see Install)' }
+        $script:loaders = @{}
+        foreach ($launcher in $mods.Keys) {
+            $script:loaders[$launcher] = if ($ModLoader) { $ModLoader } else { 'Fabric' }
+        }
         function Get-DetectedState {
             [pscustomobject]@{
-                ModInstalled = $mods; ModPackage = 'rtx-remix-renderer-0.0.2.jar'
+                ModInstalled = $mods; ModLoaders = $script:loaders
+                ModPackage = '(loader-specific)'; ModPackages = $script:packages
                 HasPrism = $launchers.HasPrism; HasMs = $launchers.HasMs
             }
         }
         function Write-DetectedStateBlock { param([pscustomobject]$State) }
+        function Write-Banner { param([string]$Title, [string]$Subtitle) }
         function Invoke-Menu {
-            param([string]$Title, [array]$Items, [string]$Footer)
-            foreach ($item in $Items) { Write-Host "Item: $($item.Label) | $($item.Hint)" }
+            param([string]$Title, [array]$Items, [string]$Footer, [scriptblock]$Header)
+            if ($Header) { & $Header }
+            foreach ($item in $Items) {
+                Write-Host "Item: $($item.Label) | $($item.Hint)"
+                if ($item.PSObject.Properties['Disabled'] -and $item.Disabled) { Write-Host "Disabled: $($item.Label)" }
+            }
         }
         $null = Show-MainMenu
+    }
+    'DistJar' {
+        $script:SCRIPT_DIR = $Dist
+        $env:RTXREMIX_PROJECT_STATE = Join-Path $Dist 'project-state.json'
+        Initialize-LoaderCatalog
+        try {
+            Write-Host "Found: $(Get-DistModJar -ModLoader $ModLoader)"
+        } catch {
+            Write-Host "Error: $($_.Exception.Message)"
+        }
     }
     'Run' {
         function Test-InteractiveHost { return $true }
         function Show-MainMenu { return $Choice }
         function Invoke-InstallOrUpgrade {
+            param([string]$PreferredLauncher, [string]$PreferredModLoader, [switch]$Unattended, [string]$Mode)
             switch ($Outcome) {
                 'ok' { return 0 }
-                'fail' { Write-Err 'Do not run the installer as Administrator.'; return 1 }
+                'fail' { Write-Err 'Close this window and start install.bat by double-clicking it.'; return 1 }
                 'throw' { throw 'Download failed.' }
             }
         }
@@ -190,6 +223,37 @@ def test_with_prism_and_no_microsoft_launcher_the_menu_says_what_the_microsoft_l
     assert "Item: Install | reinstall into Prism; for the Microsoft launcher, install and start it first" in items
 
 
+@pytest.mark.parametrize("mod_loader", [loader.display_name for loader in PROJECT_STATE.loaders])
+def test_a_download_with_two_mod_jars_says_so_and_how_to_fix_it(tmp_path: Path, mod_loader: str):
+    # Extracting a newer download over an older one leaves two JARs in mods\. Saying none were found sends the player
+    # looking for a missing file; the fix is an empty folder.
+    output = run_harness(tmp_path, "-Action", "MainMenu", "-Installed", "", "-ModLoader", mod_loader, "-TwoJars")
+    assert output.returncode == 0, output.stdout + output.stderr
+    lines = ANSI.sub("", output.stdout).splitlines()
+    text = " ".join(lines)
+    assert "No package mod JAR found" not in text
+    assert "More than one mod JAR is in" in text
+    assert "Extract the download into an empty folder and run the installer again." in text
+    assert "Item: Install | more than one mod JAR in mods\\" in lines
+    assert "Disabled: Install" in lines
+
+
+@pytest.mark.parametrize("mod_loader", [loader.display_name for loader in PROJECT_STATE.loaders])
+def test_get_dist_mod_jar_names_both_jars_and_the_fix(tmp_path: Path, mod_loader: str):
+    mods = tmp_path / "dist" / "mods" / mod_loader.lower()
+    mods.mkdir(parents=True)
+    shutil.copy2(util.PROJECT_DIR / "project-state.json", tmp_path / "dist" / "project-state.json")
+    older, newer = "rtx-remix-renderer-0.1.0-1-aaaaaaa-win64.jar", "rtx-remix-renderer-0.1.0-2-bbbbbbb-win64.jar"
+    for name in (older, newer):
+        (mods / name).write_bytes(b"PK")
+    result = run_harness(tmp_path, "-Action", "DistJar", "-Dist", str(tmp_path / "dist"), "-ModLoader", mod_loader)
+    assert result.returncode == 0, result.stdout + result.stderr
+    error = next(line for line in result.stdout.splitlines() if line.startswith("Error: "))
+    assert older in error and newer in error
+    assert "Extract the download into an empty folder and run the installer again." in error
+    assert "dist pipeline" not in error
+
+
 def test_the_menu_install_item_asks_for_the_launcher_when_both_have_the_mod(tmp_path: Path):
     items = run_step(tmp_path, "MainMenu", "Microsoft,Prism").splitlines()
     assert "Item: Install | choose the launcher" in items
@@ -223,7 +287,13 @@ def test_quitting_the_menu_closes_without_waiting(tmp_path: Path):
 def test_a_run_given_its_mode_does_not_wait(tmp_path: Path, unattended: bool):
     arguments = ["-Action", "Run", "-Mode", "Install", "-Outcome", "ok", "-Queued", "1"]
     if unattended:
-        arguments.append("-Unattended")
+        arguments += [
+            "-Unattended",
+            "-MinecraftVersion",
+            PROJECT_STATE.minecraft_version,
+            "-ModLoader",
+            "Fabric",
+        ]
     result = run_harness(tmp_path, *arguments)
     assert result.returncode == 0, result.stdout + result.stderr
     assert HELD not in result.stdout

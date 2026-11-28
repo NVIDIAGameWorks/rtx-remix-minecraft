@@ -7,8 +7,10 @@ built from [dxvk-remix](https://github.com/NVIDIAGameWorks/dxvk-remix).
 It does not implement a renderer or interpret application state.
 
 The shim is Minecraft-agnostic. It must never import `net.minecraft` or
-`net.fabricmc`; game integration belongs to the consuming application.
-The root `RemixJavaBoundaryTest` enforces that dependency boundary.
+`net.fabricmc`, `net.minecraftforge`, or `net.neoforged`; game integration belongs to the
+consuming application.
+`minecraft/test/java/com/nvidia/rtxremix/minecraft/RemixJavaBoundaryTest.java`
+enforces that dependency boundary in every declared loader build.
 
 ## Components
 
@@ -20,6 +22,7 @@ Paths in this table are relative to `rtxremix-java/`.
 | `src/com/nvidia/rtxremix/RemixBridge.java` | Static JNI entry points |
 | `src/com/nvidia/rtxremix/` | API data holders, builders, constants, and handles |
 | `native/remixbridge.cpp` | Runtime loading, JNI marshalling, and C API calls |
+| `native/water_normals.h`, `native/water_normals.cpp` | Deterministic in-memory water-normal generation |
 | `native/include/remix_c.h` | C API header copied from the pinned runtime build |
 | `native/build_native.bat` | MSVC bridge build for Windows x64 or ARM64 |
 
@@ -29,11 +32,13 @@ raw `long` values. Native methods that require direct `ByteBuffer`s must not
 receive heap buffers. Document buffer directness on every new JNI entry point.
 There is no JNA interface table.
 
-## Consumption By The Root Build
+## Consumption By The Multi-Project Build
 
-The repository's root Gradle project compiles these Java sources directly with
-the mod and builds `remixbridge.dll`. There is no separate wrapper Java build
-or example launcher. The mod is a consumer of the shim, not a dependency of it.
+Every loader module declared by `project-state.json` compiles these Java sources
+directly with the mod. The neutral root applies no loader plugin and
+owns the tasks that build `remixbridge.dll`; every project uses the one root
+wrapper. There is no separate wrapper Java build or example launcher. The mod
+is a consumer of the shim, not a dependency of it.
 
 Building requires Windows, a 64-bit JDK 21 with `JAVA_HOME` set to it, and
 Visual Studio C++ tools. Running also requires a supported NVIDIA RTX GPU and
@@ -55,11 +60,13 @@ Run from the repository root:
 .\tools\rtx.bat launch
 ```
 
-Gradle fetches missing runtimes automatically, then combines the selected runtime
-with the separately built bridge during development staging and packaging. Packman runtime directories are read-only
-junctions into a shared cache, so they stay outside `build/` and must never
-receive bridge outputs. A staged local runtime is a snapshot copy instead.
-SDK payloads and native outputs are not committed.
+Root `build` and `test` aggregate every declared loader module without staging native
+payloads. Development launches and loader `package` tasks fetch missing
+runtimes automatically, then combine the selected runtime with the separately
+built bridge. Packman
+runtime directories are read-only junctions into a shared cache, so they stay
+outside `build/` and must never receive bridge outputs. A staged local runtime
+is a snapshot copy instead. SDK payloads and native outputs are not committed.
 
 For a bridge-only rebuild from the root, use
 `.\gradlew.bat compileNativeWin64` (`compileNativeArm64` for ARM64), or

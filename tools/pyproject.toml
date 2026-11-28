@@ -4,8 +4,7 @@ version = "0.1.0"
 description = "Developer, benchmark, and profiling tools for RTX Remix Minecraft."
 requires-python = ">=3.15"
 dependencies = [
-    "numpy>=2.5",
-    "pillow>=12.3",
+    "pillow>=13.0",
 ]
 
 [project.scripts]

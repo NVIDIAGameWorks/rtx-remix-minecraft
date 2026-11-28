@@ -11,8 +11,10 @@ import pytest
 from conftest import FakeLauncher, FakeProcess
 from PIL import Image
 
-from rtx_tools import client
+from rtx_tools import client, loader_registry
 from rtx_tools.benchmark import runner, screenshots, util
+
+PROJECT_STATE = loader_registry.load_registry()
 
 
 def shot(name, **overrides):
@@ -103,6 +105,14 @@ class ReadmeTests(unittest.TestCase):
         for resource_pack, expected in cases:
             with self.subTest(resource_pack=resource_pack):
                 self.assertEqual(screenshots.enabled_pack_names({"resourcePack": resource_pack}), expected)
+
+    def test_enabled_pack_names_identify_loader_builtin_resources(self):
+        for loader in PROJECT_STATE.loaders:
+            with self.subTest(loader=loader.id):
+                self.assertEqual(
+                    screenshots.enabled_pack_names({"modLoader": loader.id, "resourcePack": {"mode": "none"}}),
+                    [loader.builtin_resource_pack],
+                )
 
     def test_provenance_lists_every_shot_with_its_scene(self):
         text = screenshots.provenance_text(
